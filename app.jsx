@@ -275,7 +275,9 @@ const usedMachIds=dayMissions.map(j=>j.machineId);
 const renderCol=(types,label)=>{
 const allM=(data.machines||[]).filter(m=>types.includes(m.type));
 const freeM=allM.filter(m=>!usedMachIds.includes(m.id));
-const empIds=[...new Set([...(data.employees||[]).filter(e=>{const m=getMach(e.machineId);return m&&types.includes(m.type)}).map(e=>e.id),...dayJobs.filter(j=>{const m=getMach(j.machineId);return m&&types.includes(m.type)}).map(j=>j.employeeId)])];
+const empIdsWithJobs=dayJobs.filter(j=>{const m=getMach(j.machineId);return m&&types.includes(m.type)}).map(j=>j.employeeId);
+const allEmpIdsWithJobs=new Set(dayJobs.map(j=>j.employeeId));
+const empIds=[...new Set([...(data.employees||[]).filter(e=>{const m=getMach(e.machineId);return m&&types.includes(m.type)&&!allEmpIdsWithJobs.has(e.id)}).map(e=>e.id),...empIdsWithJobs])];
 return(
 <div>
 <div style={{background:C.card,borderRadius:8,padding:'8px 12px',marginBottom:10,border:'1px solid '+C.border}}>
@@ -285,7 +287,7 @@ return(
 </div>
 {empIds.map(eId=>{
 const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;
-const ejAll=dayJobs.filter(j=>j.employeeId===eId);
+const ejAll=dayJobs.filter(j=>j.employeeId===eId&&(j.type==='depot'||types.includes((getMach(j.machineId)||{}).type)));
 const ej=ejAll.filter(j=>j.type!=='depot');
 const depotJobs=ejAll.filter(j=>j.type==='depot');
 const ca=ej.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);
@@ -480,10 +482,10 @@ return(
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'1px 6px',borderRadius:4,fontSize:10,border:'1px solid '+(j.hasTransfer?C.purple:C.muted),background:j.hasTransfer?C.purple+'18':'transparent',color:j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T ok':'+T'}</button>
 </div>
 </div>
-{(j.kmAller>0||j.kmRetour>0)&&<div style={{padding:'4px 10px',background:'#f8fafc',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',borderBottom:'0.5px solid '+C.border}}>
-{j.kmAller>0&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:11,fontWeight:700,background:'#0891b220',color:'#0891b2'}}>{'↗'}{(j.kmAller||0).toFixed(0)}km {fmtDuration(j.travelMinAller||0)}</span>}
-{j.kmRetour>0&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:11,fontWeight:700,background:'#7c3aed20',color:'#7c3aed'}}>{'↙'}{(j.kmRetour||0).toFixed(0)}km {fmtDuration(j.travelMinRetour||0)}</span>}
-</div>}
+{(j.startFrom||j.endAt||j.kmAller>0||j.kmRetour>0)&&(()=>{const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';const arrName=j.endAt==='home'?'Domicile':(getDepot(j.endAt)||{}).name||'';return(<div style={{padding:'4px 10px',background:'#f8fafc',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',borderBottom:'0.5px solid '+C.border}}>
+{depName&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:10,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depName}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
+{arrName&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:10,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrName}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
+</div>)})()}
 <div style={{padding:'4px 10px',background:C.card}}>
 <div style={{display:'flex',alignItems:'center',gap:8}}>
 <div style={{flex:1,height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden'}}>
@@ -1142,13 +1144,16 @@ return(
 <div><span style={{fontWeight:700,fontSize:16}}>{t.startTime} - {t.endTime||'...'}</span>{t.pauseMin>0&&<span style={{marginLeft:6}}><Bg text={'pause '+t.pauseMin+'min'} color={C.orange}/></span>}{wm>0&&<span style={{marginLeft:6,fontWeight:600,color:C.accent}}>{fmtDuration(wm)}</span>}</div>
 <button onClick={()=>setEditTE({...t})} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.accent}}>&#9998;</button>
 </div>)})}
-{jbs.map(j=>{const cl=(data.clients||[]).find(c=>c.id===j.clientId);const m=(data.machines||[]).find(x=>x.id===j.machineId);return(
-<div key={j.id} style={{background:C.bg,borderRadius:6,padding:8,marginTop:4,fontSize:14}}>
+{jbs.map(j=>{const cl=(data.clients||[]).find(c=>c.id===j.clientId);const m=(data.machines||[]).find(x=>x.id===j.machineId);const depN=j.startFrom==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.startFrom)||{}).name||'';const arrN=j.endAt==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.endAt)||{}).name||'';return(
+<div key={j.id} style={{background:C.bg,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(m?MC[m.type]||C.accent:C.muted)}}>
 <div style={{fontWeight:700,fontSize:16}}>{cl?cl.name:'?'} {j.agencyName?'- '+j.agencyName:''}</div>
-<div style={{color:C.dim,fontSize:14}}>{m?m.name:''} | {j.forfaitType} | {j.billingStart}</div>
-{j.siteManager&&<div style={{color:C.dim,fontSize:14}}>{j.siteManager} {j.siteManagerPhone&&<a href={'tel:'+j.siteManagerPhone} style={{color:C.accent}}>{j.siteManagerPhone}</a>}</div>}
-{j.location&&<div style={{fontSize:14}}>{j.gps?<a href={'https://www.google.com/maps?q='+j.gps} target="_blank" rel="noopener" style={{color:C.accent}}>{j.location}</a>:<span style={{color:C.dim}}>{j.location}</span>}</div>}
-{j.distanceKm>0&&<div style={{color:C.dim,fontSize:14}}>A:{(j.kmAller||0).toFixed(0)}km {fmtDuration(j.travelMinAller||0)} | R:{(j.kmRetour||0).toFixed(0)}km {fmtDuration(j.travelMinRetour||0)}</div>}
+<div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
+{j.siteManager&&<div style={{color:C.dim,fontSize:14,marginTop:2}}>{j.siteManager} {j.siteManagerPhone&&<a href={'tel:'+j.siteManagerPhone} style={{color:C.accent}}>{j.siteManagerPhone}</a>}</div>}
+{j.location&&<div style={{fontSize:14,marginTop:2}}>{j.gps?<a href={'https://www.google.com/maps?q='+j.gps} target="_blank" rel="noopener" style={{color:C.accent}}>{j.location}</a>:<span style={{color:C.dim}}>{j.location}</span>}</div>}
+{(depN||arrN)&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:4}}>
+{depN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depN}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
+{arrN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrN}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
+</div>}
 </div>)})}
 </div>)})}
 <div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginTop:16}}>
