@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RoadManager</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc;color:#1e293b}
+input,select,textarea,button{font-family:inherit;font-size:inherit}
+@media(max-width:768px){
+  .mob-btn{display:block!important}
+  .sb{position:fixed!important;left:-170px!important;top:0;height:100vh;transition:left .25s;z-index:200!important}
+  .sb.open{left:0!important}
+  .main{padding:8px!important;padding-top:44px!important;margin-left:0!important}
+  .pg{grid-template-columns:1fr!important}
+  .grid-cards{grid-template-columns:1fr!important}
+  .sb-overlay{display:block!important}
+}
+@media(min-width:769px){
+  .mob-btn{display:none!important}
+  .sb-overlay{display:none!important}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// Supabase client init
+window.SUPABASE_URL='https://valtmsgqhrkvwjsdqfdc.supabase.co';
+window.SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhbHRtc2dxaHJrdndqc2RxZmRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNjA1MTcsImV4cCI6MjA4OTgzNjUxN30.dQX6bLhUd6B7wO5S9siCoJLK8csrRLC2nlMFprnHgjA';
+try{window.supabaseClient=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_ANON_KEY)}catch(e){console.warn('Supabase init failed, using localStorage only',e);window.supabaseClient=null}
+// localStorage fallback
+if(!window.storage||typeof window.storage.get!=='function'){
+window.storage={
+get:function(k){try{return Promise.resolve(localStorage.getItem(k))}catch(e){return Promise.resolve(null)}},
+set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve()}
+};
+}
+</script>
+<script type="text/babel" src="app.jsx?v=11"></script>
+</body>
+</html>
