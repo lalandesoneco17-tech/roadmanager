@@ -817,7 +817,7 @@ return(
 const EmployeesPage=({data,save})=>{
 const[sel,setSel]=useState(null);const[show,setShow]=useState(false);
 const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,'');
-const open=e=>{if(e){setSel({...e,password:(data.empPasswords||{})[e.id]||''})}else{setSel({id:uid(),name:'',role:'employee',address:'',hourlySalary:'',machineId:'',truckId:'',password:''})}setShow(true)};
+const open=e=>{if(e){setSel({...e,_coords:e._coords||null,password:(data.empPasswords||{})[e.id]||''})}else{setSel({id:uid(),name:'',role:'employee',address:'',_coords:null,hourlySalary:'',machineId:'',truckId:'',password:''})}setShow(true)};
 const close=()=>{setShow(false);setSel(null)};
 const doSave=()=>{const{password,...emp}=sel;emp.login=genLogin(emp.name);const es=data.employees||[];const idx=es.findIndex(e=>e.id===emp.id);const ne=idx>=0?es.map(e=>e.id===emp.id?emp:e):[...es,emp];const ps={...(data.empPasswords||{})};if(password)ps[emp.id]=password;else delete ps[emp.id];save({...data,employees:ne,empPasswords:ps});close()};
 const delItem=()=>{if(!confirm('Supprimer ?'))return;const ps={...(data.empPasswords||{})};delete ps[sel.id];save({...data,employees:(data.employees||[]).filter(e=>e.id!==sel.id),empPasswords:ps});close()};
@@ -842,6 +842,7 @@ return(
 <Fl label="Nom"><input style={inputStyle} value={sel.name} onChange={e=>setSel({...sel,name:e.target.value})}/></Fl>
 <Fl label="Role"><select style={inputStyle} value={sel.role} onChange={e=>setSel({...sel,role:e.target.value})}><option value="employee">Employe</option><option value="mechanic">Mecanicien</option></select></Fl>
 <Fl label="Adresse"><input style={inputStyle} value={sel.address||''} onChange={e=>setSel({...sel,address:e.target.value})}/></Fl>
+<Fl label="GPS domicile (lat,lon)"><input style={inputStyle} value={sel._coords?sel._coords.join(','):''} onChange={e=>{const p=parseCoords(e.target.value);setSel({...sel,_coords:p})}} placeholder="48.8566,2.3522"/></Fl>
 <Fl label="Taux horaire"><input type="number" style={inputStyle} value={sel.hourlySalary} onChange={e=>setSel({...sel,hourlySalary:e.target.value})}/></Fl>
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
 <Fl label="Panier repas (EUR/jour)"><input type="number" style={inputStyle} value={sel.mealAllowance||12} onChange={e=>setSel({...sel,mealAllowance:Number(e.target.value)})}/></Fl>
