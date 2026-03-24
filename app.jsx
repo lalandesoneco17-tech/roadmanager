@@ -494,7 +494,7 @@ return(
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent}}>{fmtMoney(caTotal)}</span></div>
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>Dispo </span>{availDrivers.map(e=><Bg key={e.id} text={e.name.split(' ')[0]} color={C.orange} style={{marginLeft:4}}/>)}</div>
 </div>
-<div className="pg">
+<div className="pg" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
 {renderCol(['Raboteuse'],'Raboteuses')}
 {renderCol(['Balayeuse','Citerne'],'Balayeuses + Citernes')}
 </div>
