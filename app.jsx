@@ -280,10 +280,13 @@ const allEmpIdsWithJobs=new Set(dayJobs.map(j=>j.employeeId));
 const empIds=[...new Set([...(data.employees||[]).filter(e=>{const m=getMach(e.machineId);return m&&types.includes(m.type)&&!allEmpIdsWithJobs.has(e.id)}).map(e=>e.id),...empIdsWithJobs])];
 return(
 <div>
-<div style={{background:C.card,borderRadius:8,padding:'8px 12px',marginBottom:10,border:'1px solid '+C.border}}>
-<span style={{color:C.green,fontWeight:700,fontSize:13}}>{label}</span>
-<span style={{fontSize:12,color:C.dim,marginLeft:6}}>{freeM.length} libre(s)</span>
-<div style={{display:'flex',gap:4,marginTop:4,flexWrap:'wrap'}}>{freeM.map(m=><Bg key={m.id} text={m.name+(m.width?' '+m.width:'')} color={MC[m.type]}/>)}{freeM.length===0&&<span style={{fontSize:12,color:C.muted}}>Toutes occupees</span>}</div>
+<div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
+<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:freeM.length>0?6:0}}>
+<span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:16}}>{label}</span>
+<span style={{fontSize:14,color:C.dim}}>{freeM.length} libre(s)</span>
+</div>
+{freeM.length>0&&<div style={{display:'flex',flexDirection:'column',gap:3}}>{freeM.map(m=><div key={m.id} style={{fontSize:14,color:MC[m.type]||C.accent,fontWeight:600,padding:'2px 0'}}>• {m.name}{m.width?' ('+m.width+')':''}</div>)}</div>}
+{freeM.length===0&&<div style={{fontSize:14,color:C.muted}}>Toutes occupees</div>}
 </div>
 {empIds.map(eId=>{
 const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;
@@ -363,146 +366,125 @@ const benefCamAffiche=dTotalEntretienCam>0&&resteCam>0?0:Math.max(0,benefCamCum)
 const dBenefAffiche=(dTotalEntretienMach>0||dTotalEntretienCam>0)?(benefMachAffiche+benefCamAffiche):benefDay;
 const dMarginPct=(totalRevDay>0)?((dBenefAffiche/totalRevDay)*100):0;
 jobCalcs.forEach(c=>{c.marginPct=dMarginPct;c.benefAffiche=dBenefAffiche});
+// Render each mission as a compact block
+const allMissions=[...jobCalcs];
 return(
-<div key={eId} style={{background:C.card,borderRadius:10,padding:10,marginBottom:10,border:'1px solid '+C.border,opacity:hasJ||te.length>0?1:0.45}}>
-<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-<div style={{width:30,height:30,borderRadius:'50%',background:hasJ?C.accent:C.muted,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700}}>{(emp.name||'?')[0].toUpperCase()}</div>
-<span style={{fontWeight:700,fontSize:14}}>{emp.name}</span>
-<button onClick={()=>{setFormEmpId(eId);setFormJob(null);setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,width:24,height:24,cursor:'pointer',fontSize:14,fontWeight:700}}>+</button>
-<button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:6,width:24,height:24,cursor:'pointer',fontSize:12}} title="Depot">D</button>
-<span style={{marginLeft:'auto',fontWeight:800,fontSize:14,color:C.accent}}>{fmtMoney(ca)}</span>
-</div>
-{(te.length>0||hasJ)&&<div style={{fontSize:12,color:C.dim,marginBottom:4,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-{te.length>0&&te.map((t,i)=><span key={i}>{t.startTime||'?'}-{t.endTime||'...'}</span>)}
-{workMin>0&&<Bg text={fmtDuration(workMin)+' trav.'} color={C.accent}/>}
-{pauseMin>0&&<Bg text={fmtDuration(pauseMin)+' pause'} color={C.orange}/>}
-{workMin>0&&<span style={{fontWeight:600,color:C.dim}}>sal. {fmtMoney(salTotal)}</span>}
-</div>}
-{(theoFirst||hasMissions)&&<div style={{fontSize:11,color:C.dim,marginBottom:4,display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}}>
-{theoFirst&&<span>theo {theoFirst.theoStart}{'→'}{theoLast?theoLast.theoEnd:theoFirst.theoEnd}</span>}
-{startBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontWeight:700,background:startBadge.color+'20',color:startBadge.color}}>{startBadge.text}</span>}
-{endBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontWeight:700,background:endBadge.color+'20',color:endBadge.color}}>{endBadge.text}</span>}
-{!startBadge&&!endBadge&&hasMissions&&<span style={{color:C.muted}}>Pas encore pointe</span>}
-{tempsDepotMin>0&&<span style={{padding:'1px 6px',borderRadius:10,fontWeight:700,background:'#64748b20',color:'#64748b'}}>Depot {fmtDuration(tempsDepotMin)} = {fmtMoney(coutDepot)}</span>}
-</div>}
-{(hasJ||te.length>0)&&<div style={{fontSize:11,marginBottom:4,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-<span style={{color:C.red,fontWeight:600}}>Couts -{fmtMoney(totalCostsDay)}</span>
-{dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:10,fontWeight:700,background:C.green+'18',color:C.green}}>Entretien ✓</span>}
-{!(dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse)&&<React.Fragment>
-{dTotalEntretienMach>0&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:10,fontWeight:700,background:(machRembourse?C.green:C.red)+'18',color:machRembourse?C.green:C.red}}>{machRembourse?'Mach. ✓':'Mach. reste '+fmtMoney(resteMach)}</span>}
-{dTotalEntretienCam>0&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:10,fontWeight:700,background:(camRembourse?C.green:C.red)+'18',color:camRembourse?C.green:C.red}}>{camRembourse?'Cam. ✓':'Cam. reste '+fmtMoney(resteCam)}</span>}
-</React.Fragment>}
-<span style={{fontWeight:700,color:dBenefAffiche>0?C.green:C.red}}>Benef {dBenefAffiche>0?'+':''}{fmtMoney(dBenefAffiche)}</span>
-<button onClick={()=>toggleDetail(eId)} style={{background:'none',border:'1px solid '+C.border,borderRadius:4,fontSize:10,cursor:'pointer',padding:'1px 6px',color:C.dim}}>{openDetails[eId]?'▲ Masquer':'▼ Details'}</button>
-</div>}
-{openDetails[eId]&&(hasJ||te.length>0)&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:4,marginBottom:6,fontSize:9}}>
-<div style={{background:'#7c3aed08',borderRadius:6,padding:6,border:'1px solid #7c3aed15'}}>
-<div style={{fontWeight:800,color:'#7c3aed',marginBottom:4,fontSize:10}}>SALAIRE</div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>Chantier</span><span>{fmtMoney(salChantier)}</span></div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>Route</span><span>{fmtMoney(totalSalRouteDay)}</span></div>
-{surcoutEmb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Emb. tot</span><span>{fmtMoney(surcoutEmb)}</span></div>}
-{surcoutDeb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Deb. tard</span><span>{fmtMoney(surcoutDeb)}</span></div>}
-{coutDepot>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Depot</span><span>{fmtMoney(coutDepot)}</span></div>}
-<div style={{borderTop:'1px solid #7c3aed20',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalSalaire)}</span></div>
-</div>
-<div style={{background:'#d9770608',borderRadius:6,padding:6,border:'1px solid #d9770615'}}>
-<div style={{fontWeight:800,color:'#d97706',marginBottom:4,fontSize:10}}>CARBURANT</div>
-{jobCalcs.map((c,ci)=>c.trajL>0?<div key={ci} style={{display:'flex',justifyContent:'space-between'}}><span>Trajet {c.trajL.toFixed(0)}L</span><span>{fmtMoney(c.trajCost)}</span></div>:null)}
-{jobCalcs.map((c,ci)=>c.machCost>0?<div key={'m'+ci} style={{display:'flex',justifyContent:'space-between'}}><span>Machine {(c.j.machineFuelL||0)}L</span><span>{fmtMoney(c.machCost)}</span></div>:null)}
-<div style={{borderTop:'1px solid #d9770620',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalCarbu)}</span></div>
-</div>
-<div style={{background:'#64748b08',borderRadius:6,padding:6,border:'1px solid #64748b15'}}>
-<div style={{fontWeight:800,color:'#64748b',marginBottom:4,fontSize:10}}>FIXES / JOUR</div>
-{jobCalcs.map((c,ci)=>{const items=[];if(c.credM>0)items.push(['Credit mach.',c.credM]);if(c.assM>0)items.push(['Assur. mach.',c.assM]);if(c.ctM>0)items.push(['CT mach.',c.ctM]);if(c.credT>0)items.push(['Credit cam.',c.credT]);if(c.assT>0)items.push(['Assur. cam.',c.assT]);if(c.ctT>0)items.push(['CT cam.',c.ctT]);return items.map(([l,v],ii)=><div key={ci+'_'+ii} style={{display:'flex',justifyContent:'space-between'}}><span>{l}</span><span>{fmtMoney(v)}</span></div>)})}
-<div style={{borderTop:'1px solid #64748b20',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalFixes)}</span></div>
-</div>
-<div style={{borderRadius:6,padding:6,border:'1px solid #64748b15',background:'#f8fafc'}}>
-<div style={{fontWeight:800,color:'#64748b',marginBottom:4,fontSize:10}}>ENTRETIEN</div>
-{dTotalEntretienMach>0&&<div style={{background:machRembourse?'#16a34a08':'#dc262608',borderRadius:4,padding:5,marginBottom:dTotalEntretienCam>0?4:0,border:'1px solid '+(machRembourse?'#16a34a15':'#dc262615')}}>
-<div style={{fontWeight:700,fontSize:9,color:machRembourse?C.green:C.red,marginBottom:2}}>MACHINE (forfaits)</div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>Machine</span><span style={{fontWeight:700}}>{fmtMoney(dTotalEntretienMach)}</span></div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:C.green}}>Remb.</span><span style={{color:C.green,fontWeight:700}}>{fmtMoney(Math.max(0,dTotalEntretienMach-resteMach))}</span></div>
-{resteMach>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:C.red}}>Reste</span><span style={{color:C.red,fontWeight:700}}>{fmtMoney(resteMach)}</span></div>}
-<div style={{height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden',marginTop:2}}><div style={{height:'100%',width:pctMach.toFixed(0)+'%',background:machRembourse?C.green:C.red,borderRadius:3}}/></div>
-<div style={{textAlign:'right',fontSize:7,color:C.dim}}>{pctMach.toFixed(0)}%</div>
-</div>}
-{dTotalEntretienCam>0&&<div style={{background:camRembourse?'#16a34a08':'#dc262608',borderRadius:4,padding:5,border:'1px solid '+(camRembourse?'#16a34a15':'#dc262615')}}>
-<div style={{fontWeight:700,fontSize:9,color:camRembourse?C.green:C.red,marginBottom:2}}>CAMION (transferts)</div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>Camion</span><span style={{fontWeight:700}}>{fmtMoney(dTotalEntretienCam)}</span></div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:C.green}}>Remb.</span><span style={{color:C.green,fontWeight:700}}>{fmtMoney(Math.max(0,dTotalEntretienCam-resteCam))}</span></div>
-{resteCam>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:C.red}}>Reste</span><span style={{color:C.red,fontWeight:700}}>{fmtMoney(resteCam)}</span></div>}
-<div style={{height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden',marginTop:2}}><div style={{height:'100%',width:pctCam.toFixed(0)+'%',background:camRembourse?C.green:C.red,borderRadius:3}}/></div>
-<div style={{textAlign:'right',fontSize:7,color:C.dim}}>{pctCam.toFixed(0)}%</div>
-</div>}
-{dTotalEntretienMach===0&&dTotalEntretienCam===0&&<div style={{color:C.muted,fontSize:9,fontStyle:'italic'}}>Aucune intervention</div>}
-</div>
-</div>}
-{!hasMissions&&te.length>0&&depotJobs.length===0&&<div style={{fontSize:12,color:C.muted,fontStyle:'italic',padding:'6px 0'}}>Aucune mission — journee au depot</div>}
+<React.Fragment key={eId}>
 {depotJobs.map(dj=>{const dep=getDepot(dj.depotId);return(
-<div key={dj.id} style={{borderRadius:8,marginBottom:6,border:'1px solid '+C.border,borderLeft:'3px solid #64748b',overflow:'hidden',background:'#f8fafc'}}>
-<div style={{padding:'6px 10px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-<span style={{fontSize:14,fontWeight:700,color:'#64748b'}}>&#127959; {dep?dep.name:'Depot'} — {dj.depotActivity||'Depot'}</span>
-{dj.depotDescription&&<span style={{fontSize:12,color:C.dim}}>({dj.depotDescription})</span>}
-<div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.red}}>x</button>
-</div>
-</div>
-<div style={{padding:'3px 10px'}}><div style={{height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',width:'0%',background:C.red,borderRadius:3}}/></div></div>
+<div key={dj.id} style={{background:'#f8fafc',borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid #64748b',padding:'8px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+<span style={{fontSize:15,fontWeight:700,color:'#64748b'}}>&#127959; {emp.name} — {dep?dep.name:'Depot'} — {dj.depotActivity||'Depot'}</span>
+{dj.depotDescription&&<span style={{fontSize:14,color:C.dim}}>({dj.depotDescription})</span>}
+<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
 </div>)})}
-{jobCalcs.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
+{allMissions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const machColor=MC[mt]||C.accent;
-const fuelPrMach=getFuelPrice(data,fuelType,j.machineFuelDepot);
+const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
+const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';
+const arrName=j.endAt==='home'?'Domicile':(getDepot(j.endAt)||{}).name||'';
 const buildMsg=()=>{const cn=cl?cl.name:'';const ag=j.agencyName||'';const chauffeur=emp.name;const machineName=m?m.name:'';return'Bonjour,\n\nConfirmation mission '+cn+(ag?' - '+ag:'')+':\n\n\ud83d\udc77 Chauffeur : '+chauffeur+'\n\u2699\ufe0f Machine : '+machineName+'\n\ud83d\udd50 Debut : '+j.billingStart+'\n\ud83d\udccd Lieu : '+(j.location||'')+'\n\ud83d\uddfa\ufe0f GPS : https://google.com/maps/dir/?api=1&destination='+(j.gps||'')+'\n\nMerci de confirmer.\nCordialement'};
 const doSMS=()=>{const msg=buildMsg();window.open('sms:'+(j.siteManagerPhone||'')+'?body='+encodeURIComponent(msg))};
 const doWA=()=>{const msg=buildMsg();const ph=(j.siteManagerPhone||'').replace(/\s/g,'').replace(/^0/,'33');window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msg),'_blank')};
 const doCopy=()=>{const msg=buildMsg();navigator.clipboard.writeText(msg).then(()=>alert('Copie !')).catch(()=>{})};
 return(
-<div key={j.id} onClick={()=>setViewDetail(j.id)} style={{borderRadius:8,marginBottom:6,cursor:'pointer',border:'1px solid '+C.border,borderLeft:'3px solid '+machColor,overflow:'hidden'}}>
-<div style={{padding:'6px 10px',background:machColor+'06',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',borderBottom:'0.5px solid '+C.border}}>
-<span style={{fontSize:16,fontWeight:800,color:machColor}}>{m?m.name:'?'}</span>
-{(j.machineFuelL||0)>0&&<span style={{fontSize:11,color:'#64748b'}}>&#128295; {j.machineFuelL}L = {fmtMoney((j.machineFuelL||0)*fuelPrMach)} {fuelType==='gnr'?'GNR':'Gazole'} {fmtMoney(fuelPrMach)}/L</span>}
-<div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
-<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.sent=true;save(nd)}}} style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:j.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{j.sent?'Envoye':'Envoyer'}</button>
-{j.siteManagerPhone&&<button onClick={doSMS} style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:C.cyan,color:'#fff',border:'none',cursor:'pointer'}}>SMS</button>}
-{j.siteManagerPhone&&<button onClick={doWA} style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:'#25d366',color:'#fff',border:'none',cursor:'pointer'}}>WA</button>}
-<button onClick={doCopy} style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:'#64748b',color:'#fff',border:'none',cursor:'pointer'}}>Copier</button>
+<div key={j.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+machColor,overflow:'hidden'}}>
+{/* Ligne 1: theo + reel */}
+<div style={{padding:'4px 12px',background:'#f8fafc',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:4,borderBottom:'1px solid '+C.border}}>
+<div style={{display:'flex',gap:10,alignItems:'center',fontSize:13,color:C.dim}}>
+{theoJ&&<span>theo <b>{theoJ.theoStart}</b>{'→'}<b>{theoJ.theoEnd}</b></span>}
+{!theoJ&&<span>theo --</span>}
+</div>
+<div style={{display:'flex',gap:10,alignItems:'center',fontSize:13}}>
+<span style={{color:C.dim}}>reel</span>
+{mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}
+<span style={{color:C.dim}}>{'→'}</span>
+{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}
+</div>
+</div>
+{/* Ligne 2: envoi · chauffeur · machine · client · chef · lieu */}
+<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+<div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:3}}>
+<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.sent=true;save(nd)}}} style={{padding:'3px 10px',borderRadius:4,fontSize:13,fontWeight:600,background:j.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{j.sent?'Envoye':'Envoyer'}</button>
+<button onClick={doCopy} style={{padding:'3px 8px',borderRadius:4,fontSize:13,fontWeight:600,background:'#64748b',color:'#fff',border:'none',cursor:'pointer'}}>Copier</button>
+</div>
+<span style={{fontSize:16,fontWeight:800,color:machColor}}>{emp.name}</span>
+<span style={{fontSize:15,fontWeight:700,color:machColor}}>· {m?m.name:'?'}</span>
+<span style={{fontSize:15,fontWeight:600,color:C.text}}>· {cl?cl.name:'?'}</span>
+{j.siteManager&&<span style={{fontSize:14,color:C.dim}}>· {j.siteManager}</span>}
+{j.siteManagerPhone&&<span style={{fontSize:14,color:C.dim}}>· {j.siteManagerPhone}</span>}
+<span style={{fontSize:14,fontWeight:700,color:C.orange}}>· {j.billingStart}</span>
+{j.location&&<span style={{fontSize:14,color:C.dim}}>· {(j.location||'').slice(0,40)}</span>}
+{j.isNight&&<Bg text="nuit" color={C.purple}/>}
+<div style={{marginLeft:'auto'}} onClick={e=>e.stopPropagation()}>
 <EBtn onClick={()=>{setFormJob(j);setShowForm(true)}}/>
 </div>
 </div>
-<div style={{padding:'5px 10px',background:C.card,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',borderBottom:'0.5px solid '+C.border}}>
-<span style={{fontWeight:600,fontSize:13}}>{cl?cl.name:'?'}</span>
-{j.agencyName&&<span style={{fontSize:12,color:C.dim}}>{'\u00b7'} {j.agencyName}</span>}
-{j.siteManager&&<span style={{fontSize:12,color:C.dim}}>{'\u00b7'} {j.siteManager}</span>}
-<span style={{fontSize:12,fontWeight:700,color:C.orange}}>{'\u00b7'} {j.billingStart}</span>
-{j.location&&<span style={{fontSize:11,color:C.dim}}>{'\u00b7'} {(j.location||'').slice(0,35)}</span>}
-{j.isNight&&<Bg text="nuit" color={C.purple}/>}
-<div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
+{/* Ligne 3: depart/arrivee · forfaits · details */}
+<div style={{padding:'4px 12px',background:'#f8fafc',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',borderTop:'1px solid '+C.border}}>
+{depName&&<span style={{padding:'2px 10px',borderRadius:10,fontSize:13,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depName}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
+{arrName&&<span style={{padding:'2px 10px',borderRadius:10,fontSize:13,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrName}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
+<div style={{display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
 {(mt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=>(
-<button key={f} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.forfaitType=f;const p=getForfaitPrice(nd,j.clientId,m,f,j.citOption,j.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:j.forfaitType===f?700:400,border:'1px solid '+(FC[f]||'#ccc'),background:j.forfaitType===f?(FC[f]||C.accent):'transparent',color:j.forfaitType===f?'#fff':(FC[f]||C.dim),cursor:'pointer'}}>{f}</button>))}
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'1px 6px',borderRadius:4,fontSize:10,border:'1px solid '+(j.hasTransfer?C.purple:C.muted),background:j.hasTransfer?C.purple+'18':'transparent',color:j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T ok':'+T'}</button>
+<button key={f} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.forfaitType=f;const p=getForfaitPrice(nd,j.clientId,m,f,j.citOption,j.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{padding:'2px 8px',borderRadius:4,fontSize:13,fontWeight:j.forfaitType===f?700:400,border:'1px solid '+(FC[f]||'#ccc'),background:j.forfaitType===f?(FC[f]||C.accent):'transparent',color:j.forfaitType===f?'#fff':(FC[f]||C.dim),cursor:'pointer'}}>{f}</button>))}
+<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'2px 8px',borderRadius:4,fontSize:13,border:'1px solid '+(j.hasTransfer?C.purple:C.muted),background:j.hasTransfer?C.purple+'18':'transparent',color:j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T ok':'+T'}</button>
+</div>
+<button onClick={e=>{e.stopPropagation();toggleDetail(j.id)}} style={{marginLeft:'auto',background:'none',border:'1px solid '+C.border,borderRadius:4,fontSize:13,cursor:'pointer',padding:'2px 8px',color:C.dim}}>{openDetails[j.id]?'▲ Masquer':'▼ Details'}</button>
+</div>
+{/* Details panel */}
+{openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
+<div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:6,fontSize:14}}>
+<span style={{color:C.red,fontWeight:600}}>Couts -{fmtMoney(totalCostsDay)}</span>
+{dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:C.green+'18',color:C.green}}>Entretien ✓</span>}
+{!(dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse)&&<React.Fragment>
+{dTotalEntretienMach>0&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:(machRembourse?C.green:C.red)+'18',color:machRembourse?C.green:C.red}}>{machRembourse?'Mach. ✓':'Mach. reste '+fmtMoney(resteMach)}</span>}
+{dTotalEntretienCam>0&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:(camRembourse?C.green:C.red)+'18',color:camRembourse?C.green:C.red}}>{camRembourse?'Cam. ✓':'Cam. reste '+fmtMoney(resteCam)}</span>}
+</React.Fragment>}
+<span style={{fontWeight:700,fontSize:15,color:dBenefAffiche>0?C.green:C.red}}>Benef {dBenefAffiche>0?'+':''}{fmtMoney(dBenefAffiche)}</span>
+</div>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:4,fontSize:10}}>
+<div style={{background:'#7c3aed08',borderRadius:6,padding:6,border:'1px solid #7c3aed15'}}>
+<div style={{fontWeight:800,color:'#7c3aed',marginBottom:4,fontSize:11}}>SALAIRE</div>
+<div style={{display:'flex',justifyContent:'space-between'}}><span>Chantier</span><span>{fmtMoney(salChantier)}</span></div>
+<div style={{display:'flex',justifyContent:'space-between'}}><span>Route</span><span>{fmtMoney(totalSalRouteDay)}</span></div>
+{surcoutEmb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Emb.</span><span>{fmtMoney(surcoutEmb)}</span></div>}
+{surcoutDeb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Deb.</span><span>{fmtMoney(surcoutDeb)}</span></div>}
+<div style={{borderTop:'1px solid #7c3aed20',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalSalaire)}</span></div>
+</div>
+<div style={{background:'#d9770608',borderRadius:6,padding:6,border:'1px solid #d9770615'}}>
+<div style={{fontWeight:800,color:'#d97706',marginBottom:4,fontSize:11}}>CARBURANT</div>
+{jobCalcs.map((c2,ci)=>c2.trajL>0?<div key={ci} style={{display:'flex',justifyContent:'space-between'}}><span>Trajet {c2.trajL.toFixed(0)}L</span><span>{fmtMoney(c2.trajCost)}</span></div>:null)}
+{jobCalcs.map((c2,ci)=>c2.machCost>0?<div key={'m'+ci} style={{display:'flex',justifyContent:'space-between'}}><span>Machine {(c2.j.machineFuelL||0)}L</span><span>{fmtMoney(c2.machCost)}</span></div>:null)}
+<div style={{borderTop:'1px solid #d9770620',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalCarbu)}</span></div>
+</div>
+<div style={{background:'#64748b08',borderRadius:6,padding:6,border:'1px solid #64748b15'}}>
+<div style={{fontWeight:800,color:'#64748b',marginBottom:4,fontSize:11}}>FIXES / JOUR</div>
+{jobCalcs.map((c2,ci)=>{const items=[];if(c2.credM>0)items.push(['Cr.mach',c2.credM]);if(c2.assM>0)items.push(['Ass.mach',c2.assM]);if(c2.ctM>0)items.push(['CT mach',c2.ctM]);if(c2.credT>0)items.push(['Cr.cam',c2.credT]);if(c2.assT>0)items.push(['Ass.cam',c2.assT]);if(c2.ctT>0)items.push(['CT cam',c2.ctT]);return items.map(([l,v],ii)=><div key={ci+'_'+ii} style={{display:'flex',justifyContent:'space-between'}}><span>{l}</span><span>{fmtMoney(v)}</span></div>)})}
+<div style={{borderTop:'1px solid #64748b20',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalFixes)}</span></div>
+</div>
+<div style={{borderRadius:6,padding:6,border:'1px solid #64748b15',background:'#f8fafc'}}>
+<div style={{fontWeight:800,color:'#64748b',marginBottom:4,fontSize:11}}>ENTRETIEN</div>
+{dTotalEntretienMach>0&&<div style={{background:machRembourse?'#16a34a08':'#dc262608',borderRadius:4,padding:4,marginBottom:3,border:'1px solid '+(machRembourse?'#16a34a15':'#dc262615')}}>
+<div style={{fontWeight:700,fontSize:9,color:machRembourse?C.green:C.red}}>MACHINE</div>
+<div style={{display:'flex',justifyContent:'space-between'}}><span>{fmtMoney(dTotalEntretienMach)}</span><span style={{color:C.green}}>{fmtMoney(Math.max(0,dTotalEntretienMach-resteMach))}</span></div>
+<div style={{height:4,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginTop:2}}><div style={{height:'100%',width:pctMach.toFixed(0)+'%',background:machRembourse?C.green:C.red,borderRadius:2}}/></div>
+</div>}
+{dTotalEntretienCam>0&&<div style={{background:camRembourse?'#16a34a08':'#dc262608',borderRadius:4,padding:4,border:'1px solid '+(camRembourse?'#16a34a15':'#dc262615')}}>
+<div style={{fontWeight:700,fontSize:9,color:camRembourse?C.green:C.red}}>CAMION</div>
+<div style={{display:'flex',justifyContent:'space-between'}}><span>{fmtMoney(dTotalEntretienCam)}</span><span style={{color:C.green}}>{fmtMoney(Math.max(0,dTotalEntretienCam-resteCam))}</span></div>
+<div style={{height:4,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginTop:2}}><div style={{height:'100%',width:pctCam.toFixed(0)+'%',background:camRembourse?C.green:C.red,borderRadius:2}}/></div>
+</div>}
+{dTotalEntretienMach===0&&dTotalEntretienCam===0&&<div style={{color:C.muted,fontSize:9,fontStyle:'italic'}}>Aucune</div>}
 </div>
 </div>
-{(j.startFrom||j.endAt||j.kmAller>0||j.kmRetour>0)&&(()=>{const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';const arrName=j.endAt==='home'?'Domicile':(getDepot(j.endAt)||{}).name||'';return(<div style={{padding:'4px 10px',background:'#f8fafc',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',borderBottom:'0.5px solid '+C.border}}>
-{depName&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:10,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depName}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
-{arrName&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:10,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrName}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
-</div>)})()}
-<div style={{padding:'4px 10px',background:C.card}}>
-<div style={{display:'flex',alignItems:'center',gap:8}}>
-<div style={{flex:1,height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden'}}>
-<div style={{height:'100%',width:Math.min(Math.max(marginPct,0),100)+'%',background:marginPct>0?C.green:C.red,borderRadius:3,transition:'width .3s'}}/>
-</div>
-<span style={{fontSize:11,fontWeight:800,color:marginPct>0?C.green:C.red,whiteSpace:'nowrap'}}>{marginPct.toFixed(0)}%</span>
-</div>
-</div>
+</div>}
 </div>)})}
-</div>)})}
+</React.Fragment>)})}
 </div>)};
 return(
 <div>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
 <div style={{display:'flex',alignItems:'center',gap:6}}>
 <button onClick={()=>navDate(-1)} style={btnStyle(C.dim)}>{'<'}</button>
-<span style={{fontWeight:700,fontSize:15}}>{fmtDate(new Date(selDate))}</span>
+<span style={{fontWeight:700,fontSize:18}}>{fmtDate(new Date(selDate))}</span>
 <button onClick={()=>navDate(1)} style={btnStyle(C.dim)}>{'>'}</button>
 <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:140,marginLeft:4}}/>
 </div>
@@ -512,7 +494,7 @@ return(
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent}}>{fmtMoney(caTotal)}</span></div>
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>Dispo </span>{availDrivers.map(e=><Bg key={e.id} text={e.name.split(' ')[0]} color={C.orange} style={{marginLeft:4}}/>)}</div>
 </div>
-<div className="pg" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+<div className="pg">
 {renderCol(['Raboteuse'],'Raboteuses')}
 {renderCol(['Balayeuse','Citerne'],'Balayeuses + Citernes')}
 </div>
