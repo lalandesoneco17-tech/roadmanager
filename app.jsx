@@ -479,6 +479,7 @@ return(<React.Fragment>
 </div>
 </div>}
 </div>)})}
+{allMissions.length>0&&<div style={{textAlign:'center',padding:'4px 0'}}><button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'4px 14px',cursor:'pointer',fontSize:14,fontWeight:700}}>+ Chantier</button></div>}
 </React.Fragment>)})}
 {(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.map(m=>{const machJobs=dayJobs.filter(j2=>j2.machineId===m.id&&(!j2.employeeId||!(data.employees||[]).find(e=>e.id===j2.employeeId)));
 const mColor=MC[m.type]||C.accent;
