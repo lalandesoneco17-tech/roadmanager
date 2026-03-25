@@ -421,13 +421,11 @@ return(<React.Fragment>
 <option value="">↙ Arr.</option>{arrOptions2.map(o=><option key={o.id} value={o.id}>{o.name}{o.km!==null?' '+o.km+'km':''}{shortArr&&o.id===shortArr.id?' ★':''}</option>)}
 </select>
 </React.Fragment>)})()}
-<div style={{display:'flex',gap:3,alignItems:'center'}}>
-{(mt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=>(
-<button key={f} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.forfaitType=f;const p=getForfaitPrice(nd,j.clientId,m,f,j.citOption,j.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{padding:'4px 8px',borderRadius:6,fontSize:14,fontWeight:j.forfaitType===f?700:400,border:'2px solid '+(FC[f]||'#ccc'),background:j.forfaitType===f?(FC[f]||C.accent):'transparent',color:j.forfaitType===f?'#fff':(FC[f]||C.dim),cursor:'pointer'}}>{f}</button>))}
+<select value={j.forfaitType||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.forfaitType=e.target.value;const p=getForfaitPrice(nd,j.clientId,m,e.target.value,j.citOption,j.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'2px solid '+(j.forfaitType?FC[j.forfaitType]||C.accent:C.border),background:j.forfaitType?(FC[j.forfaitType]||C.accent)+'15':'#fff',color:j.forfaitType?FC[j.forfaitType]||C.accent:C.dim,fontWeight:j.forfaitType?700:400,minWidth:80}}>
+<option value="">Forfait</option>{(mt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=><option key={f} value={f}>{f}</option>)}
+</select>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'4px 8px',borderRadius:6,fontSize:14,border:'2px solid '+(j.hasTransfer?C.purple:C.muted),background:j.hasTransfer?C.purple+'20':'transparent',color:j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T ✓':'+T'}</button>
-</div>
 <div style={{marginLeft:'auto',display:'flex',gap:4,alignItems:'center'}}>
-<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.sent=!jj.sent;save(nd)}}} style={{padding:'4px 12px',borderRadius:6,fontSize:14,fontWeight:700,background:j.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{j.sent?'✓ Envoyé':'Envoyer'}</button>
 <button onClick={()=>toggleDetail(j.id)} style={{background:'none',border:'2px solid '+C.border,borderRadius:6,fontSize:14,cursor:'pointer',padding:'4px 8px',color:C.dim,fontWeight:600}}>{openDetails[j.id]?'▲':'▼'}</button>
 <button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:C.red,fontWeight:700}}>×</button>
 </div>
