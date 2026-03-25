@@ -377,7 +377,7 @@ return(
 {defMach&&<span style={{fontSize:15,fontWeight:600,color:MC[defMach.type]||C.accent}}>· {defMach.name}</span>}
 <span style={{fontSize:14,color:C.muted}}>— dispo</span>
 <div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const defMach2=getMach(emp.machineId);nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
+<button onClick={()=>{setFormEmpId(eId);setFormJob(null);setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13}}>Depot</button>
 </div>
 </div>)})()}
@@ -406,18 +406,17 @@ return(
 </div>
 </div>
 {/* Ligne 2: chauffeur · machine · client · chef · lieu · envoi */}
-<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+<div onClick={()=>{setFormJob(j);setFormEmpId(j.employeeId);setShowForm(true)}} style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',cursor:'pointer'}}>
 <span style={{fontSize:16,fontWeight:800,color:machColor}}>{emp.name}</span>
 <span style={{fontSize:15,fontWeight:700,color:machColor}}>· {m?m.name:'?'}</span>
-<span style={{fontSize:14,color:C.dim}}>·</span>
-<span onClick={e=>{e.stopPropagation();const v=prompt('Client:',cl?cl.name:'');if(v!==null){const found=(data.clients||[]).find(c=>c.name.toLowerCase().includes(v.toLowerCase()));if(found){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=found.id;save(nd)}}}}} style={{fontSize:15,fontWeight:600,color:C.text,cursor:'pointer',borderBottom:'1px dashed '+C.border}}>{cl?cl.name:'client?'}</span>
-<span onClick={e=>{e.stopPropagation();const v=prompt('Chef chantier:',j.siteManager||'');if(v!==null){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=v;save(nd)}}}} style={{fontSize:14,color:C.dim,cursor:'pointer',borderBottom:'1px dashed '+C.border}}>· {j.siteManager||'chef?'}</span>
-<span onClick={e=>{e.stopPropagation();const v=prompt('Lieu / notes:',j.location||'');if(v!==null){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.location=v;save(nd)}}}} style={{fontSize:14,color:C.dim,cursor:'pointer',borderBottom:'1px dashed '+C.border}}>· {(j.location||'lieu?').slice(0,35)}</span>
-<span onClick={e=>{e.stopPropagation();const v=prompt('Heure debut facturation (HH:MM):',j.billingStart||'08:00');if(v!==null){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.billingStart=v;save(nd)}}}} style={{fontSize:14,fontWeight:700,color:C.orange,cursor:'pointer',borderBottom:'1px dashed '+C.orange+'40'}}>· {j.billingStart||'08:00'}</span>
+<span style={{fontSize:15,fontWeight:600,color:C.text}}>· {cl?cl.name:'?'}</span>
+{j.siteManager&&<span style={{fontSize:14,color:C.dim}}>· {j.siteManager}</span>}
+<span style={{fontSize:14,fontWeight:700,color:C.orange}}>· {j.billingStart||'08:00'}</span>
+{j.location&&<span style={{fontSize:14,color:C.dim}}>· {(j.location||'').slice(0,35)}</span>}
 {j.isNight&&<Bg text="nuit" color={C.purple}/>}
 <div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.sent=!jj.sent;save(nd)}}} style={{padding:'3px 10px',borderRadius:4,fontSize:13,fontWeight:600,background:j.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{j.sent?'✓ Envoye':'Envoyer'}</button>
-<button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ce chantier ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button>
+<button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button>
 </div>
 </div>
 {/* Ligne 3: depart/arrivee · forfaits · details */}
@@ -486,7 +485,7 @@ return(
 <span style={{fontSize:15,fontWeight:700,color:MC[m.type]||C.accent}}>· {m.name}{m.width?' ('+m.width+')':''}</span>
 <span style={{fontSize:14,color:C.muted,fontWeight:600}}>— sans chauffeur</span>
 <div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:'',machineId:m.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
+<button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
 </div>
 </div>))})()}
 </div>)};
@@ -499,7 +498,7 @@ return(
 <button onClick={()=>navDate(1)} style={btnStyle(C.dim)}>{'>'}</button>
 <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:140,marginLeft:4}}/>
 </div>
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:'',machineId:'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={btnStyle(C.accent,true)}>+ Chantier</button>
+<button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={btnStyle(C.accent,true)}>+ Chantier</button>
 </div>
 <div style={{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}}>
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent}}>{fmtMoney(caTotal)}</span></div>
