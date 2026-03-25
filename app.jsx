@@ -1,5 +1,5 @@
 const {useState,useEffect,useRef,useCallback,useMemo}=React;
-const C={bg:'#1e293b',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
+const C={bg:'#334155',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
 const MC={Raboteuse:'#008965',Balayeuse:'#16a34a',Citerne:'#0891b2'};
 const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','Transfert':'#9333ea','Demi-journee':'#d97706','Journee':'#16a34a'};
 const SKEY='roadmanager-v5';
@@ -533,7 +533,7 @@ return(
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
 <div style={{display:'flex',alignItems:'center',gap:6}}>
 <button onClick={()=>navDate(-1)} style={btnStyle(C.dim)}>{'<'}</button>
-<span style={{fontWeight:700,fontSize:18}}>{fmtDate(new Date(selDate))}</span>
+<span style={{fontWeight:700,fontSize:18,color:'#fff'}}>{fmtDate(new Date(selDate))}</span>
 <button onClick={()=>navDate(1)} style={btnStyle(C.dim)}>{'>'}</button>
 <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:140,marginLeft:4}}/>
 </div>
@@ -1549,7 +1549,7 @@ return(
 </div>))}
 <div onClick={onLogout} style={{padding:'8px 12px',cursor:'pointer',color:'#f87171',fontSize:13,marginTop:16,borderTop:'1px solid #334155'}}>Deconnexion</div>
 </div>
-<div className="main" style={{marginLeft:160,padding:20,minHeight:'100vh'}}>
+<div className="main" style={{marginLeft:160,padding:20,minHeight:'100vh',background:C.bg}}>
 {content()}
 </div></div>)};
 
