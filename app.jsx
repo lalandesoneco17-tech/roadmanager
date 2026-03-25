@@ -276,18 +276,17 @@ const renderCol=(types,label)=>{
 const allM=(data.machines||[]).filter(m=>types.includes(m.type));
 const freeM=allM.filter(m=>!usedMachIds.includes(m.id));
 const empIdsWithJobs=dayJobs.filter(j=>{const m=getMach(j.machineId);return m&&types.includes(m.type)}).map(j=>j.employeeId);
-const allEmpIdsWithJobs=new Set(dayJobs.map(j=>j.employeeId));
-const empIds=[...new Set([...(data.employees||[]).filter(e=>{const m=getMach(e.machineId);return m&&types.includes(m.type)&&!allEmpIdsWithJobs.has(e.id)}).map(e=>e.id),...empIdsWithJobs])];
+const defaultEmpIds=(data.employees||[]).filter(e=>{const m=getMach(e.machineId);return m&&types.includes(m.type)}).map(e=>e.id);
+const empIds=[...new Set([...defaultEmpIds,...empIdsWithJobs])];
 return(
 <div>
 <div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
-<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:freeM.length>0?6:0}}>
-<span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:16}}>{label}</span>
-<span style={{fontSize:14,color:C.dim}}>{freeM.length} libre(s)</span>
+<span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:18}}>{label}</span>
 </div>
-{freeM.length>0&&<div style={{display:'flex',flexDirection:'column',gap:3}}>{freeM.map(m=><div key={m.id} style={{fontSize:14,color:MC[m.type]||C.accent,fontWeight:600,padding:'2px 0'}}>• {m.name}{m.width?' ('+m.width+')':''}</div>)}</div>}
-{freeM.length===0&&<div style={{fontSize:14,color:C.muted}}>Toutes occupees</div>}
-</div>
+{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.length>0?<div style={{background:'#fff7ed',borderRadius:8,padding:'8px 14px',marginBottom:10,border:'1px solid #fed7aa'}}>
+<div style={{fontSize:14,fontWeight:700,color:C.orange,marginBottom:4}}>Machines sans chauffeur :</div>
+{unassignedM.map(m=><div key={m.id} style={{fontSize:15,color:MC[m.type]||C.accent,fontWeight:600,padding:'3px 0'}}>• {m.name}{m.width?' ('+m.width+')':''} <span style={{fontSize:12,color:C.muted}}>({m.type})</span></div>)}
+</div>:null})()}
 {empIds.map(eId=>{
 const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;
 const ejAll=dayJobs.filter(j=>j.employeeId===eId&&(j.type==='depot'||types.includes((getMach(j.machineId)||{}).type)));
@@ -376,6 +375,16 @@ return(
 {dj.depotDescription&&<span style={{fontSize:14,color:C.dim}}>({dj.depotDescription})</span>}
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
 </div>)})}
+{allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);return(
+<div style={{background:'#fef2f2',borderRadius:8,marginBottom:8,border:'1px solid #fecaca',borderLeft:'4px solid #ef4444',padding:'8px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+<span style={{fontSize:16,fontWeight:800,color:'#ef4444'}}>{emp.name}</span>
+{defMach&&<span style={{fontSize:15,fontWeight:600,color:MC[defMach.type]||C.accent}}>· {defMach.name}</span>}
+<span style={{fontSize:14,color:'#ef4444',fontWeight:600}}>— repos / dispo</span>
+<div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
+<button onClick={()=>{setFormEmpId(eId);setFormJob(null);setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
+<button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13}}>Depot</button>
+</div>
+</div>)})()}
 {allMissions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const machColor=MC[mt]||C.accent;
 const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
