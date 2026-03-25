@@ -1,5 +1,5 @@
 const {useState,useEffect,useRef,useCallback,useMemo}=React;
-const C={bg:'#64748b',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
+const C={bg:'#1e293b',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
 const MC={Raboteuse:'#008965',Balayeuse:'#16a34a',Citerne:'#0891b2'};
 const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','Transfert':'#9333ea','Demi-journee':'#d97706','Journee':'#16a34a'};
 const SKEY='roadmanager-v5';
