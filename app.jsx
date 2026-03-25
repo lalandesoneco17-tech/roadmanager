@@ -481,8 +481,8 @@ return(<React.Fragment>
 </div>}
 </div>)})}
 </React.Fragment>)})}
-{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.map(m=>{const machJobs=dayJobs.filter(j2=>j2.machineId===m.id&&(!j2.employeeId||!(data.employees||[]).find(e=>e.id===j2.employeeId)));return(
-{(()=>{const mColor=MC[m.type]||C.accent;
+{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.map(m=>{const machJobs=dayJobs.filter(j2=>j2.machineId===m.id&&(!j2.employeeId||!(data.employees||[]).find(e=>e.id===j2.employeeId)));
+const mColor=MC[m.type]||C.accent;
 const createJobForMach=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:'',machineId:m.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return machJobs.length===0?(
 <div key={'um_'+m.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+mColor,padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
@@ -521,7 +521,7 @@ return machJobs.length===0?(
 <button onClick={()=>{if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==mj.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.red}}>×</button>
 </div>
 </div>)})}
-</div>)})()}
+</div>)})})()}
 </div>)};
 return(
 <div>
