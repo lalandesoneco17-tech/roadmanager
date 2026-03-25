@@ -283,15 +283,6 @@ return(
 <div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
 <span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:18}}>{label}</span>
 </div>
-{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id)&&!usedMachIds.includes(m.id));return unassignedM.map(m=>(
-<div key={'um_'+m.id} style={{background:'#fef2f2',borderRadius:8,marginBottom:8,border:'1px solid #fecaca',borderLeft:'4px solid '+(MC[m.type]||C.accent),padding:'8px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-<span style={{fontSize:16,fontWeight:800,color:C.muted}}>?</span>
-<span style={{fontSize:15,fontWeight:700,color:MC[m.type]||C.accent}}>· {m.name}{m.width?' ('+m.width+')':''}</span>
-<span style={{fontSize:14,color:'#ef4444',fontWeight:600}}>— sans chauffeur</span>
-<div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-<button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
-</div>
-</div>))})()}
 {empIds.map(eId=>{
 const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;
 const ejAll=dayJobs.filter(j=>j.employeeId===eId&&(j.type==='depot'||types.includes((getMach(j.machineId)||{}).type)));
@@ -492,6 +483,15 @@ return(
 </div>}
 </div>)})}
 </React.Fragment>)})}
+{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id)&&!usedMachIds.includes(m.id));return unassignedM.map(m=>(
+<div key={'um_'+m.id} style={{background:'#fef2f2',borderRadius:8,marginBottom:8,border:'1px solid #fecaca',borderLeft:'4px solid '+(MC[m.type]||C.accent),padding:'8px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+<span style={{fontSize:16,fontWeight:800,color:C.muted}}>?</span>
+<span style={{fontSize:15,fontWeight:700,color:MC[m.type]||C.accent}}>· {m.name}{m.width?' ('+m.width+')':''}</span>
+<span style={{fontSize:14,color:'#ef4444',fontWeight:600}}>— sans chauffeur</span>
+<div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
+<button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
+</div>
+</div>))})()}
 </div>)};
 return(
 <div>
