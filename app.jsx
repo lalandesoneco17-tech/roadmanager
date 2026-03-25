@@ -405,30 +405,33 @@ return(
 {mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}
 </div>
 </div>
-{/* Ligne 2: chauffeur · machine · client · chef · lieu · envoi */}
-<div onClick={()=>{setFormJob(j);setFormEmpId(j.employeeId);setShowForm(true)}} style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',cursor:'pointer'}}>
-<span style={{fontSize:16,fontWeight:800,color:machColor}}>{emp.name}</span>
-<span style={{fontSize:15,fontWeight:700,color:machColor}}>· {m?m.name:'?'}</span>
-<span style={{fontSize:15,fontWeight:600,color:C.text}}>· {cl?cl.name:'?'}</span>
-{j.siteManager&&<span style={{fontSize:14,color:C.dim}}>· {j.siteManager}</span>}
-<span style={{fontSize:14,fontWeight:700,color:C.orange}}>· {j.billingStart||'08:00'}</span>
-{j.location&&<span style={{fontSize:14,color:C.dim}}>· {(j.location||'').slice(0,35)}</span>}
-{j.isNight&&<Bg text="nuit" color={C.purple}/>}
-<div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
-<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.sent=!jj.sent;save(nd)}}} style={{padding:'3px 10px',borderRadius:4,fontSize:13,fontWeight:600,background:j.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{j.sent?'✓ Envoye':'Envoyer'}</button>
-<button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button>
-</div>
-</div>
-{/* Ligne 3: depart/arrivee · forfaits · details */}
-<div style={{padding:'4px 12px',background:'#f8fafc',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',borderTop:'1px solid '+C.border}}>
-{depName&&<span style={{padding:'2px 10px',borderRadius:10,fontSize:13,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depName}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
-{arrName&&<span style={{padding:'2px 10px',borderRadius:10,fontSize:13,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrName}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
-<div style={{display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
+{/* Ligne 2: chauffeur · machine · client select · chef select · lieu input · gps */}
+<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+<span style={{fontSize:15,fontWeight:800,color:machColor}}>{emp.name} · {m?m.name:'?'}</span>
+<select value={j.clientId||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=e.target.value;const m3=getMach(jj.machineId);if(m3&&jj.forfaitType){const p=getForfaitPrice(nd,e.target.value,m3,jj.forfaitType,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}save(nd)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
+<option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}
+</select>
+<select value={j.siteManager||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===j.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:70,maxWidth:110}}>
+<option value="">Chef</option>{(cl&&cl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}
+</select>
+<input value={j.location||''} placeholder="Lieu" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.location=e.target.value;save(nd)}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:160,background:'#fff'}}/>
+<input value={j.gps||''} placeholder="GPS" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.gps=e.target.value;save(nd)}}} style={{fontSize:11,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,width:100,background:'#fff',color:C.dim}}/>
+<select value={j.startFrom||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.startFrom=e.target.value;save(nd)}}} style={{fontSize:12,padding:'2px 3px',borderRadius:4,border:'1px solid #0891b240',background:'#0891b208',color:'#0891b2',minWidth:60,maxWidth:90}}>
+<option value="">Dep.</option><option value="home">Dom.</option>{(data.depots||[]).map(d2=><option key={d2.id} value={d2.id}>{d2.name}</option>)}
+</select>
+<select value={j.endAt||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.endAt=e.target.value;save(nd)}}} style={{fontSize:12,padding:'2px 3px',borderRadius:4,border:'1px solid #7c3aed40',background:'#7c3aed08',color:'#7c3aed',minWidth:60,maxWidth:90}}>
+<option value="">Arr.</option><option value="home">Dom.</option>{(data.depots||[]).map(d2=><option key={d2.id} value={d2.id}>{d2.name}</option>)}
+</select>
+<div style={{display:'flex',gap:2,alignItems:'center'}}>
 {(mt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=>(
-<button key={f} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.forfaitType=f;const p=getForfaitPrice(nd,j.clientId,m,f,j.citOption,j.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{padding:'2px 8px',borderRadius:4,fontSize:13,fontWeight:j.forfaitType===f?700:400,border:'1px solid '+(FC[f]||'#ccc'),background:j.forfaitType===f?(FC[f]||C.accent):'transparent',color:j.forfaitType===f?'#fff':(FC[f]||C.dim),cursor:'pointer'}}>{f}</button>))}
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'2px 8px',borderRadius:4,fontSize:13,border:'1px solid '+(j.hasTransfer?C.purple:C.muted),background:j.hasTransfer?C.purple+'18':'transparent',color:j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T ok':'+T'}</button>
+<button key={f} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.forfaitType=f;const p=getForfaitPrice(nd,j.clientId,m,f,j.citOption,j.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{padding:'2px 6px',borderRadius:4,fontSize:12,fontWeight:j.forfaitType===f?700:400,border:'1px solid '+(FC[f]||'#ccc'),background:j.forfaitType===f?(FC[f]||C.accent):'transparent',color:j.forfaitType===f?'#fff':(FC[f]||C.dim),cursor:'pointer'}}>{f}</button>))}
+<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'2px 6px',borderRadius:4,fontSize:12,border:'1px solid '+(j.hasTransfer?C.purple:C.muted),background:j.hasTransfer?C.purple+'18':'transparent',color:j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T':'+T'}</button>
 </div>
-<button onClick={e=>{e.stopPropagation();toggleDetail(j.id)}} style={{marginLeft:'auto',background:'none',border:'1px solid '+C.border,borderRadius:4,fontSize:13,cursor:'pointer',padding:'2px 8px',color:C.dim}}>{openDetails[j.id]?'▲ Masquer':'▼ Details'}</button>
+<div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}}>
+<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.sent=!jj.sent;save(nd)}}} style={{padding:'3px 8px',borderRadius:4,fontSize:12,fontWeight:600,background:j.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{j.sent?'✓':'Env.'}</button>
+<button onClick={()=>toggleDetail(j.id)} style={{background:'none',border:'1px solid '+C.border,borderRadius:4,fontSize:12,cursor:'pointer',padding:'2px 6px',color:C.dim}}>{openDetails[j.id]?'▲':'▼'}</button>
+<button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.red}}>×</button>
+</div>
 </div>
 {/* Details panel */}
 {openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
