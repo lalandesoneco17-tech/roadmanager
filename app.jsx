@@ -1,5 +1,5 @@
 const {useState,useEffect,useRef,useCallback,useMemo}=React;
-const C={bg:'#94a3b8',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
+const C={bg:'#64748b',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
 const MC={Raboteuse:'#008965',Balayeuse:'#16a34a',Citerne:'#0891b2'};
 const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','Transfert':'#9333ea','Demi-journee':'#d97706','Journee':'#16a34a'};
 const SKEY='roadmanager-v5';
@@ -375,7 +375,7 @@ return(
 const createJobForEmp=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return(
 <div style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+machColor2,padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
-<span style={{fontSize:15,fontWeight:800,color:machColor2}}>{emp.name}{defMach?' · '+defMach.name:''}</span>
+<span style={{fontSize:15,fontWeight:800}}><span style={{color:C.text}}>{emp.name}</span>{defMach&&<span style={{color:machColor2}}> · {defMach.name}</span>}</span>
 <select value="" onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);nd.jobs=[...(nd.jobs||[]),{id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:nc.id,agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false}];save(nd)}}else if(e.target.value){createJobForEmp('clientId',e.target.value)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
 <option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
@@ -394,7 +394,7 @@ const doCopy=()=>{const msg=buildMsg();navigator.clipboard.writeText(msg).then((
 return(
 <div key={j.id} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+machColor+'40',borderLeft:'6px solid '+machColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)'}}>
 {/* Ligne 1: theo + reel + badges embauche */}
-<div style={{padding:'6px 14px',background:machColor+'08',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:14}}>
+<div style={{padding:'6px 14px',background:C.card,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:14}}>
 <span style={{color:C.dim}}>theo {theoJ?<React.Fragment><b>{theoJ.theoStart}</b>{'→'}<b>{theoJ.theoEnd}</b></React.Fragment>:'--'}</span>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent,fontSize:15}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent,fontSize:15}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}</span>
 {startBadge&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:startBadge.color+'18',color:startBadge.color}}>{startBadge.text}</span>}
@@ -402,7 +402,7 @@ return(
 </div>
 {/* Ligne 2: chauffeur · machine · client select · chef select · lieu input · gps */}
 <div style={{padding:'8px 14px',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-<span style={{fontSize:17,fontWeight:800,color:machColor}}>{emp.name} · {m?m.name:'?'}</span>
+<span style={{fontSize:17,fontWeight:800}}><span style={{color:C.text}}>{emp.name}</span> <span style={{color:machColor}}>· {m?m.name:'?'}</span></span>
 <select value={j.clientId||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=nc.id}save(nd)}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=e.target.value;const m3=getMach(jj.machineId);if(m3&&jj.forfaitType){const p=getForfaitPrice(nd,e.target.value,m3,jj.forfaitType,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:100,maxWidth:150}}>
 <option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
