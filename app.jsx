@@ -371,15 +371,16 @@ return(
 {dj.depotDescription&&<span style={{fontSize:14,color:C.dim}}>({dj.depotDescription})</span>}
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
 </div>)})}
-{allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);return(
-<div style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+C.muted,padding:'8px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-<span style={{fontSize:16,fontWeight:800,color:C.text}}>{emp.name}</span>
-{defMach&&<span style={{fontSize:15,fontWeight:600,color:MC[defMach.type]||C.accent}}>· {defMach.name}</span>}
-<span style={{fontSize:14,color:C.muted}}>— dispo</span>
-<div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-<button onClick={()=>{setFormEmpId(eId);setFormJob(null);setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
-<button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13}}>Depot</button>
-</div>
+{allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);const machColor2=defMach?MC[defMach.type]||C.accent:C.muted;
+const createJobForEmp=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
+return(
+<div style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+machColor2,padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+<span style={{fontSize:15,fontWeight:800,color:machColor2}}>{emp.name}{defMach?' · '+defMach.name:''}</span>
+<select value="" onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);nd.jobs=[...(nd.jobs||[]),{id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:nc.id,agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false}];save(nd)}}else if(e.target.value){createJobForEmp('clientId',e.target.value)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
+<option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
+</select>
+<input placeholder="Lieu" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createJobForEmp('location',e.target.value);e.target.value=''}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
+<button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
 </div>)})()}
 {allMissions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const machColor=MC[mt]||C.accent;
@@ -408,11 +409,11 @@ return(
 {/* Ligne 2: chauffeur · machine · client select · chef select · lieu input · gps */}
 <div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
 <span style={{fontSize:15,fontWeight:800,color:machColor}}>{emp.name} · {m?m.name:'?'}</span>
-<select value={j.clientId||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=e.target.value;const m3=getMach(jj.machineId);if(m3&&jj.forfaitType){const p=getForfaitPrice(nd,e.target.value,m3,jj.forfaitType,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}save(nd)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
-<option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}
+<select value={j.clientId||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=nc.id}save(nd)}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=e.target.value;const m3=getMach(jj.machineId);if(m3&&jj.forfaitType){const p=getForfaitPrice(nd,e.target.value,m3,jj.forfaitType,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}save(nd)}}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
+<option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
-<select value={j.siteManager||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===j.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:70,maxWidth:110}}>
-<option value="">Chef</option>{(cl&&cl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}
+<select value={j.siteManager||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau chef chantier:');if(n){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=n;const cl2=(nd.clients||[]).find(c2=>c2.id===j.clientId);if(cl2){if(!cl2.siteManagers)cl2.siteManagers=[];if(!cl2.siteManagers.find(s=>s.name===n)){const ph=prompt('Tel du chef (optionnel):','')||'';cl2.siteManagers.push({name:n,phone:ph});jj.siteManagerPhone=ph}}save(nd)}}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===j.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:70,maxWidth:110}}>
+<option value="">Chef</option>{(cl&&cl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
 <input value={j.location||''} placeholder="Lieu" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.location=e.target.value;save(nd)}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:160,background:'#fff'}}/>
 <input value={j.gps||''} placeholder="GPS" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.gps=e.target.value;save(nd)}}} style={{fontSize:11,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,width:100,background:'#fff',color:C.dim}}/>
