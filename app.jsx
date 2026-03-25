@@ -392,7 +392,7 @@ const doSMS=()=>{const msg=buildMsg();window.open('sms:'+(j.siteManagerPhone||''
 const doWA=()=>{const msg=buildMsg();const ph=(j.siteManagerPhone||'').replace(/\s/g,'').replace(/^0/,'33');window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msg),'_blank')};
 const doCopy=()=>{const msg=buildMsg();navigator.clipboard.writeText(msg).then(()=>alert('Copie !')).catch(()=>{})};
 return(
-<div key={j.id} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+machColor+'40',borderLeft:'6px solid '+machColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)'}}>
+<div key={j.id} style={{background:j.ack?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(j.ack?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(j.ack?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)'}}>
 {/* Ligne 1: theo + reel + badges embauche */}
 <div style={{padding:'6px 14px',background:C.card,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:14}}>
 <span style={{color:C.dim}}>theo {theoJ?<React.Fragment><b>{theoJ.theoStart}</b>{'→'}<b>{theoJ.theoEnd}</b></React.Fragment>:'--'}</span>
@@ -1184,8 +1184,11 @@ return(
 <button onClick={()=>setEditTE({...t})} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.accent}}>&#9998;</button>
 </div>)})}
 {jbs.map(j=>{const cl=(data.clients||[]).find(c=>c.id===j.clientId);const m=(data.machines||[]).find(x=>x.id===j.machineId);const depN=j.startFrom==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.startFrom)||{}).name||'';const arrN=j.endAt==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.endAt)||{}).name||'';return(
-<div key={j.id} style={{background:C.bg,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(m?MC[m.type]||C.accent:C.muted)}}>
+<div key={j.id} style={{background:j.ack?'#dcfce7':C.card,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(m?MC[m.type]||C.accent:C.muted)}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
 <div style={{fontWeight:700,fontSize:16}}>{cl?cl.name:'?'} {j.agencyName?'- '+j.agencyName:''}</div>
+{!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>}
+</div>
 <div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
 {j.siteManager&&<div style={{color:C.dim,fontSize:14,marginTop:2}}>{j.siteManager} {j.siteManagerPhone&&<a href={'tel:'+j.siteManagerPhone} style={{color:C.accent}}>{j.siteManagerPhone}</a>}</div>}
 {j.location&&<div style={{fontSize:14,marginTop:2}}>{j.gps?<a href={'https://www.google.com/maps?q='+j.gps} target="_blank" rel="noopener" style={{color:C.accent}}>{j.location}</a>:<span style={{color:C.dim}}>{j.location}</span>}</div>}
