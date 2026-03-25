@@ -479,15 +479,30 @@ return(
 </div>}
 </div>)})}
 </React.Fragment>)})}
-{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id)&&!usedMachIds.includes(m.id));return unassignedM.map(m=>(
-<div key={'um_'+m.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+(MC[m.type]||C.accent),padding:'8px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.map(m=>{const machJobs=dayJobs.filter(j2=>j2.machineId===m.id&&(!j2.employeeId||!(data.employees||[]).find(e=>e.id===j2.employeeId)));return(
+<div key={'um_'+m.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+(MC[m.type]||C.accent),overflow:'hidden'}}>
+<div style={{padding:'8px 12px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
 <span style={{fontSize:16,fontWeight:800,color:C.muted}}>?</span>
 <span style={{fontSize:15,fontWeight:700,color:MC[m.type]||C.accent}}>· {m.name}{m.width?' ('+m.width+')':''}</span>
-<span style={{fontSize:14,color:C.muted,fontWeight:600}}>— sans chauffeur</span>
+{machJobs.length===0&&<span style={{fontSize:14,color:C.muted,fontWeight:600}}>— sans chauffeur</span>}
 <div style={{marginLeft:'auto',display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
 <button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button>
 </div>
-</div>))})()}
+</div>
+{machJobs.map(mj=>{const mjCl=getClient(mj.clientId);const mjDep=mj.startFrom==='home'?'Dom.':(getDepot(mj.startFrom)||{}).name||'';const mjArr=mj.endAt==='home'?'Dom.':(getDepot(mj.endAt)||{}).name||'';return(
+<div key={mj.id} onClick={()=>{setFormJob(mj);setFormEmpId(mj.employeeId||'');setShowForm(true)}} style={{padding:'5px 12px',borderTop:'1px solid '+C.border,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',cursor:'pointer',background:'#f8fafc'}}>
+<span style={{fontSize:15,fontWeight:600,color:C.text}}>{mjCl?mjCl.name:'client?'}</span>
+{mj.siteManager&&<span style={{fontSize:14,color:C.dim}}>· {mj.siteManager}</span>}
+<span style={{fontSize:14,fontWeight:700,color:C.orange}}>· {mj.billingStart||'08:00'}</span>
+{mj.location&&<span style={{fontSize:14,color:C.dim}}>· {(mj.location||'').slice(0,30)}</span>}
+{mjDep&&<span style={{fontSize:12,color:'#0891b2'}}>↗{mjDep}</span>}
+{mjArr&&<span style={{fontSize:12,color:'#7c3aed'}}>↙{mjArr}</span>}
+<div style={{marginLeft:'auto',display:'flex',gap:3}} onClick={e=>e.stopPropagation()}>
+<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.sent=!jj.sent;save(nd)}}} style={{padding:'2px 8px',borderRadius:4,fontSize:12,fontWeight:600,background:mj.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{mj.sent?'✓':'Env.'}</button>
+<button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==mj.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.red}}>×</button>
+</div>
+</div>)})}
+</div>)})})()}
 </div>)};
 return(
 <div>
