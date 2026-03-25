@@ -383,25 +383,29 @@ return(
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
 </div>)})()}
 {(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map(grp=>{const machColor=MC[grp.mt]||C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
-<div key={eId+'_'+(grp.m?grp.m.id:'none')} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)'}}>
-{/* Header: theo/reel + nom chauffeur + machine */}
-<div style={{padding:'6px 14px',background:allAck?'#dcfce7':C.card,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:14}}>
-<span style={{color:C.dim}}>theo {(()=>{const th0=grp.missions[0]?calcTheoreticalTimes(grp.missions[0].j,data,pMinGlobal):null;return th0?<React.Fragment><b>{th0.theoStart}</b>{'→'}<b>{th0.theoEnd}</b></React.Fragment>:'--'})()}</span>
-<span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent,fontSize:15}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent,fontSize:15}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}</span>
-{startBadge&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:startBadge.color+'18',color:startBadge.color}}>{startBadge.text}</span>}
-{endBadge&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:endBadge.color+'18',color:endBadge.color}}>{endBadge.text}</span>}
-</div>
-<div style={{padding:'8px 14px',textAlign:'center',borderBottom:'1px solid '+C.border,display:'flex',justifyContent:'center',alignItems:'center',gap:8}}>
-<span style={{fontSize:17,fontWeight:800}}><span style={{color:C.text}}>{emp.name}</span> <span style={{color:machColor}}>· {grp.m?grp.m.name:'?'}</span></span>
+<div key={eId+'_'+(grp.m?grp.m.id:'none')} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
+{/* Côté gauche: nom + machine centré verticalement */}
+<div style={{minWidth:90,maxWidth:110,padding:'10px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4}}>
+<div style={{fontSize:15,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
+<div style={{fontSize:13,fontWeight:700,color:machColor,textAlign:'center'}}>{grp.m?grp.m.name:'?'}</div>
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:grp.m?grp.m.id:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:4,width:22,height:22,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'20px',padding:0}}>+</button>
+</div>
+{/* Côté droit: lignes de chantiers */}
+<div style={{flex:1,minWidth:0}}>
+{/* Ligne heures */}
+<div style={{padding:'4px 10px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:13}}>
+<span style={{color:C.dim}}>theo {(()=>{const th0=grp.missions[0]?calcTheoreticalTimes(grp.missions[0].j,data,pMinGlobal):null;return th0?<React.Fragment><b>{th0.theoStart}</b>{'→'}<b>{th0.theoEnd}</b></React.Fragment>:'--'})()}</span>
+<span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}</span>
+{startBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:startBadge.color+'18',color:startBadge.color}}>{startBadge.text}</span>}
+{endBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:endBadge.color+'18',color:endBadge.color}}>{endBadge.text}</span>}
 </div>
 {grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
 const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';
 const arrName=j.endAt==='home'?'Domicile':(getDepot(j.endAt)||{}).name||'';
 return(
-<div key={j.id} style={{borderBottom:'1px solid '+C.border,background:j.ack?(allAck?'#dcfce7':'#dcfce7'):C.card}}>
-<div style={{padding:'6px 14px',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+<div key={j.id} style={{borderBottom:'1px solid '+C.border,background:j.ack?'#dcfce7':C.card}}>
+<div style={{padding:'6px 10px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
 <select value={j.clientId||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=nc.id}save(nd)}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=e.target.value;const m3=getMach(jj.machineId);if(m3&&jj.forfaitType){const p=getForfaitPrice(nd,e.target.value,m3,jj.forfaitType,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:100,maxWidth:150}}>
 <option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
@@ -478,6 +482,7 @@ return(<React.Fragment>
 </div>
 </div>}
 </div>)})}
+</div>
 </div>)})})()}
 </React.Fragment>)})}
 {(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.map(m=>{const machJobs=dayJobs.filter(j2=>j2.machineId===m.id&&(!j2.employeeId||!(data.employees||[]).find(e=>e.id===j2.employeeId)));
