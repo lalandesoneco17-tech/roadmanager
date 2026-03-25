@@ -382,28 +382,26 @@ return(
 <input placeholder="Lieu" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createJobForEmp('location',e.target.value);e.target.value=''}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
 </div>)})()}
-{allMissions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
-const machColor=MC[mt]||C.accent;
-const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
-const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';
-const arrName=j.endAt==='home'?'Domicile':(getDepot(j.endAt)||{}).name||'';
-const buildMsg=()=>{const cn=cl?cl.name:'';const ag=j.agencyName||'';const chauffeur=emp.name;const machineName=m?m.name:'';return'Bonjour,\n\nConfirmation mission '+cn+(ag?' - '+ag:'')+':\n\n\ud83d\udc77 Chauffeur : '+chauffeur+'\n\u2699\ufe0f Machine : '+machineName+'\n\ud83d\udd50 Debut : '+j.billingStart+'\n\ud83d\udccd Lieu : '+(j.location||'')+'\n\ud83d\uddfa\ufe0f GPS : https://google.com/maps/dir/?api=1&destination='+(j.gps||'')+'\n\nMerci de confirmer.\nCordialement'};
-const doSMS=()=>{const msg=buildMsg();window.open('sms:'+(j.siteManagerPhone||'')+'?body='+encodeURIComponent(msg))};
-const doWA=()=>{const msg=buildMsg();const ph=(j.siteManagerPhone||'').replace(/\s/g,'').replace(/^0/,'33');window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msg),'_blank')};
-const doCopy=()=>{const msg=buildMsg();navigator.clipboard.writeText(msg).then(()=>alert('Copie !')).catch(()=>{})};
-return(
-<div key={j.id} style={{background:j.ack?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(j.ack?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(j.ack?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)'}}>
-{/* Ligne 1: theo + reel + badges embauche */}
-<div style={{padding:'6px 14px',background:C.card,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:14}}>
-<span style={{color:C.dim}}>theo {theoJ?<React.Fragment><b>{theoJ.theoStart}</b>{'→'}<b>{theoJ.theoEnd}</b></React.Fragment>:'--'}</span>
+{(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map(grp=>{const machColor=MC[grp.mt]||C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
+<div key={eId+'_'+(grp.m?grp.m.id:'none')} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)'}}>
+{/* Header: theo/reel + nom chauffeur + machine */}
+<div style={{padding:'6px 14px',background:allAck?'#dcfce7':C.card,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:14}}>
+<span style={{color:C.dim}}>theo {(()=>{const th0=grp.missions[0]?calcTheoreticalTimes(grp.missions[0].j,data,pMinGlobal):null;return th0?<React.Fragment><b>{th0.theoStart}</b>{'→'}<b>{th0.theoEnd}</b></React.Fragment>:'--'})()}</span>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent,fontSize:15}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent,fontSize:15}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}</span>
 {startBadge&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:startBadge.color+'18',color:startBadge.color}}>{startBadge.text}</span>}
 {endBadge&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:endBadge.color+'18',color:endBadge.color}}>{endBadge.text}</span>}
 </div>
-{/* Ligne 2: chauffeur · machine · client select · chef select · lieu input · gps */}
-<div style={{padding:'8px 14px',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-<span style={{fontSize:17,fontWeight:800}}><span style={{color:C.text}}>{emp.name}</span> <span style={{color:machColor}}>· {m?m.name:'?'}</span></span>
-{allMissions.length>0&&<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:4,width:20,height:20,cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:'18px',padding:0}}>+</button>}
+<div style={{padding:'8px 14px',textAlign:'center',borderBottom:'1px solid '+C.border,display:'flex',justifyContent:'center',alignItems:'center',gap:8}}>
+<span style={{fontSize:17,fontWeight:800}}><span style={{color:C.text}}>{emp.name}</span> <span style={{color:machColor}}>· {grp.m?grp.m.name:'?'}</span></span>
+<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:grp.m?grp.m.id:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:4,width:22,height:22,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'20px',padding:0}}>+</button>
+</div>
+{grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
+const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
+const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';
+const arrName=j.endAt==='home'?'Domicile':(getDepot(j.endAt)||{}).name||'';
+return(
+<div key={j.id} style={{borderBottom:'1px solid '+C.border,background:j.ack?(allAck?'#dcfce7':'#dcfce7'):C.card}}>
+<div style={{padding:'6px 14px',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
 <select value={j.clientId||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=nc.id}save(nd)}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.clientId=e.target.value;const m3=getMach(jj.machineId);if(m3&&jj.forfaitType){const p=getForfaitPrice(nd,e.target.value,m3,jj.forfaitType,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:100,maxWidth:150}}>
 <option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
@@ -480,6 +478,7 @@ return(<React.Fragment>
 </div>
 </div>}
 </div>)})}
+</div>)})})()}
 </React.Fragment>)})}
 {(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.map(m=>{const machJobs=dayJobs.filter(j2=>j2.machineId===m.id&&(!j2.employeeId||!(data.employees||[]).find(e=>e.id===j2.employeeId)));
 const mColor=MC[m.type]||C.accent;
