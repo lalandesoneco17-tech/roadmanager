@@ -485,7 +485,10 @@ const mColor=MC[m.type]||C.accent;
 const createJobForMach=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:'',machineId:m.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return machJobs.length===0?(
 <div key={'um_'+m.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+mColor,padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
-<span style={{fontSize:15,fontWeight:800,color:mColor}}>? · {m.name}{m.width?' ('+m.width+')':''}</span>
+<select value="" onChange={e=>{if(e.target.value){const nd=JSON.parse(JSON.stringify(data));const emp2=nd.employees.find(x=>x.id===e.target.value);if(emp2){emp2.machineId=m.id}save(nd)}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'2px solid '+mColor+'40',background:mColor+'08',color:mColor,fontWeight:700,minWidth:80,maxWidth:130}}>
+<option value="">Chauffeur</option>{(data.employees||[]).filter(e2=>!e2.machineId||e2.machineId===m.id).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}
+</select>
+<span style={{fontSize:15,fontWeight:800,color:mColor}}>· {m.name}{m.width?' ('+m.width+')':''}</span>
 <select value="" onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:'',machineId:m.id,clientId:nc.id,agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}}else if(e.target.value){createJobForMach('clientId',e.target.value)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
 <option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
@@ -495,7 +498,10 @@ return machJobs.length===0?(
 <div key={'um_'+m.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+mColor,overflow:'hidden'}}>
 {machJobs.map((mj,mji)=>{const mjCl=getClient(mj.clientId);return(
 <div key={mj.id} style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',borderTop:mji>0?'1px solid '+C.border:'none'}}>
-<span style={{fontSize:15,fontWeight:800,color:mColor}}>? · {m.name}</span>
+<select value={mj.employeeId||''} onChange={e2=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.employeeId=e2.target.value;const emp2=(nd.employees||[]).find(x=>x.id===e2.target.value);if(emp2){emp2.machineId=m.id}save(nd)}}} style={{fontSize:14,padding:'3px 5px',borderRadius:6,border:'2px solid '+mColor+'40',background:mColor+'08',color:mColor,fontWeight:700,minWidth:70,maxWidth:120}}>
+<option value="">Chauff.</option>{(data.employees||[]).map(e3=><option key={e3.id} value={e3.id}>{e3.name}</option>)}
+</select>
+<span style={{fontSize:15,fontWeight:800,color:mColor}}>· {m.name}</span>
 <select value={mj.clientId||''} onChange={e2=>{if(e2.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const jj=nd.jobs.find(x=>x.id===mj.id);if(jj)jj.clientId=nc.id;save(nd)}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.clientId=e2.target.value;save(nd)}}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
 <option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
