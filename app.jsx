@@ -1058,6 +1058,7 @@ const[panneEquipType,setPanneEquipType]=useState('machine');
 const[panneSev,setPanneSev]=useState('normal');
 const[panneDesc,setPanneDesc]=useState('');
 const[showTakePart,setShowTakePart]=useState(false);
+const[takePartType,setTakePartType]=useState('');
 const[takePartId,setTakePartId]=useState('');
 const[takePartQte,setTakePartQte]=useState(1);
 const[takePartReason,setTakePartReason]=useState('');
@@ -1066,7 +1067,7 @@ const submitPanne=()=>{if(!panneEquip||!panneDesc){alert('Equipement et descript
 const[takePartEquip,setTakePartEquip]=useState('');
 const empMachines=useMemo(()=>{const today2=fmtDateISO(new Date());const todayJobs=(data.jobs||[]).filter(j=>j.employeeId===empId&&j.date===today2);const machIds=[...new Set(todayJobs.map(j=>j.machineId).filter(Boolean))];const truckId=emp?emp.truckId:null;return[...machIds.map(id=>{const m=(data.machines||[]).find(x=>x.id===id);return m?{id:m.id,name:m.name,t:'machine'}:null}).filter(Boolean),...(truckId?[{id:truckId,name:((data.trucks||[]).find(t=>t.id===truckId)||{}).name||'Camion',t:'camion'}]:[])]},[data,empId,emp]);
 const availPartsForEmp=useMemo(()=>(data.parts||[]).filter(p=>p.quantity>0&&(!takePartEquip||(p.compatibleWith||[]).length===0||(p.compatibleWith||[]).includes(takePartEquip))),[data.parts,takePartEquip]);
-const submitTakePart=()=>{if(!takePartId){alert('Choisir une piece');return}const nd=JSON.parse(JSON.stringify(data));const part=(nd.parts||[]).find(p=>p.id===takePartId);if(!part){alert('Piece non trouvee');return}if(part.quantity<takePartQte){alert('Stock insuffisant (dispo: '+part.quantity+')');return}part.quantity-=takePartQte;if(!part.history)part.history=[];part.history.unshift({type:'out',quantity:takePartQte,date:fmtDateISO(new Date()),reason:takePartReason||'Prise par chauffeur',by:empId});part.history=part.history.slice(0,50);if(!nd.interventions)nd.interventions=[];const eq=takePartEquip?allEquipEmp.find(x=>x.id===takePartEquip):null;const inter={id:uid(),date:fmtDateISO(new Date()),type:'changement_piece',description:'Piece prise par '+(emp?emp.name:'chauffeur')+': '+part.name+(takePartReason?' - '+takePartReason:''),employeeId:empId,partsUsed:[{partId:part.id,partName:part.name,quantity:takePartQte,unitPrice:part.unitPrice,totalPrice:takePartQte*part.unitPrice}],laborHours:0,laborCost:0,totalCost:takePartQte*part.unitPrice,status:'done',notes:'Auto-cree depuis espace chauffeur'};if(eq){if(eq.t==='machine')inter.machineId=eq.id;else if(eq.t==='camion')inter.truckId=eq.id;else inter.carId=eq.id}nd.interventions.push(inter);save(nd);setShowTakePart(false);setTakePartId('');setTakePartQte(1);setTakePartReason('');setTakePartEquip('');alert('Piece prise du stock !')};
+const submitTakePart=()=>{if(!takePartId){alert('Choisir une piece');return}const nd=JSON.parse(JSON.stringify(data));const part=(nd.parts||[]).find(p=>p.id===takePartId);if(!part){alert('Piece non trouvee');return}if(part.quantity<takePartQte){alert('Stock insuffisant (dispo: '+part.quantity+')');return}part.quantity-=takePartQte;if(!part.history)part.history=[];part.history.unshift({type:'out',quantity:takePartQte,date:fmtDateISO(new Date()),reason:takePartReason||'Prise par chauffeur',by:empId});part.history=part.history.slice(0,50);if(!nd.interventions)nd.interventions=[];const eq=takePartEquip?allEquipEmp.find(x=>x.id===takePartEquip):null;const inter={id:uid(),date:fmtDateISO(new Date()),type:'changement_piece',description:'Piece prise par '+(emp?emp.name:'chauffeur')+': '+part.name+(takePartReason?' - '+takePartReason:''),employeeId:empId,partsUsed:[{partId:part.id,partName:part.name,quantity:takePartQte,unitPrice:part.unitPrice,totalPrice:takePartQte*part.unitPrice}],laborHours:0,laborCost:0,totalCost:takePartQte*part.unitPrice,status:'done',notes:'Auto-cree depuis espace chauffeur'};if(eq){if(eq.t==='machine')inter.machineId=eq.id;else if(eq.t==='camion')inter.truckId=eq.id;else inter.carId=eq.id}nd.interventions.push(inter);save(nd);setShowTakePart(false);setTakePartId('');setTakePartQte(1);setTakePartReason('');setTakePartEquip('');setTakePartType('');alert('Piece prise du stock !')};
 const today=fmtDateISO(new Date());
 const dayEntries=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date===today);
 const lastEntry=dayEntries[dayEntries.length-1];
@@ -1154,10 +1155,15 @@ return(
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitPanne} style={btnStyle(C.red,true)}>Envoyer</button><button onClick={()=>setShowPanne(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
 {showTakePart&&<Mod title="Prendre une piece" onClose={()=>setShowTakePart(false)}>
-<Fl label="Equipement concerne"><select style={inputStyle} value={takePartEquip} onChange={e=>{setTakePartEquip(e.target.value);setTakePartId('')}}><option value="">-- Tous equipements --</option>{empMachines.map(eq=><option key={eq.id} value={eq.id}>({eq.t}) {eq.name}</option>)}</select></Fl>
-<Fl label="Piece"><select style={inputStyle} value={takePartId} onChange={e=>setTakePartId(e.target.value)}><option value="">--</option>{availPartsForEmp.map(p=><option key={p.id} value={p.id}>{p.name} ({p.category}) - stock: {p.quantity}</option>)}</select></Fl>
-<Fl label="Quantite"><input type="number" style={inputStyle} min="1" value={takePartQte} onChange={e=>setTakePartQte(Number(e.target.value)||1)}/></Fl>
-<Fl label="Raison"><input style={inputStyle} value={takePartReason} onChange={e=>setTakePartReason(e.target.value)} placeholder="Remplacement, reparation..."/></Fl>
+<Fl label="Type de machine"><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+{['Raboteuse','Balayeuse','Citerne'].map(t=><button key={t} onClick={()=>{setTakePartType(t);setTakePartEquip('');setTakePartId('')}} style={{...btnStyle(MC[t]||C.accent,takePartType===t),padding:'8px 16px',fontSize:15}}>{t}</button>)}
+</div></Fl>
+{takePartType&&<Fl label={takePartType+' - choisir'}><select style={inputStyle} value={takePartEquip} onChange={e=>{setTakePartEquip(e.target.value);setTakePartId('')}}>
+<option value="">-- Choisir --</option>{(data.machines||[]).filter(mx=>mx.type===takePartType).map(mx=><option key={mx.id} value={mx.id}>{mx.name}</option>)}
+</select></Fl>}
+{takePartEquip&&<Fl label="Piece"><select style={inputStyle} value={takePartId} onChange={e=>setTakePartId(e.target.value)}><option value="">--</option>{availPartsForEmp.map(p=><option key={p.id} value={p.id}>{p.name} ({p.category}) - stock: {p.quantity}</option>)}</select></Fl>}
+{takePartEquip&&<Fl label="Quantite"><input type="number" style={inputStyle} min="1" value={takePartQte} onChange={e=>setTakePartQte(Number(e.target.value)||1)}/></Fl>}
+{takePartEquip&&<Fl label="Raison"><input style={inputStyle} value={takePartReason} onChange={e=>setTakePartReason(e.target.value)} placeholder="Remplacement, reparation..."/></Fl>}
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitTakePart} style={btnStyle(C.cyan,true)}>Confirmer</button><button onClick={()=>setShowTakePart(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
 <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap'}}>
