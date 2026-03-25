@@ -1088,7 +1088,7 @@ return(
 <div style={{width:40,height:40,borderRadius:'50%',background:'#fff3',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:18}}>{(emp.name||'?')[0].toUpperCase()}</div>
 <div><div style={{fontWeight:700,fontSize:18}}>{emp.name}</div><div style={{fontSize:14,opacity:.8}}>Espace chauffeur</div></div>
 </div>
-<button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button>
+<div style={{display:'flex',gap:6}}><button onClick={()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>↻</button><button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button></div>
 </div>
 <div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginBottom:16}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
@@ -1408,7 +1408,7 @@ return(
 <div style={{width:40,height:40,borderRadius:'50%',background:'#fff3',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:18}}>{(emp.name||'?')[0].toUpperCase()}</div>
 <div><div style={{fontWeight:700,fontSize:18}}>{emp.name}</div><div style={{fontSize:14,opacity:.8}}>Espace mecanicien</div></div>
 </div>
-<button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button>
+<div style={{display:'flex',gap:6}}><button onClick={()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>↻</button><button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button></div>
 </div>
 <div style={{display:'flex',gap:6,marginBottom:16}}>
 <button onClick={()=>setPg('stock')} style={btnStyle('#475569',pg==='stock')}>Stock pieces</button>
@@ -1548,12 +1548,14 @@ return(
 
 // ======== APP ROOT ========
 const App=()=>{
-const[screen,setScreen]=useState('login');const[data,setData]=useState(null);const[empId,setEmpId]=useState(null);
+const savedSession=(()=>{try{const s=localStorage.getItem('rm-session');return s?JSON.parse(s):null}catch(e){return null}})();
+const[screen,setScreen]=useState(savedSession?savedSession.screen:'login');const[data,setData]=useState(null);const[empId,setEmpId]=useState(savedSession?savedSession.empId:null);
 const savingRef=useRef(false);
+useEffect(()=>{try{localStorage.setItem('rm-session',JSON.stringify({screen,empId}))}catch(e){}},[screen,empId]);
 useEffect(()=>{loadData().then(d=>setData(d));const unsub=subscribeToChanges((nd)=>{if(!savingRef.current)setData(nd)});return()=>unsub()},[]);
 const doSave=useCallback(async nd=>{savingRef.current=true;setData(nd);await saveData(nd);setTimeout(()=>{savingRef.current=false},2000)},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
-const onLogout=()=>{setScreen('login');setEmpId(null)};
+const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
 if(!data)return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh'}}><div style={{fontSize:48}}>&#128679;</div></div>);
 if(screen==='login')return(<LoginScreen data={data} onLogin={onLogin}/>);
 if(screen==='mechanic')return(<MechanicView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
