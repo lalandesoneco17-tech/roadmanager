@@ -252,6 +252,7 @@ const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
 const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});
+const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
 const[depotFormEmpId,setDepotFormEmpId]=useState('');
 const[depotFormDepotId,setDepotFormDepotId]=useState('');
 const[depotFormActivity,setDepotFormActivity]=useState(DEPOT_ACTIVITIES[0]);
@@ -277,13 +278,38 @@ const allM=(data.machines||[]).filter(m=>types.includes(m.type));
 const freeM=allM.filter(m=>!usedMachIds.includes(m.id));
 const empIdsWithJobs=dayJobs.filter(j=>{const m=getMach(j.machineId);return m&&types.includes(m.type)}).map(j=>j.employeeId);
 const defaultEmpIds=(data.employees||[]).filter(e=>{const m=getMach(e.machineId);return m&&types.includes(m.type)}).map(e=>e.id);
-const empIds=[...new Set([...defaultEmpIds,...empIdsWithJobs])];
+const empIdsRaw=[...new Set([...defaultEmpIds,...empIdsWithJobs])];
+const orderKey=selDate+'_'+types.join(',');
+const savedOrder=(data.cardOrder||{})[orderKey]||[];
+const empIds=[...empIdsRaw].sort((a,b)=>{const ia=savedOrder.indexOf(a);const ib=savedOrder.indexOf(b);if(ia===-1&&ib===-1)return 0;if(ia===-1)return 1;if(ib===-1)return-1;return ia-ib});
+const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));
+const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));
+const unassignedOrder=(data.cardOrder||{})[orderKey+'_u']||[];
+const allCardIds=[...empIds.map(id=>'e_'+id),...unassignedM.map(m=>'m_'+m.id)];
+const savedAllOrder=(data.cardOrder||{})[orderKey+'_all']||[];
+const sortedCards=allCardIds.sort((a,b)=>{const ia=savedAllOrder.indexOf(a);const ib=savedAllOrder.indexOf(b);if(ia===-1&&ib===-1)return 0;if(ia===-1)return 1;if(ib===-1)return-1;return ia-ib});
+const onDragStart=(e,cardId)=>{setDragId(cardId);e.dataTransfer.effectAllowed='move'};
+const onDragOver=(e,cardId)=>{e.preventDefault();if(cardId!==dragId)setDragOverId(cardId)};
+const onDragEnd=()=>{if(dragId&&dragOverId&&dragId!==dragOverId){const newOrder=[...sortedCards];const fromIdx=newOrder.indexOf(dragId);const toIdx=newOrder.indexOf(dragOverId);if(fromIdx>=0&&toIdx>=0){newOrder.splice(fromIdx,1);newOrder.splice(toIdx,0,dragId);const nd=JSON.parse(JSON.stringify(data));if(!nd.cardOrder)nd.cardOrder={};nd.cardOrder[orderKey+'_all']=newOrder;save(nd)}}setDragId(null);setDragOverId(null)};
 return(
 <div>
 <div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
 <span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:18}}>{label}</span>
 </div>
-{empIds.map(eId=>{
+{sortedCards.map(cardId=>{
+if(cardId.startsWith('m_')){
+const mId=cardId.slice(2);const um=allM.find(x=>x.id===mId);if(!um||assignedMachIds.has(um.id)||usedMachIds.includes(um.id))return null;
+return(<div key={cardId} draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':MC[um.type]+'40'),borderLeft:'6px solid '+(MC[um.type]||C.accent),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
+<div style={{minWidth:90,maxWidth:110,padding:'10px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(MC[um.type]||C.accent)+'20',background:(MC[um.type]||C.accent)+'08',gap:4}}>
+<select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:4,padding:'2px 4px',background:'#fff',width:'100%',textAlign:'center'}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(data));const emp2=nd.employees.find(x=>x.id===e2.target.value);if(emp2){emp2.machineId=um.id;save(nd)}}}><option value="">?</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
+<div style={{fontSize:13,fontWeight:700,color:MC[um.type]||C.accent,textAlign:'center'}}>{um.name}</div>
+</div>
+<div style={{flex:1,minWidth:0,padding:'10px 14px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+<span style={{fontSize:14,color:'#ef4444',fontWeight:600}}>Sans chauffeur</span>
+<div style={{marginLeft:'auto'}}><button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button></div>
+</div>
+</div>)}
+const eId=cardId.slice(2);
 const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;
 const ejAll=dayJobs.filter(j=>j.employeeId===eId&&(j.type==='depot'||types.includes((getMach(j.machineId)||{}).type)));
 const ej=ejAll.filter(j=>j.type!=='depot');
@@ -383,7 +409,7 @@ return(
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
 </div>)})()}
 {(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map(grp=>{const machColor=MC[grp.mt]||C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
-<div key={eId+'_'+(grp.m?grp.m.id:'none')} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
+<div key={eId+'_'+(grp.m?grp.m.id:'none')} draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragOver={e2=>onDragOver(e2,cardId)} onDragEnd={onDragEnd} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 {/* Côté gauche: nom + machine centré verticalement */}
 <div style={{minWidth:90,maxWidth:110,padding:'10px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4}}>
 <div style={{fontSize:15,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
@@ -485,53 +511,6 @@ return(<React.Fragment>
 </div>
 </div>)})})()}
 </React.Fragment>)})}
-{(()=>{const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));return unassignedM.map(m=>{const machJobs=dayJobs.filter(j2=>j2.machineId===m.id&&(!j2.employeeId||!(data.employees||[]).find(e=>e.id===j2.employeeId)));
-const mColor=MC[m.type]||C.accent;
-const createJobForMach=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:'',machineId:m.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
-return machJobs.length===0?(
-<div key={'um_'+m.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+mColor,padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
-<select value="" onChange={e=>{if(e.target.value){const nd=JSON.parse(JSON.stringify(data));const emp2=nd.employees.find(x=>x.id===e.target.value);if(emp2){emp2.machineId=m.id}save(nd)}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'2px solid '+mColor+'40',background:mColor+'08',color:mColor,fontWeight:700,minWidth:80,maxWidth:130}}>
-<option value="">Chauffeur</option>{(data.employees||[]).filter(e2=>!e2.machineId||e2.machineId===m.id).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}
-</select>
-<span style={{fontSize:15,fontWeight:800,color:mColor}}>· {m.name}{m.width?' ('+m.width+')':''}</span>
-<select value="" onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:'',machineId:m.id,clientId:nc.id,agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}}else if(e.target.value){createJobForMach('clientId',e.target.value)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
-<option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
-</select>
-<input placeholder="Lieu" onKeyDown={e2=>{if(e2.key==='Enter'&&e2.target.value){createJobForMach('location',e2.target.value);e2.target.value=''}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
-</div>
-):(
-<div key={'um_'+m.id} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+mColor,overflow:'hidden'}}>
-{machJobs.map((mj,mji)=>{const mjCl=getClient(mj.clientId);return(
-<div key={mj.id} style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',borderTop:mji>0?'1px solid '+C.border:'none'}}>
-<select value={mj.employeeId||''} onChange={e2=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.employeeId=e2.target.value;const emp2=(nd.employees||[]).find(x=>x.id===e2.target.value);if(emp2){emp2.machineId=m.id}save(nd)}}} style={{fontSize:14,padding:'3px 5px',borderRadius:6,border:'2px solid '+mColor+'40',background:mColor+'08',color:mColor,fontWeight:700,minWidth:70,maxWidth:120}}>
-<option value="">Chauff.</option>{(data.employees||[]).map(e3=><option key={e3.id} value={e3.id}>{e3.name}</option>)}
-</select>
-<span style={{fontSize:15,fontWeight:800,color:mColor}}>· {m.name}</span>
-<select value={mj.clientId||''} onChange={e2=>{if(e2.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const jj=nd.jobs.find(x=>x.id===mj.id);if(jj)jj.clientId=nc.id;save(nd)}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.clientId=e2.target.value;save(nd)}}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
-<option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
-</select>
-<select value={mj.siteManager||''} onChange={e2=>{if(e2.target.value==='__new__'){const n=prompt('Nouveau chef:');if(n){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.siteManager=n;const cl2=(nd.clients||[]).find(c2=>c2.id===mj.clientId);if(cl2){if(!cl2.siteManagers)cl2.siteManagers=[];if(!cl2.siteManagers.find(s=>s.name===n)){const ph=prompt('Tel (optionnel):','')||'';cl2.siteManagers.push({name:n,phone:ph});jj.siteManagerPhone=ph}}save(nd)}}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.siteManager=e2.target.value;save(nd)}}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:70,maxWidth:110}}>
-<option value="">Chef</option>{(mjCl&&mjCl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}<option value="__new__">+ Nouveau...</option>
-</select>
-<input value={mj.location||''} placeholder="Lieu" onChange={e2=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.location=e2.target.value;save(nd)}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
-<input value={mj.gps||''} placeholder="GPS" onChange={e2=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.gps=e2.target.value;save(nd)}}} style={{fontSize:11,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,width:90,background:'#fff',color:C.dim}}/>
-<select value={mj.startFrom||''} onChange={e2=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.startFrom=e2.target.value;save(nd)}}} style={{fontSize:12,padding:'2px 3px',borderRadius:4,border:'1px solid #0891b240',background:'#0891b208',color:'#0891b2',minWidth:60}}>
-<option value="">↗Dep.</option><option value="home">Dom.</option>{(data.depots||[]).map(d2=><option key={d2.id} value={d2.id}>{d2.name}</option>)}
-</select>
-<select value={mj.endAt||''} onChange={e2=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.endAt=e2.target.value;save(nd)}}} style={{fontSize:12,padding:'2px 3px',borderRadius:4,border:'1px solid #7c3aed40',background:'#7c3aed08',color:'#7c3aed',minWidth:60}}>
-<option value="">↙Arr.</option><option value="home">Dom.</option>{(data.depots||[]).map(d2=><option key={d2.id} value={d2.id}>{d2.name}</option>)}
-</select>
-<div style={{display:'flex',gap:2,alignItems:'center'}}>
-{(m.type==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=>(
-<button key={f} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.forfaitType=f;const p=getForfaitPrice(nd,mj.clientId,m,f,mj.citOption,mj.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{padding:'2px 6px',borderRadius:4,fontSize:12,fontWeight:mj.forfaitType===f?700:400,border:'1px solid '+(FC[f]||'#ccc'),background:mj.forfaitType===f?(FC[f]||C.accent):'transparent',color:mj.forfaitType===f?'#fff':(FC[f]||C.dim),cursor:'pointer'}}>{f}</button>))}
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,mj.clientId,m,mj.citOption,mj.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'2px 6px',borderRadius:4,fontSize:12,border:'1px solid '+(mj.hasTransfer?C.purple:C.muted),background:mj.hasTransfer?C.purple+'18':'transparent',color:mj.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:mj.hasTransfer?700:400}}>{mj.hasTransfer?'T':'+T'}</button>
-</div>
-<div style={{marginLeft:'auto',display:'flex',gap:3}}>
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===mj.id);if(jj){jj.sent=!jj.sent;save(nd)}}} style={{padding:'2px 8px',borderRadius:4,fontSize:12,fontWeight:600,background:mj.sent?C.green:'#16a34a',color:'#fff',border:'none',cursor:'pointer'}}>{mj.sent?'✓':'Env.'}</button>
-<button onClick={()=>{if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==mj.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.red}}>×</button>
-</div>
-</div>)})}
-</div>)})})()}
 </div>)};
 return(
 <div>
