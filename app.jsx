@@ -369,8 +369,10 @@ const hasJ=ejAll.length>0;
 const hasMissions=ej.length>0;
 let workMin=0,pauseMin=0,totalMinDay=0;
 te.forEach(t=>{if(t.startTime&&t.endTime){const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);const total=(eh*60+em)-(sh*60+sm);workMin+=total-(t.pauseMin||0);pauseMin+=(t.pauseMin||0);totalMinDay+=total}});
-const hourly=Number(emp.hourlySalary)||0;
-const salTotal=workMin/60*hourly;
+const isMonthly=emp.salaryType==='monthly';
+const hourly=isMonthly?0:Number(emp.hourlySalary)||0;
+const dailySalary=isMonthly?(Number(emp.monthlySalary)||0)/wdpm:0;
+const salTotal=isMonthly?dailySalary:(workMin/60*hourly);
 const mainTE=te.find(t=>t.startTime&&t.endTime)||te.find(t=>t.startTime)||te[0];
 const pMinGlobal=mainTE?(mainTE.pauseMin||0):0;
 const firstJob=ej.length>0?ej.reduce((a,b)=>(a.billingStart||'99')<(b.billingStart||'99')?a:b):null;
@@ -463,6 +465,7 @@ return(
 <div style={{width:100,minWidth:100,maxWidth:100,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4}}>
 <div style={{fontSize:15,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
 <div style={{fontSize:13,fontWeight:700,color:machColor,textAlign:'center'}}>{grp.m?grp.m.name:'?'}</div>
+{isMonthly&&<div style={{fontSize:10,color:C.dim,textAlign:'center'}}>{fmtMoney(dailySalary)}/j</div>}
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:grp.m?grp.m.id:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:4,width:22,height:22,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'20px',padding:0}}>+</button>
 </div>
 {/* Côté droit: lignes de chantiers */}
@@ -896,7 +899,7 @@ return(
 <div style={{width:40,height:40,borderRadius:'50%',background:C.accent,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:18,flexShrink:0}}>{(e.name||'?')[0].toUpperCase()}</div>
 <div style={{flex:1,minWidth:0}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><strong>{e.name}</strong><EBtn onClick={()=>open(e)}/></div>
-<div style={{fontSize:13,color:C.dim}}>{fmtMoney(e.hourlySalary||0)}/h</div>
+<div style={{fontSize:13,color:C.dim}}>{e.salaryType==='monthly'?fmtMoney(e.monthlySalary||0)+'/mois':fmtMoney(e.hourlySalary||0)+'/h'}</div>
 </div></div>
 <div style={{fontSize:13,color:C.dim,marginTop:6}}>Machine: {machName(e.machineId)}</div>
 <div style={{marginTop:6}}>{has?<Bg text="Actif" color={C.green}/>:<Bg text="Pas d'acces" color={C.red}/>}</div>
@@ -907,7 +910,9 @@ return(
 <Fl label="Role"><select style={inputStyle} value={sel.role} onChange={e=>setSel({...sel,role:e.target.value})}><option value="employee">Employe</option><option value="mechanic">Mecanicien</option></select></Fl>
 <Fl label="Adresse"><input style={inputStyle} value={sel.address||''} onChange={e=>setSel({...sel,address:e.target.value})}/></Fl>
 <Fl label="GPS domicile (lat,lon)"><input style={inputStyle} value={sel._coords?sel._coords.join(','):''} onChange={e=>{const p=parseCoords(e.target.value);setSel({...sel,_coords:p})}} placeholder="48.8566,2.3522"/></Fl>
-<Fl label="Taux horaire"><input type="number" style={inputStyle} value={sel.hourlySalary} onChange={e=>setSel({...sel,hourlySalary:e.target.value})}/></Fl>
+<Fl label="Type de salaire"><select style={inputStyle} value={sel.salaryType||'hourly'} onChange={e=>setSel({...sel,salaryType:e.target.value})}><option value="hourly">Horaire (pointage)</option><option value="monthly">Mensualise</option></select></Fl>
+{(sel.salaryType||'hourly')==='hourly'&&<Fl label="Taux horaire"><input type="number" style={inputStyle} value={sel.hourlySalary} onChange={e=>setSel({...sel,hourlySalary:e.target.value})}/></Fl>}
+{sel.salaryType==='monthly'&&<Fl label="Salaire mensuel brut"><input type="number" style={inputStyle} value={sel.monthlySalary||0} onChange={e=>setSel({...sel,monthlySalary:Number(e.target.value)})}/></Fl>}
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
 <Fl label="Panier repas (EUR/jour)"><input type="number" style={inputStyle} value={sel.mealAllowance||12} onChange={e=>setSel({...sel,mealAllowance:Number(e.target.value)})}/></Fl>
 <Fl label="Charges patronales (%)"><input type="number" style={inputStyle} value={sel.chargesRate||45} onChange={e=>setSel({...sel,chargesRate:Number(e.target.value)})}/></Fl>
