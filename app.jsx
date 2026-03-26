@@ -565,7 +565,7 @@ return(<React.Fragment>
 </div>)})}
 </div>
 </div>)})})()}
-</React.Fragment>)})})()}
+)})})()}
 </div>)};
 return(
 <div>
