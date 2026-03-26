@@ -1570,7 +1570,7 @@ return(
 </div>)};
 
 // ======== ADMIN PANEL ========
-const AdminPanel=({data,save,onLogout})=>{
+const AdminPanel=({data,save,onLogout,onUndo})=>{
 const[pg,setPg]=useState('planning');const[mobOpen,setMobOpen]=useState(false);
 const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
 const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stats':return(<StatsPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
@@ -1584,7 +1584,8 @@ return(
 <div key={p.k} onClick={()=>{setPg(p.k);setMobOpen(false)}} style={{padding:'8px 12px',cursor:'pointer',color:pg===p.k?'#fff':'#94a3b8',background:pg===p.k?'#334155':'transparent',fontSize:13,fontWeight:pg===p.k?700:400,display:'flex',alignItems:'center',gap:8}}>
 <span dangerouslySetInnerHTML={{__html:p.i}}/>{p.l}
 </div>))}
-<div onClick={onLogout} style={{padding:'8px 12px',cursor:'pointer',color:'#f87171',fontSize:13,marginTop:16,borderTop:'1px solid #334155'}}>Deconnexion</div>
+<div onClick={onUndo} style={{padding:'8px 12px',cursor:'pointer',color:'#fbbf24',fontSize:13,marginTop:16,borderTop:'1px solid #334155'}}>↩ Annuler</div>
+<div onClick={onLogout} style={{padding:'8px 12px',cursor:'pointer',color:'#f87171',fontSize:13}}>Deconnexion</div>
 </div>
 <div className="main" style={{marginLeft:160,padding:20,minHeight:'100vh',background:C.bg}}>
 {content()}
@@ -1595,16 +1596,18 @@ const App=()=>{
 const savedSession=(()=>{try{const s=localStorage.getItem('rm-session');return s?JSON.parse(s):null}catch(e){return null}})();
 const[screen,setScreen]=useState(savedSession?savedSession.screen:'login');const[data,setData]=useState(null);const[empId,setEmpId]=useState(savedSession?savedSession.empId:null);
 const savingRef=useRef(false);
+const undoStack=useRef([]);
 useEffect(()=>{try{localStorage.setItem('rm-session',JSON.stringify({screen,empId}))}catch(e){}},[screen,empId]);
 useEffect(()=>{loadData().then(d=>setData(d));const unsub=subscribeToChanges((nd)=>{if(!savingRef.current)setData(nd)});return()=>unsub()},[]);
-const doSave=useCallback(async nd=>{savingRef.current=true;setData(nd);await saveData(nd);setTimeout(()=>{savingRef.current=false},2000)},[]);
+const doSave=useCallback(async nd=>{savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);await saveData(nd);setTimeout(()=>{savingRef.current=false},2000)},[data]);
+const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savingRef.current=true;setData(prevData);await saveData(prevData);setTimeout(()=>{savingRef.current=false},2000)},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
 if(!data)return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh'}}><div style={{fontSize:48}}>&#128679;</div></div>);
 if(screen==='login')return(<LoginScreen data={data} onLogin={onLogin}/>);
 if(screen==='mechanic')return(<MechanicView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
 if(screen==='employee')return(<EmployeeView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
-return(<AdminPanel data={data} save={doSave} onLogout={onLogout}/>);
+return(<AdminPanel data={data} save={doSave} onLogout={onLogout} onUndo={doUndo}/>);
 };
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
