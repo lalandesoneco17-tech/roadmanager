@@ -300,7 +300,10 @@ return(
 </div>
 {sortedCards.map(cardId=>{
 if(cardId.startsWith('m_')){
-const mId=cardId.slice(2);const um=allM.find(x=>x.id===mId);if(!um||(assignedMachIds.has(um.id)&&!driverBusyOnOtherMach.has(um.id)))return null;
+const mId=cardId.slice(2);const um=allM.find(x=>x.id===mId);if(!um)return null;
+const umHasJobWithDriver=dayJobs.some(j2=>j2.machineId===um.id&&j2.employeeId&&j2.type!=='depot');
+if(umHasJobWithDriver)return null;
+if(assignedMachIds.has(um.id)&&!driverBusyOnOtherMach.has(um.id))return null;
 const umColor=MC[um.type]||C.accent;
 const umJobs=dayJobs.filter(j2=>j2.machineId===um.id);
 if(umJobs.length===0){
