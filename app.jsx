@@ -299,14 +299,36 @@ return(
 {sortedCards.map(cardId=>{
 if(cardId.startsWith('m_')){
 const mId=cardId.slice(2);const um=allM.find(x=>x.id===mId);if(!um||assignedMachIds.has(um.id)||usedMachIds.includes(um.id))return null;
-return(<div key={cardId} draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':MC[um.type]+'40'),borderLeft:'6px solid '+(MC[um.type]||C.accent),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
-<div style={{minWidth:90,maxWidth:110,padding:'10px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(MC[um.type]||C.accent)+'20',background:(MC[um.type]||C.accent)+'08',gap:4}}>
-<select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:4,padding:'2px 4px',background:'#fff',width:'100%',textAlign:'center'}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(data));const emp2=nd.employees.find(x=>x.id===e2.target.value);if(emp2){emp2.machineId=um.id;save(nd)}}}><option value="">?</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
-<div style={{fontSize:13,fontWeight:700,color:MC[um.type]||C.accent,textAlign:'center'}}>{um.name}</div>
+const umColor=MC[um.type]||C.accent;
+const umJobs=dayJobs.filter(j2=>j2.machineId===um.id);
+return(<div key={cardId} draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
+<div style={{minWidth:90,maxWidth:110,padding:'10px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+umColor+'20',background:umColor+'08',gap:4}}>
+<select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px',background:'#fff',width:'100%',textAlign:'center'}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(data));const emp2=nd.employees.find(x=>x.id===e2.target.value);if(emp2){emp2.machineId=um.id;save(nd)}}}><option value="">Chauff.</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
+<div style={{fontSize:13,fontWeight:700,color:umColor,textAlign:'center'}}>{um.name}{um.width?' ('+um.width+')':''}</div>
+<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:'',machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:4,width:22,height:22,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'20px',padding:0}}>+</button>
 </div>
-<div style={{flex:1,minWidth:0,padding:'10px 14px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-<span style={{fontSize:14,color:'#ef4444',fontWeight:600}}>Sans chauffeur</span>
-<div style={{marginLeft:'auto'}}><button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>+ Chantier</button></div>
+<div style={{flex:1,minWidth:0}}>
+{umJobs.length===0&&<div style={{padding:'10px 14px',color:C.muted,fontSize:14}}>Aucun chantier</div>}
+{umJobs.map(uj=>{const ujCl=getClient(uj.clientId);const ujM=um;const ujMt=um.type;return(
+<div key={uj.id} style={{borderBottom:'1px solid '+C.border,background:uj.ack?'#dcfce7':C.card}}>
+<div style={{padding:'6px 10px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+<select value={uj.clientId||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const jj=nd.jobs.find(x=>x.id===uj.id);if(jj)jj.clientId=nc.id;save(nd)}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.clientId=e.target.value;if(ujM&&jj.forfaitType){const p=getForfaitPrice(nd,e.target.value,ujM,jj.forfaitType,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:100,maxWidth:150}}>
+<option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
+</select>
+<select value={uj.siteManager||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau chef:');if(n){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.siteManager=n;const cl2=(nd.clients||[]).find(c2=>c2.id===uj.clientId);if(cl2){if(!cl2.siteManagers)cl2.siteManagers=[];if(!cl2.siteManagers.find(s=>s.name===n)){const ph=prompt('Tel (optionnel):','')||'';cl2.siteManagers.push({name:n,phone:ph});jj.siteManagerPhone=ph}}save(nd)}}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===uj.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:80,maxWidth:130}}>
+<option value="">Chef</option>{(ujCl&&ujCl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}<option value="__new__">+ Nouveau...</option>
+</select>
+<input value={uj.location||''} placeholder="Lieu" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.location=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
+<input type="time" value={uj.billingStart||'08:00'} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.billingStart=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75}}/>
+<select value={uj.forfaitType||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj&&ujM){jj.forfaitType=e.target.value;const p=getForfaitPrice(nd,uj.clientId,ujM,e.target.value,uj.citOption,uj.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'2px solid '+(uj.forfaitType?FC[uj.forfaitType]||C.accent:C.border),background:uj.forfaitType?(FC[uj.forfaitType]||C.accent)+'15':'#fff',color:uj.forfaitType?FC[uj.forfaitType]||C.accent:C.dim,fontWeight:uj.forfaitType?700:400,minWidth:40}}>
+<option value="">F</option>{(ujMt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=><option key={f} value={f}>{f}</option>)}
+</select>
+<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj&&ujM){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,uj.clientId,ujM,uj.citOption,uj.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'4px 8px',borderRadius:6,fontSize:14,border:'2px solid '+(uj.hasTransfer?C.purple:C.muted),background:uj.hasTransfer?C.purple+'20':'transparent',color:uj.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:uj.hasTransfer?700:400}}>{uj.hasTransfer?'T ✓':'+T'}</button>
+<div style={{marginLeft:'auto',display:'flex',gap:4}}>
+<button onClick={()=>{if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==uj.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button>
+</div>
+</div>
+</div>)})}
 </div>
 </div>)}
 const eId=cardId.slice(2);
