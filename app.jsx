@@ -299,7 +299,9 @@ return(
 <div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
 <span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:18}}>{label}</span>
 </div>
-{sortedCards.map(cardId=>{
+{(()=>{let shownSeparator=false;return sortedCards.map(cardId=>{
+const showSep=!shownSeparator&&cardId.startsWith('m_');
+if(showSep)shownSeparator=true;
 if(cardId.startsWith('m_')){
 const mId=cardId.slice(2);const um=allM.find(x=>x.id===mId);if(!um)return null;
 const umHasJobWithDriver=dayJobs.some(j2=>j2.machineId===um.id&&j2.employeeId&&j2.type!=='depot');
@@ -309,7 +311,7 @@ const umColor=MC[um.type]||C.accent;
 const umJobs=dayJobs.filter(j2=>j2.machineId===um.id);
 if(umJobs.length===0){
 const createUmJob=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:'',machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
-return(<div key={cardId} draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+(dragOverId===cardId?C.accent:C.border),borderLeft:'4px solid '+umColor,padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
+return(<React.Fragment key={cardId}>{showSep&&<div style={{borderTop:'3px dashed #cbd5e1',margin:'20px 0 12px',position:'relative'}}><span style={{position:'absolute',top:-10,left:12,background:'#cbd5e120',padding:'0 8px',fontSize:11,color:C.dim,fontWeight:600,borderRadius:4}}>Machines sans chauffeur</span></div>}<div draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+(dragOverId===cardId?C.accent:C.border),borderLeft:'4px solid '+umColor,padding:'6px 12px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 <select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:4,padding:'2px 4px',background:'#fff',minWidth:70,maxWidth:100}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:e2.target.value,machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}}><option value="">Chauff.</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
 <span style={{fontSize:15,fontWeight:800,color:umColor}}>· {um.name}{um.width?' ('+um.width+')':''}</span>
 <select value="" onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);const nd2={...nd};if(!nd2.jobs)nd2.jobs=[];nd2.jobs.push({id:uid(),date:selDate,employeeId:'',machineId:um.id,clientId:nc.id,agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd2)}}else if(e.target.value){createUmJob('clientId',e.target.value)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
@@ -317,7 +319,7 @@ return(<div key={cardId} draggable onDragStart={e=>onDragStart(e,cardId)} onDrag
 </select>
 <input placeholder="Lieu" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createUmJob('location',e.target.value);e.target.value=''}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
 <button onClick={()=>{setDepotFormEmpId('');setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
-</div>)}
+</div></React.Fragment>)}
 return(<div key={cardId} draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 <div style={{width:100,minWidth:100,maxWidth:100,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+umColor+'20',background:umColor+'08',gap:4}}>
 <select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px',background:'#fff',width:'100%',textAlign:'center'}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const existingJ=nd.jobs.filter(x=>x.machineId===um.id&&x.date===selDate);if(existingJ.length>0){existingJ.forEach(x2=>{x2.employeeId=e2.target.value})}else{nd.jobs.push({id:uid(),date:selDate,employeeId:e2.target.value,machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false})}save(nd)}}><option value="">Chauff.</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
@@ -358,7 +360,7 @@ return(<React.Fragment>
 </div>
 </div>)})}
 </div>
-</div>)}
+</div></React.Fragment>)}
 const eId=cardId.slice(2);
 const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;
 const ejAll=dayJobs.filter(j=>j.employeeId===eId&&(j.type==='depot'||types.includes((getMach(j.machineId)||{}).type)));
@@ -563,7 +565,7 @@ return(<React.Fragment>
 </div>)})}
 </div>
 </div>)})})()}
-</React.Fragment>)})}
+</React.Fragment>)})})()}
 </div>)};
 return(
 <div>
