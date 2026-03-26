@@ -320,7 +320,7 @@ return(<React.Fragment key={cardId}>{showSep&&<div style={{borderTop:'3px dashed
 <input placeholder="Lieu" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createUmJob('location',e.target.value);e.target.value=''}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
 <button onClick={()=>{setDepotFormEmpId('');setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
 </div></React.Fragment>)}
-return(<div key={cardId} draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
+return(<React.Fragment key={cardId}>{showSep&&<div style={{borderTop:'3px dashed #cbd5e1',margin:'20px 0 12px',position:'relative'}}><span style={{position:'absolute',top:-10,left:12,background:'#f1f5f9',padding:'0 8px',fontSize:11,color:C.dim,fontWeight:600,borderRadius:4}}>Machines disponibles</span></div>}<div draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 <div style={{width:100,minWidth:100,maxWidth:100,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+umColor+'20',background:umColor+'08',gap:4}}>
 <select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px',background:'#fff',width:'100%',textAlign:'center'}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const existingJ=nd.jobs.filter(x=>x.machineId===um.id&&x.date===selDate);if(existingJ.length>0){existingJ.forEach(x2=>{x2.employeeId=e2.target.value})}else{nd.jobs.push({id:uid(),date:selDate,employeeId:e2.target.value,machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false})}save(nd)}}><option value="">Chauff.</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
 <div style={{fontSize:13,fontWeight:700,color:umColor,textAlign:'center'}}>{um.name}{um.width?' ('+um.width+')':''}</div>
@@ -565,7 +565,7 @@ return(<React.Fragment>
 </div>)})}
 </div>
 </div>)})})()}
-)})})()}
+</React.Fragment>)})})()}
 </div>)};
 return(
 <div>
