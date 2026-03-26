@@ -283,7 +283,9 @@ const orderKey=selDate+'_'+types.join(',');
 const savedOrder=(data.cardOrder||{})[orderKey]||[];
 const empIds=[...empIdsRaw].sort((a,b)=>{const ia=savedOrder.indexOf(a);const ib=savedOrder.indexOf(b);if(ia===-1&&ib===-1)return 0;if(ia===-1)return 1;if(ib===-1)return-1;return ia-ib});
 const assignedMachIds=new Set((data.employees||[]).map(e=>e.machineId).filter(Boolean));
-const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id));
+const driverBusyOnOtherMach=new Set();
+(data.employees||[]).forEach(emp2=>{if(emp2.machineId){const empJobs=dayJobs.filter(j=>j.employeeId===emp2.id&&j.type!=='depot');const hasJobOnOther=empJobs.some(j=>j.machineId&&j.machineId!==emp2.machineId);if(hasJobOnOther&&!empJobs.some(j=>j.machineId===emp2.machineId)){driverBusyOnOtherMach.add(emp2.machineId)}}});
+const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id)||driverBusyOnOtherMach.has(m.id));
 const unassignedOrder=(data.cardOrder||{})[orderKey+'_u']||[];
 const allCardIds=[...empIds.map(id=>'e_'+id),...unassignedM.map(m=>'m_'+m.id)];
 const savedAllOrder=(data.cardOrder||{})[orderKey+'_all']||[];
@@ -452,7 +454,7 @@ return(
 <input placeholder="Lieu" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createJobForEmp('location',e.target.value);e.target.value=''}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
 </div>)})()}
-{allMissions.length>0&&(()=>{const machGroups={};const defMachG=getMach(emp.machineId);if(defMachG&&types.includes(defMachG.type)&&!machGroups[defMachG.id]){machGroups[defMachG.id]={m:defMachG,mt:defMachG.type,missions:[]}}allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map(grp=>{const machColor=MC[grp.mt]||C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
+{allMissions.length>0&&(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map(grp=>{const machColor=MC[grp.mt]||C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
 <div key={eId+'_'+(grp.m?grp.m.id:'none')} draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragOver={e2=>onDragOver(e2,cardId)} onDragEnd={onDragEnd} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 {/* Côté gauche: nom + machine centré verticalement */}
 <div style={{width:100,minWidth:100,maxWidth:100,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4}}>
