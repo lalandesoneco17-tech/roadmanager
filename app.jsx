@@ -478,6 +478,8 @@ return(
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}</span>
 {startBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:startBadge.color+'18',color:startBadge.color}}>{startBadge.text}</span>}
 {endBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:endBadge.color+'18',color:endBadge.color}}>{endBadge.text}</span>}
+{mainTE&&mainTE.requestedEndTime&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706'}}>Deb. demandee {mainTE.requestedEndTime}</span>}
+{mainTE&&mainTE.absenceType&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red}}>{mainTE.absenceType}</span>}
 </div>
 {grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
@@ -1090,6 +1092,7 @@ const[manBreakEnd,setManBreakEnd]=useState('13:00');
 const[manMeal,setManMeal]=useState('PANIER');
 const[manAbsence,setManAbsence]=useState('');
 const[manNight,setManNight]=useState(0);
+const[manRequestEnd,setManRequestEnd]=useState('');
 const[showPanne,setShowPanne]=useState(false);
 const[panneEquip,setPanneEquip]=useState('');
 const[panneEquipType,setPanneEquipType]=useState('machine');
@@ -1116,7 +1119,7 @@ else if(type==='pause_start'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===l
 else if(type==='resume'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='start';if(e.pauseStart){const[ph,pm]=e.pauseStart.split(':').map(Number);const[nh,nm]=time.split(':').map(Number);e.pauseMin=(e.pauseMin||0)+(nh*60+nm)-(ph*60+pm)}e.pauseEnd=time;e.breakEnd=time;e.pauseStart=null}}
 else if(type==='done'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='done';e.endTime=time;if(e.pauseStart){const[ph,pm]=e.pauseStart.split(':').map(Number);const[nh,nm]=time.split(':').map(Number);e.pauseMin=(e.pauseMin||0)+(nh*60+nm)-(ph*60+pm);e.pauseStart=null}}}
 save(nd)};
-const saveManual=()=>{if(!manAbsence&&(!manStart||!manEnd))return;if(manStart&&manEnd){const[sh,sm]=manStart.split(':').map(Number);const[eh,em]=manEnd.split(':').map(Number);const startMin=sh*60+sm;const endMin=eh*60+em;if(startMin>=endMin){alert('Embauche doit etre avant debauche');return}const totalMin=endMin-startMin;if(Number(manPause)>=totalMin){alert('Pause trop longue');return}}const nd=JSON.parse(JSON.stringify(data));if(!nd.timeEntries)nd.timeEntries=[];const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===manDate);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:manDate,type:manAbsence?'absence':'done',startTime:manStart||'',endTime:manEnd||'',pauseStart:null,pauseEnd:null,pauseMin:Number(manPause)||0,createdAt:new Date().toISOString(),breakStart:manBreakStart,breakEnd:manBreakEnd,mealType:manMeal,absenceType:manAbsence,nightHours:Number(manNight)||0};if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);save(nd);setShowManual(false);setManStart('');setManEnd('');setManPause(0);setManBreakStart('12:00');setManBreakEnd('13:00');setManMeal('PANIER');setManAbsence('');setManNight(0)};
+const saveManual=()=>{if(!manAbsence&&(!manStart||!manEnd))return;if(manStart&&manEnd){const[sh,sm]=manStart.split(':').map(Number);const[eh,em]=manEnd.split(':').map(Number);const startMin=sh*60+sm;const endMin=eh*60+em;if(startMin>=endMin){alert('Embauche doit etre avant debauche');return}const totalMin=endMin-startMin;if(Number(manPause)>=totalMin){alert('Pause trop longue');return}}const nd=JSON.parse(JSON.stringify(data));if(!nd.timeEntries)nd.timeEntries=[];const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===manDate);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:manDate,type:manAbsence?'absence':'done',startTime:manStart||'',endTime:manEnd||'',pauseStart:null,pauseEnd:null,pauseMin:Number(manPause)||0,createdAt:new Date().toISOString(),breakStart:manBreakStart,breakEnd:manBreakEnd,mealType:manMeal,absenceType:manAbsence,nightHours:Number(manNight)||0,requestedEndTime:manRequestEnd||''};if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);save(nd);setShowManual(false);setManStart('');setManEnd('');setManPause(0);setManBreakStart('12:00');setManBreakEnd('13:00');setManMeal('PANIER');setManAbsence('');setManNight(0);setManRequestEnd('')};
 const hist30=useMemo(()=>{const now=new Date();const d30=new Date(now);d30.setDate(d30.getDate()-30);const start30=fmtDateISO(d30);const end30=fmtDateISO(now);return(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=start30&&t.date<=end30).sort((a,b)=>b.date.localeCompare(a.date))},[data.timeEntries,empId]);
 const range=useMemo(()=>{const now=new Date();if(view==='Jour'){const d=new Date(now);d.setDate(d.getDate()+offset);return{start:fmtDateISO(d),end:fmtDateISO(d),label:fmtDate(d)}}const d=new Date(now);d.setDate(d.getDate()+offset*7);const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);const mon=new Date(d);mon.setDate(diff);const sun=new Date(mon);sun.setDate(mon.getDate()+6);return{start:fmtDateISO(mon),end:fmtDateISO(sun),label:fmtDate(mon)+' - '+fmtDate(sun)}},[view,offset]);
 const periodTE=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=range.start&&t.date<=range.end);
@@ -1174,6 +1177,7 @@ return(
 <Fl label="Pause (min)"><input type="number" style={inputStyle} value={manPause} onChange={e=>setManPause(e.target.value)}/></Fl>
 <Fl label="Heures nuit"><input type="number" step="0.25" style={inputStyle} value={manNight} onChange={e=>setManNight(e.target.value)}/></Fl>
 </div>}
+<Fl label="Debauche demandee (optionnel)"><div style={{display:'flex',alignItems:'center',gap:8}}><input type="time" style={{...inputStyle,flex:1}} value={manRequestEnd} onChange={e=>setManRequestEnd(e.target.value)} placeholder="Ex: 16:00"/>{manRequestEnd&&<button onClick={()=>setManRequestEnd('')} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:14}}>x</button>}</div><div style={{fontSize:12,color:C.orange,marginTop:4}}>Indiquer ici si vous devez partir a une heure precise</div></Fl>
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveManual} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>setShowManual(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
 {editTE&&<Mod title="Modifier pointage" onClose={()=>setEditTE(null)}>
