@@ -1601,11 +1601,220 @@ return(
 </div>
 </div>)};
 
+// ======== RECHERCHE DATA ========
+const SearchDataPage=({data})=>{
+const[query,setQuery]=useState('');const[results,setResults]=useState(null);const[loading,setLoading]=useState(false);
+const empName=id=>{const e=(data.employees||[]).find(x=>x.id===id);return e?e.name:'?'};
+const machName=id=>{const m=(data.machines||[]).find(x=>x.id===id);return m?m.name:'?'};
+const clientName=id=>{const c=(data.clients||[]).find(x=>x.id===id);return c?c.name:'?'};
+const depotName=id=>{if(id==='home')return'Domicile';const d=(data.depots||[]).find(x=>x.id===id);return d?d.name:'?'};
+const parseQuery=(q)=>{
+const ql=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+let dateFrom=null,dateTo=null;
+const dateMatch=ql.match(/(?:a partir|depuis|du|from)\s+(?:du\s+)?(\d{1,2})[\/\-\s](\d{1,2}|\w+)[\/\-\s](\d{4})/);
+if(dateMatch){const[,d,m,y]=dateMatch;const months={'janvier':'01','fevrier':'02','mars':'03','avril':'04','mai':'05','juin':'06','juillet':'07','aout':'08','septembre':'09','octobre':'10','novembre':'11','decembre':'12'};const mo=months[m]||String(m).padStart(2,'0');dateFrom=y+'-'+mo+'-'+String(d).padStart(2,'0')}
+const dateToMatch=ql.match(/(?:jusqu.?au?|au|to)\s+(\d{1,2})[\/\-\s](\d{1,2}|\w+)[\/\-\s](\d{4})/);
+if(dateToMatch){const[,d,m,y]=dateToMatch;const months={'janvier':'01','fevrier':'02','mars':'03','avril':'04','mai':'05','juin':'06','juillet':'07','aout':'08','septembre':'09','octobre':'10','novembre':'11','decembre':'12'};const mo=months[m]||String(m).padStart(2,'0');dateTo=y+'-'+mo+'-'+String(d).padStart(2,'0')}
+if(!dateFrom){const y2=ql.match(/(\d{4})/);if(y2)dateFrom=y2[1]+'-01-01'}
+if(!dateTo)dateTo=fmtDateISO(new Date());
+let empFilter=null;
+(data.employees||[]).forEach(e=>{if(ql.includes(e.name.toLowerCase()))empFilter=e.id});
+return{ql,dateFrom,dateTo,empFilter};
+};
+const doSearch=()=>{
+if(!query.trim())return;
+setLoading(true);
+const{ql,dateFrom,dateTo,empFilter}=parseQuery(query);
+const res={title:'',headers:[],rows:[],summary:''};
+// Embauche trop tot / surcout embauche
+if(ql.includes('embauche')||(ql.includes('surcout')&&ql.includes('emb'))||(ql.includes('trop')&&ql.includes('tot'))){
+res.title='Embauches trop tot'+(empFilter?' — '+empName(empFilter):'');
+res.headers=['Date','Chauffeur','Machine','Client','Theo','Reel','Avance (min)','Surcout'];
+let totalSurcout=0;
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo&&(!empFilter||j.employeeId===empFilter)).forEach(j=>{
+const emp2=(data.employees||[]).find(e=>e.id===j.employeeId);if(!emp2)return;
+const te=(data.timeEntries||[]).filter(t=>t.empId===j.employeeId&&t.date===j.date);
+const mainTE2=te.find(t=>t.startTime&&t.endTime)||te.find(t=>t.startTime);
+if(!mainTE2||!mainTE2.startTime)return;
+const theo=calcTheoreticalTimes(j,data,mainTE2?mainTE2.pauseMin||0:0);
+if(!theo)return;
+const[ah,am]=mainTE2.startTime.split(':').map(Number);
+const actualMin=ah*60+am;
+const diff=theo.theoStartMin-actualMin;
+if(diff>0){
+const hr=emp2.salaryType==='monthly'?0:Number(emp2.hourlySalary)||0;
+const surcout=(diff/60)*hr;
+totalSurcout+=surcout;
+res.rows.push([j.date,emp2.name,machName(j.machineId),clientName(j.clientId),theo.theoStart,mainTE2.startTime,'+'+diff+'min',fmtMoney(surcout)])}});
+res.rows.sort((a,b)=>b[0].localeCompare(a[0]));
+res.summary='Total surcout embauche: '+fmtMoney(totalSurcout)+' | '+res.rows.length+' occurrences';
+}
+// Debauche tard / surcout debauche
+else if(ql.includes('debauche')||(ql.includes('surcout')&&ql.includes('deb'))||(ql.includes('trop')&&ql.includes('tard'))){
+res.title='Debauches tardives'+(empFilter?' — '+empName(empFilter):'');
+res.headers=['Date','Chauffeur','Machine','Client','Theo','Reel','Depassement','Surcout'];
+let totalSurcout=0;
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo&&(!empFilter||j.employeeId===empFilter)).forEach(j=>{
+const emp2=(data.employees||[]).find(e=>e.id===j.employeeId);if(!emp2)return;
+const te=(data.timeEntries||[]).filter(t=>t.empId===j.employeeId&&t.date===j.date);
+const mainTE2=te.find(t=>t.startTime&&t.endTime);
+if(!mainTE2||!mainTE2.endTime)return;
+const theo=calcTheoreticalTimes(j,data,mainTE2?mainTE2.pauseMin||0:0);
+if(!theo)return;
+const[eh,em]=mainTE2.endTime.split(':').map(Number);
+const actualMin=eh*60+em;
+const diff=actualMin-theo.theoEndMin;
+if(diff>0){
+const hr=emp2.salaryType==='monthly'?0:Number(emp2.hourlySalary)||0;
+const surcout=(diff/60)*hr;
+totalSurcout+=surcout;
+res.rows.push([j.date,emp2.name,machName(j.machineId),clientName(j.clientId),theo.theoEnd,mainTE2.endTime,'+'+diff+'min',fmtMoney(surcout)])}});
+res.rows.sort((a,b)=>b[0].localeCompare(a[0]));
+res.summary='Total surcout debauche: '+fmtMoney(totalSurcout)+' | '+res.rows.length+' occurrences';
+}
+// CA par client
+else if(ql.includes('ca')&&(ql.includes('client')||ql.includes('chiffre'))){
+res.title='CA par client';
+res.headers=['Client','Nb missions','CA Forfaits','CA Transferts','CA Total'];
+const byClient={};
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo).forEach(j=>{
+const cn=clientName(j.clientId);if(!byClient[cn])byClient[cn]={missions:0,forfaits:0,transferts:0};
+byClient[cn].missions++;byClient[cn].forfaits+=(j.priceForfait||0);byClient[cn].transferts+=(j.hasTransfer?j.transferPrice||0:0)});
+Object.entries(byClient).sort((a,b)=>(b[1].forfaits+b[1].transferts)-(a[1].forfaits+a[1].transferts)).forEach(([n,v])=>{
+res.rows.push([n,v.missions,fmtMoney(v.forfaits),fmtMoney(v.transferts),fmtMoney(v.forfaits+v.transferts)])});
+const totF=Object.values(byClient).reduce((s,v)=>s+v.forfaits,0);
+const totT=Object.values(byClient).reduce((s,v)=>s+v.transferts,0);
+res.summary='Total: '+fmtMoney(totF+totT)+' (Forfaits: '+fmtMoney(totF)+' | Transferts: '+fmtMoney(totT)+')';
+}
+// CA par chauffeur
+else if(ql.includes('ca')&&(ql.includes('chauffeur')||ql.includes('employe')||ql.includes('conducteur'))){
+res.title='CA par chauffeur';
+res.headers=['Chauffeur','Nb missions','CA Forfaits','CA Transferts','CA Total'];
+const byEmp={};
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo).forEach(j=>{
+const en=empName(j.employeeId);if(!byEmp[en])byEmp[en]={missions:0,forfaits:0,transferts:0};
+byEmp[en].missions++;byEmp[en].forfaits+=(j.priceForfait||0);byEmp[en].transferts+=(j.hasTransfer?j.transferPrice||0:0)});
+Object.entries(byEmp).sort((a,b)=>(b[1].forfaits+b[1].transferts)-(a[1].forfaits+a[1].transferts)).forEach(([n,v])=>{
+res.rows.push([n,v.missions,fmtMoney(v.forfaits),fmtMoney(v.transferts),fmtMoney(v.forfaits+v.transferts)])});
+res.summary='Total: '+fmtMoney(Object.values(byEmp).reduce((s,v)=>s+v.forfaits+v.transferts,0));
+}
+// CA par machine
+else if(ql.includes('ca')&&ql.includes('machine')){
+res.title='CA par machine';
+res.headers=['Machine','Type','Nb missions','CA Total'];
+const byM={};
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo).forEach(j=>{
+const m=(data.machines||[]).find(x=>x.id===j.machineId);const mn=m?m.name:'?';const mt=m?m.type:'?';
+if(!byM[mn])byM[mn]={type:mt,missions:0,ca:0};byM[mn].missions++;byM[mn].ca+=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0)});
+Object.entries(byM).sort((a,b)=>b[1].ca-a[1].ca).forEach(([n,v])=>{res.rows.push([n,v.type,v.missions,fmtMoney(v.ca)])});
+res.summary='Total: '+fmtMoney(Object.values(byM).reduce((s,v)=>s+v.ca,0));
+}
+// Heures par employe
+else if(ql.includes('heure')||ql.includes('pointage')||ql.includes('travail')){
+res.title='Heures de travail'+(empFilter?' — '+empName(empFilter):'');
+res.headers=['Date','Chauffeur','Embauche','Debauche','Pause','Travail'];
+let totalH=0;
+(data.timeEntries||[]).filter(t=>t.date>=(dateFrom||'2020-01-01')&&t.date<=dateTo&&(!empFilter||t.empId===empFilter)&&t.startTime&&t.endTime).sort((a,b)=>b.date.localeCompare(a.date)).forEach(t=>{
+const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
+const wm=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);totalH+=wm;
+res.rows.push([t.date,empName(t.empId),t.startTime,t.endTime,(t.pauseMin||0)+'min',fmtDuration(wm)])});
+res.summary='Total: '+fmtDuration(totalH)+' ('+((totalH/60).toFixed(2))+'h)';
+}
+// Pannes
+else if(ql.includes('panne')){
+res.title='Pannes signalees';
+res.headers=['Date','Equipement','Severite','Status','Description','Signale par'];
+(data.panneReports||[]).filter(p=>p.date>=(dateFrom||'2020-01-01')&&p.date<=dateTo).sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{
+const eqN=p.machineId?machName(p.machineId):p.truckId?((data.trucks||[]).find(x=>x.id===p.truckId)||{}).name||'?':'?';
+res.rows.push([p.date,eqN,p.severity,p.status==='new'?'Nouvelle':p.status==='in_progress'?'En cours':'Resolue',p.description||'',empName(p.reportedBy)])});
+res.summary=res.rows.length+' pannes';
+}
+// Interventions / entretien
+else if(ql.includes('intervention')||ql.includes('entretien')||ql.includes('reparation')){
+res.title='Interventions';
+res.headers=['Date','Equipement','Type','Cout','Description'];
+let totalC=0;
+(data.interventions||[]).filter(i=>i.date>=(dateFrom||'2020-01-01')&&i.date<=dateTo).sort((a,b)=>b.date.localeCompare(a.date)).forEach(i=>{
+const eqN=i.machineId?machName(i.machineId):i.truckId?((data.trucks||[]).find(x=>x.id===i.truckId)||{}).name||'?':'?';
+totalC+=(i.totalCost||0);
+res.rows.push([i.date,eqN,i.type,fmtMoney(i.totalCost||0),i.description||''])});
+res.summary='Total cout: '+fmtMoney(totalC)+' | '+res.rows.length+' interventions';
+}
+// Missions / chantiers
+else if(ql.includes('mission')||ql.includes('chantier')||ql.includes('forfait')){
+res.title='Missions'+(empFilter?' — '+empName(empFilter):'');
+res.headers=['Date','Chauffeur','Machine','Client','Lieu','Forfait','Prix','Transfert'];
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo&&(!empFilter||j.employeeId===empFilter)).sort((a,b)=>b.date.localeCompare(a.date)).forEach(j=>{
+res.rows.push([j.date,empName(j.employeeId),machName(j.machineId),clientName(j.clientId),(j.location||'').slice(0,30),j.forfaitType,fmtMoney(j.priceForfait||0),j.hasTransfer?fmtMoney(j.transferPrice||0):'-'])});
+res.summary=res.rows.length+' missions | CA: '+fmtMoney(res.rows.reduce((s,r)=>s+parseFloat((r[6]||'0').replace(',','.').replace(' EUR','')),0));
+}
+// Km / kilometres
+else if(ql.includes('km')||ql.includes('kilometre')||ql.includes('trajet')||ql.includes('distance')){
+res.title='Kilometres'+(empFilter?' — '+empName(empFilter):'');
+res.headers=['Date','Chauffeur','Client','Depart','Arrivee','Km Aller','Km Retour','Total km'];
+let totalKm=0;
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo&&(!empFilter||j.employeeId===empFilter)&&(j.kmAller>0||j.kmRetour>0)).sort((a,b)=>b.date.localeCompare(a.date)).forEach(j=>{
+const tk=(j.kmAller||0)+(j.kmRetour||0);totalKm+=tk;
+res.rows.push([j.date,empName(j.employeeId),clientName(j.clientId),depotName(j.startFrom),depotName(j.endAt),(j.kmAller||0).toFixed(0),(j.kmRetour||0).toFixed(0),tk.toFixed(0)])});
+res.summary='Total: '+totalKm.toFixed(0)+' km | '+res.rows.length+' trajets';
+}
+// Carburant
+else if(ql.includes('carburant')||ql.includes('gasoil')||ql.includes('gnr')||ql.includes('fuel')){
+res.title='Consommation carburant'+(empFilter?' — '+empName(empFilter):'');
+res.headers=['Date','Chauffeur','Machine','Litres machine','Cout'];
+let totalL=0,totalC=0;
+(data.jobs||[]).filter(j=>j.type!=='depot'&&j.date>=(dateFrom||'2020-01-01')&&j.date<=dateTo&&(!empFilter||j.employeeId===empFilter)&&(j.machineFuelL||0)>0).sort((a,b)=>b.date.localeCompare(a.date)).forEach(j=>{
+const ft=getMachineFuelType(data,j.machineId);const fp=getFuelPrice(data,ft,j.machineFuelDepot);const cost=(j.machineFuelL||0)*fp;
+totalL+=(j.machineFuelL||0);totalC+=cost;
+res.rows.push([j.date,empName(j.employeeId),machName(j.machineId),(j.machineFuelL||0)+'L',fmtMoney(cost)])});
+res.summary='Total: '+totalL.toFixed(0)+'L | Cout: '+fmtMoney(totalC);
+}
+// Defaut : toutes les missions
+else{
+res.title='Recherche: "'+query+'"';
+res.headers=['Info'];
+res.rows=[['Exemples de recherches:'],['embauche trop tot par employe a partir de 1 janvier 2026'],['debauche tardive a partir du 1/1/2026'],['ca par client a partir du 1/1/2026'],['ca par chauffeur a partir du 1/1/2026'],['ca par machine'],['heures par employe'],['missions a partir du 1/3/2026'],['pannes'],['interventions'],['km par employe'],['carburant a partir du 1/1/2026']];
+res.summary='Tapez une recherche ci-dessus';}
+setResults(res);setLoading(false)};
+const exportCSV=()=>{if(!results)return;let csv=results.headers.join(';')+'\n';results.rows.forEach(r=>{csv+=r.join(';')+'\n'});
+const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='recherche_'+query.replace(/\s/g,'_')+'.csv';a.click()};
+return(
+<div>
+<h2 style={{margin:'0 0 16px'}}>Recherche donnees</h2>
+<div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+<input style={{...inputStyle,flex:1,fontSize:15,padding:'10px 14px'}} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')doSearch()}} placeholder="Ex: embauche trop tot par employe a partir de 1 janvier 2026"/>
+<button onClick={doSearch} style={{...btnStyle(C.accent,true),fontSize:15,padding:'10px 20px'}}>Rechercher</button>
+</div>
+{!results&&<div style={{background:C.card,borderRadius:12,padding:20,border:'1px solid '+C.border}}>
+<div style={{fontSize:15,fontWeight:600,marginBottom:12}}>Exemples de recherches :</div>
+<div style={{display:'flex',flexDirection:'column',gap:6}}>
+{['embauche trop tot a partir de 1 janvier 2026','debauche tardive a partir du 1/1/2026','ca par client a partir du 1/1/2026','ca par chauffeur','ca par machine','heures jerome a partir du 1/3/2026','missions franck','pannes','interventions','km par employe','carburant a partir du 1/1/2026'].map((ex,i)=>
+<div key={i} onClick={()=>{setQuery(ex);}} style={{cursor:'pointer',padding:'6px 12px',borderRadius:8,background:'#f8fafc',border:'1px solid '+C.border,fontSize:14,color:C.accent}}>{ex}</div>)}
+</div>
+</div>}
+{results&&<div>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+<h3 style={{margin:0,fontSize:16}}>{results.title}</h3>
+<div style={{display:'flex',gap:6}}>
+<button onClick={exportCSV} style={{...btnStyle(C.accent),fontSize:13}}>CSV</button>
+<span style={{fontSize:13,color:C.dim}}>{results.rows.length} resultats</span>
+</div>
+</div>
+{results.summary&&<div style={{background:'#00896508',border:'1px solid #00896520',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:14,fontWeight:600,color:C.accent}}>{results.summary}</div>}
+<div style={{overflowX:'auto',background:C.card,borderRadius:10,border:'1px solid '+C.border}}>
+<table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+<thead><tr style={{background:'#f1f5f9'}}>{results.headers.map((h,i)=><th key={i} style={{padding:'8px 10px',textAlign:'left',fontWeight:700,fontSize:12,borderBottom:'2px solid '+C.border,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+<tbody>{results.rows.map((r,ri)=><tr key={ri} style={{background:ri%2===0?'#fff':'#f8fafc',borderBottom:'1px solid #f1f5f9'}}>{r.map((c,ci)=><td key={ci} style={{padding:'6px 10px',whiteSpace:'nowrap'}}>{c}</td>)}</tr>)}</tbody>
+</table>
+</div>
+</div>}
+</div>)};
+
 // ======== ADMIN PANEL ========
 const AdminPanel=({data,save,onLogout,onUndo})=>{
 const[pg,setPg]=useState('planning');const[mobOpen,setMobOpen]=useState(false);
-const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
-const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stats':return(<StatsPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
+const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
+const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
 return(
 <div>
 {mobOpen&&<div className="sb-overlay" style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.3)',zIndex:199}} onClick={()=>setMobOpen(false)}/>}
