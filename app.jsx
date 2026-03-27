@@ -38,24 +38,24 @@ const getForfaitPrice=(data,cid,machine,ft,citOpt,isNight)=>{let k=getForfaitKey
 const getTransferPrice=(data,cid,machine,citOpt,isNight)=>getForfaitPrice(data,cid,machine,'Transfert',citOpt,isNight);
 const forfaitHours=f=>({'2h':2,'4h':4,'6h':6,'8h':8,'Demi-journee':4,'Journee':8}[f]||4);
 
-const PREP_MINUTES=10;
-const AVANCE_CHANTIER=15;
-const LAVAGE_CHARGEMENT=30;
+const TEMPS_PLUS_DEPART=25;
+const TEMPS_PLUS_ARRIVEE=30;
 const TOLERANCE_MINUTES=5;
 
 const calcTheoreticalTimes=(job,data,pauseMinFromTE)=>{
-const prep=(data.prepMinutes!=null?data.prepMinutes:PREP_MINUTES);
-const avance=(data.avanceChantier!=null?data.avanceChantier:AVANCE_CHANTIER);
-const lavage=(data.lavageChargement!=null?data.lavageChargement:LAVAGE_CHARGEMENT);
+const tpDepart=(data.tempsPlusDepart!=null?data.tempsPlusDepart:TEMPS_PLUS_DEPART);
+const tpArrivee=(data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE);
 const tol=(data.toleranceMinutes!=null?data.toleranceMinutes:TOLERANCE_MINUTES);
 if(!job.billingStart)return null;
 const[bh,bm]=(job.billingStart||'08:00').split(':').map(Number);
 if(isNaN(bh)||isNaN(bm))return null;
 const billMin=bh*60+bm;
-const startMin=billMin-(Number(job.travelMinAller)||0)-avance-prep;
+const trajetAller=Number(job.travelMinAller)||0;
+const trajetRetour=Number(job.travelMinRetour)||0;
+const startMin=billMin-trajetAller-tpDepart;
 const fh=forfaitHours(job.forfaitType);
 const pMin=Number(pauseMinFromTE)||0;
-const endMin=billMin+fh*60+pMin+lavage+(Number(job.travelMinRetour)||0);
+const endMin=billMin+fh*60+pMin+trajetRetour+tpArrivee;
 const fmtT=m=>{const mm=((m%1440)+1440)%1440;return pad2(Math.floor(mm/60))+':'+pad2(mm%60)};
 return{theoStart:fmtT(startMin),theoEnd:fmtT(endMin),theoStartMin:startMin,theoEndMin:endMin,tolerance:tol};
 };
@@ -392,11 +392,10 @@ if(mainTE&&mainTE.startTime&&mainTE.endTime&&hasMissions){
 const tempsChantiers=ej.reduce((s,j)=>s+forfaitHours(j.forfaitType)*60+(0),0);
 const tempsPause=pauseMin;
 const tempsRoute=ej.reduce((s,j)=>s+(Number(j.travelMinAller)||0)+(Number(j.travelMinRetour)||0),0);
-const prep=(data.prepMinutes!=null?data.prepMinutes:PREP_MINUTES);
-const avance=(data.avanceChantier!=null?data.avanceChantier:AVANCE_CHANTIER);
-const lavage=(data.lavageChargement!=null?data.lavageChargement:LAVAGE_CHARGEMENT);
-const tempsPrep=prep*ej.length;const tempsAvance=avance*ej.length;const tempsLavage=lavage*ej.length;
-tempsDepotMin=Math.max(0,totalMinDay-tempsChantiers-tempsPause-tempsRoute-tempsPrep-tempsAvance-tempsLavage);
+const tpDep=(data.tempsPlusDepart!=null?data.tempsPlusDepart:TEMPS_PLUS_DEPART);
+const tpArr=(data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE);
+const tempsExtra=(tpDep+tpArr)*ej.length;
+tempsDepotMin=Math.max(0,totalMinDay-tempsChantiers-tempsPause-tempsRoute-tempsExtra);
 coutDepot=(tempsDepotMin/60)*hourly}
 if(!hasMissions&&workMin>0){tempsDepotMin=workMin;coutDepot=salTotal}
 let totalCostsDay=0,totalRevDay=0;
@@ -1020,9 +1019,8 @@ return(
 const SettingsPage=({data,save})=>{
 const[au,setAu]=useState(data.adminUser||'admin');const[ap,setAp]=useState(data.adminPass||'admin');
 const[fp,setFp]=useState(data.fuelPrice||1.72);const[np,setNp]=useState(data.nightPct||30);
-const[prepMin,setPrepMin]=useState(data.prepMinutes!=null?data.prepMinutes:PREP_MINUTES);
-const[avanceMin,setAvanceMin]=useState(data.avanceChantier!=null?data.avanceChantier:AVANCE_CHANTIER);
-const[lavageMin,setLavageMin]=useState(data.lavageChargement!=null?data.lavageChargement:LAVAGE_CHARGEMENT);
+const[tpDepartMin,setTpDepartMin]=useState(data.tempsPlusDepart!=null?data.tempsPlusDepart:TEMPS_PLUS_DEPART);
+const[tpArriveeMin,setTpArriveeMin]=useState(data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE);
 const[tolMin,setTolMin]=useState(data.toleranceMinutes!=null?data.toleranceMinutes:TOLERANCE_MINUTES);
 const[wdpm,setWdpm]=useState(data.workDaysPerMonth||22);
 const[mRent,setMRent]=useState(data.monthlyRent||0);
@@ -1033,7 +1031,7 @@ const[weeklyH,setWeeklyH]=useState(data.weeklyHoursNormal||35);
 const[ot25,setOt25]=useState(data.overtime25Threshold||35);
 const[ot50,setOt50]=useState(data.overtime50Threshold||43);
 const[refHpd,setRefHpd]=useState(data.refHoursPerDay||1);
-const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),prepMinutes:Number(prepMin),avanceChantier:Number(avanceMin),lavageChargement:Number(lavageMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd)});alert('Enregistre')};
+const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd)});alert('Enregistre')};
 const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,'');
 return(
 <div>
@@ -1047,9 +1045,8 @@ return(
 <Fl label="Majoration nuit (%)"><input type="number" style={inputStyle} value={np} onChange={e=>setNp(e.target.value)}/></Fl></div>
 <div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Constantes horaires</h3>
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-<Fl label="Preparation (min)"><input type="number" style={inputStyle} value={prepMin} onChange={e=>setPrepMin(e.target.value)}/></Fl>
-<Fl label="Avance chantier (min)"><input type="number" style={inputStyle} value={avanceMin} onChange={e=>setAvanceMin(e.target.value)}/></Fl>
-<Fl label="Lavage/chargement (min)"><input type="number" style={inputStyle} value={lavageMin} onChange={e=>setLavageMin(e.target.value)}/></Fl>
+<Fl label="Temps en plus depart (min)"><input type="number" style={inputStyle} value={tpDepartMin} onChange={e=>setTpDepartMin(e.target.value)}/></Fl>
+<Fl label="Temps en plus arrivee (min)"><input type="number" style={inputStyle} value={tpArriveeMin} onChange={e=>setTpArriveeMin(e.target.value)}/></Fl>
 <Fl label="Tolerance (min)"><input type="number" style={inputStyle} value={tolMin} onChange={e=>setTolMin(e.target.value)}/></Fl>
 </div></div>
 <div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Heures supplementaires</h3>
