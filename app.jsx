@@ -252,7 +252,7 @@ const[viewDetail,setViewDetail]=useState(null);
 const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
-const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});
+const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);
 const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
 const[depotFormEmpId,setDepotFormEmpId]=useState('');
 const[depotFormDepotId,setDepotFormDepotId]=useState('');
@@ -354,6 +354,7 @@ return(<React.Fragment>
 </select>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj&&ujM){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,uj.clientId,ujM,uj.citOption,uj.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'4px 8px',borderRadius:6,fontSize:14,border:'2px solid '+(uj.hasTransfer?C.purple:C.muted),background:uj.hasTransfer?C.purple+'20':'transparent',color:uj.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:uj.hasTransfer?700:400}}>{uj.hasTransfer?'T ✓':'+T'}</button>
 <div style={{marginLeft:'auto',display:'flex',gap:4,alignItems:'center'}}>
+<button onClick={()=>{setDupJobId(uj.id);setDupDays(1)}} style={{background:'none',border:'2px solid #d97706',borderRadius:6,fontSize:12,cursor:'pointer',padding:'3px 6px',color:'#d97706',fontWeight:600}} title="Dupliquer">Dup</button>
 <button onClick={()=>toggleDetail(uj.id)} style={{background:'none',border:'2px solid '+C.border,borderRadius:6,fontSize:14,cursor:'pointer',padding:'4px 8px',color:C.dim,fontWeight:600}}>{openDetails[uj.id]?'▲':'▼'}</button>
 <button onClick={()=>{if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==uj.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button>
 </div>
@@ -529,6 +530,7 @@ return(<React.Fragment>
 </select>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'4px 8px',borderRadius:6,fontSize:14,border:'2px solid '+(j.hasTransfer?C.purple:C.muted),background:j.hasTransfer?C.purple+'20':'transparent',color:j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T ✓':'+T'}</button>
 <div style={{marginLeft:'auto',display:'flex',gap:4,alignItems:'center'}}>
+<button onClick={()=>{setDupJobId(j.id);setDupDays(1)}} style={{background:'none',border:'2px solid #d97706',borderRadius:6,fontSize:12,cursor:'pointer',padding:'3px 6px',color:'#d97706',fontWeight:600}} title="Dupliquer sur plusieurs jours">Dup</button>
 <button onClick={()=>toggleDetail(j.id)} style={{background:'none',border:'2px solid '+C.border,borderRadius:6,fontSize:14,cursor:'pointer',padding:'4px 8px',color:C.dim,fontWeight:600}}>{openDetails[j.id]?'▲':'▼'}</button>
 <button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:C.red,fontWeight:700}}>×</button>
 </div>
@@ -612,6 +614,22 @@ return(
 {depotFormActivity==='Autre'&&<Fl label="Description"><input style={inputStyle} value={depotFormDesc} onChange={e=>setDepotFormDesc(e.target.value)} placeholder="Description libre"/></Fl>}
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveDepotJob} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>setShowDepotForm(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
+{dupJobId&&(()=>{const srcJob=(data.jobs||[]).find(j=>j.id===dupJobId);if(!srcJob)return null;const empO=(data.employees||[]).find(e=>e.id===srcJob.employeeId);const empN=empO?empO.name:'?';const clO=getClient(srcJob.clientId);const clN=clO?clO.name:'?';const doDup=()=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const baseDate=new Date(srcJob.date);for(let i=1;i<=dupDays;i++){const d=new Date(baseDate);d.setDate(d.getDate()+i);const ds=fmtDateISO(d);const exists=nd.jobs.some(j2=>j2.employeeId===srcJob.employeeId&&j2.machineId===srcJob.machineId&&j2.clientId===srcJob.clientId&&j2.date===ds);if(!exists){const nj={...JSON.parse(JSON.stringify(srcJob)),id:uid(),date:ds,sent:false,ack:false};nd.jobs.push(nj)}}save(nd);setDupJobId(null)};return(
+<Mod title="Dupliquer le chantier" onClose={()=>setDupJobId(null)} width={400}>
+<div style={{fontSize:14,marginBottom:12}}>
+<div><b>{empN}</b> · {(getMach(srcJob.machineId)||{}).name||'?'}</div>
+<div style={{color:C.dim}}>{clN} · {srcJob.location||'sans lieu'}</div>
+<div style={{color:C.dim}}>Date source : {fmtDate(new Date(srcJob.date))}</div>
+</div>
+<Fl label="Nombre de jours a dupliquer">
+<div style={{display:'flex',gap:8,alignItems:'center'}}>
+<input type="number" min="1" max="30" style={{...inputStyle,width:80,fontSize:16,textAlign:'center'}} value={dupDays} onChange={e=>setDupDays(Math.max(1,Math.min(30,Number(e.target.value)||1)))}/>
+<span style={{fontSize:14,color:C.dim}}>jour{dupDays>1?'s':''} suivant{dupDays>1?'s':''}</span>
+</div>
+</Fl>
+<div style={{fontSize:13,color:C.dim,marginBottom:12}}>Le chantier sera copie du <b>{(()=>{const d=new Date(srcJob.date);d.setDate(d.getDate()+1);return fmtDate(d)})()}</b> au <b>{(()=>{const d=new Date(srcJob.date);d.setDate(d.getDate()+dupDays);return fmtDate(d)})()}</b> (meme chauffeur, machine, client, lieu, forfait)</div>
+<div style={{display:'flex',gap:8}}><button onClick={doDup} style={btnStyle(C.accent,true)}>Dupliquer {dupDays} jour{dupDays>1?'s':''}</button><button onClick={()=>setDupJobId(null)} style={btnStyle(C.dim)}>Annuler</button></div>
+</Mod>)})()}
 </div>)};
 
 // ======== DASHBOARD ========
