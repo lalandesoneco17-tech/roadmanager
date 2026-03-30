@@ -278,7 +278,7 @@ const renderCol=(types,label)=>{
 const allM=(data.machines||[]).filter(m=>types.includes(m.type));
 const freeM=allM.filter(m=>!usedMachIds.includes(m.id));
 const empIdsWithJobs=dayJobs.filter(j=>{const m=getMach(j.machineId);return m&&types.includes(m.type)}).map(j=>j.employeeId);
-const defaultEmpIds=(data.employees||[]).filter(e=>{const m=getMach(e.machineId);if(!m||!types.includes(m.type))return false;const empDayJobs=dayJobs.filter(j=>j.employeeId===e.id&&j.type!=='depot');if(empDayJobs.length===0)return true;return empDayJobs.some(j=>{const jm=getMach(j.machineId);return jm&&types.includes(jm.type)})}).map(e=>e.id);
+const defaultEmpIds=(data.employees||[]).filter(e=>{const m=getMach(e.machineId);if(!m||!types.includes(m.type))return false;const empDayJobs=dayJobs.filter(j=>j.employeeId===e.id&&j.type!=='depot');if(empDayJobs.length===0)return true;const hasJobInThisCol=empDayJobs.some(j=>{const jm=getMach(j.machineId);return jm&&types.includes(jm.type)});const hasJobInOtherCol=empDayJobs.some(j=>{const jm=getMach(j.machineId);return jm&&!types.includes(jm.type)});if(hasJobInOtherCol&&!hasJobInThisCol)return false;return true}).map(e=>e.id);
 const empIdsRaw=[...new Set([...defaultEmpIds,...empIdsWithJobs])];
 const orderKey=selDate+'_'+types.join(',');
 const savedOrder=(data.cardOrder||{})[orderKey]||[];
