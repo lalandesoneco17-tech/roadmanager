@@ -1132,10 +1132,13 @@ const[manAbsence,setManAbsence]=useState('');
 const[manNight,setManNight]=useState(0);
 const[manRequestEnd,setManRequestEnd]=useState('');
 const[showRdv,setShowRdv]=useState(false);
+const[rdvType,setRdvType]=useState('rdv');
 const[rdvDate,setRdvDate]=useState('');
+const[rdvDateFin,setRdvDateFin]=useState('');
 const[rdvTime,setRdvTime]=useState('');
 const[rdvMotif,setRdvMotif]=useState('');
-const submitRdv=()=>{if(!rdvDate||!rdvTime){alert('Date et heure requises');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.timeEntries)nd.timeEntries=[];const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===rdvDate);if(existing>=0){nd.timeEntries[existing].requestedEndTime=rdvTime;nd.timeEntries[existing].requestedEndMotif=rdvMotif}else{nd.timeEntries.push({id:uid(),empId,date:rdvDate,type:'pending',startTime:'',endTime:'',pauseStart:null,pauseEnd:null,pauseMin:0,createdAt:new Date().toISOString(),breakStart:'12:00',breakEnd:'13:00',mealType:'PANIER',absenceType:'',nightHours:0,requestedEndTime:rdvTime,requestedEndMotif:rdvMotif})}save(nd);setShowRdv(false);setRdvDate('');setRdvTime('');setRdvMotif('');alert('Demande de debauche envoyee !')};
+const[rdvAbsType,setRdvAbsType]=useState('conge');
+const submitRdv=()=>{if(!rdvDate){alert('Date requise');return}if(rdvType==='rdv'&&!rdvTime){alert('Heure requise');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.timeEntries)nd.timeEntries=[];if(rdvType==='rdv'){const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===rdvDate);if(existing>=0){nd.timeEntries[existing].requestedEndTime=rdvTime;nd.timeEntries[existing].requestedEndMotif=rdvMotif}else{nd.timeEntries.push({id:uid(),empId,date:rdvDate,type:'pending',startTime:'',endTime:'',pauseStart:null,pauseEnd:null,pauseMin:0,createdAt:new Date().toISOString(),breakStart:'12:00',breakEnd:'13:00',mealType:'',absenceType:'',nightHours:0,requestedEndTime:rdvTime,requestedEndMotif:rdvMotif})}}else{const dStart=new Date(rdvDate);const dEnd=new Date(rdvDateFin||rdvDate);if(dEnd<dStart){alert('Date fin doit etre apres date debut');return}const d=new Date(dStart);while(d<=dEnd){const ds=fmtDateISO(d);const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===ds);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:ds,type:'absence',startTime:'',endTime:'',pauseStart:null,pauseEnd:null,pauseMin:0,createdAt:new Date().toISOString(),breakStart:'',breakEnd:'',mealType:'',absenceType:rdvAbsType,nightHours:0,requestedEndTime:'',requestedEndMotif:rdvMotif||rdvAbsType};if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);d.setDate(d.getDate()+1)}}save(nd);setShowRdv(false);setRdvDate('');setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge');alert(rdvType==='rdv'?'Demande de debauche envoyee !':'Absence enregistree !')};
 const[showPanne,setShowPanne]=useState(false);
 const[panneEquip,setPanneEquip]=useState('');
 const[panneEquipType,setPanneEquipType]=useState('machine');
@@ -1200,7 +1203,7 @@ return(
 </div>}
 <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
 <button onClick={()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}} style={{...btnStyle(C.accent),fontSize:14}}>Saisir mes heures</button>
-<button onClick={()=>{setShowRdv(true);const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvTime('');setRdvMotif('')}} style={{...btnStyle(C.orange),fontSize:14}}>Debauche RDV</button>
+<button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{...btnStyle(C.orange),fontSize:14}}>RDV / Absence</button>
 </div>
 {dayEntries.map(t=>(<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
 <span style={{fontWeight:600,fontSize:16}}>{t.startTime} - {t.endTime||'...'} {t.pauseMin>0&&<Bg text={'pause: '+t.pauseMin+'min'} color={C.orange}/>}</span>
@@ -1226,11 +1229,22 @@ return(
 <Fl label="Debauche demandee (optionnel)"><div style={{display:'flex',alignItems:'center',gap:8}}><input type="time" style={{...inputStyle,flex:1}} value={manRequestEnd} onChange={e=>setManRequestEnd(e.target.value)} placeholder="Ex: 16:00"/>{manRequestEnd&&<button onClick={()=>setManRequestEnd('')} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:14}}>x</button>}</div><div style={{fontSize:12,color:C.orange,marginTop:4}}>Indiquer ici si vous devez partir a une heure precise</div></Fl>
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveManual} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>setShowManual(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
-{showRdv&&<Mod title="Debauche anticipee / RDV" onClose={()=>setShowRdv(false)} width={400}>
+{showRdv&&<Mod title="Debauche / Absence" onClose={()=>setShowRdv(false)} width={420}>
+<div style={{display:'flex',gap:6,marginBottom:12}}><button onClick={()=>setRdvType('rdv')} style={{...btnStyle(C.orange,rdvType==='rdv'),fontSize:14}}>Debauche RDV</button><button onClick={()=>setRdvType('absence')} style={{...btnStyle(C.red,rdvType==='absence'),fontSize:14}}>Absence</button></div>
+{rdvType==='rdv'&&<React.Fragment>
 <Fl label="Date"><input type="date" style={inputStyle} value={rdvDate} onChange={e=>setRdvDate(e.target.value)}/></Fl>
 <Fl label="Heure de debauche souhaitee"><input type="time" style={inputStyle} value={rdvTime} onChange={e=>setRdvTime(e.target.value)}/></Fl>
 <Fl label="Motif"><input style={inputStyle} value={rdvMotif} onChange={e=>setRdvMotif(e.target.value)} placeholder="RDV medical, personnel..."/></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitRdv} style={btnStyle(C.orange,true)}>Envoyer</button><button onClick={()=>setShowRdv(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+</React.Fragment>}
+{rdvType==='absence'&&<React.Fragment>
+<Fl label="Motif absence"><select style={inputStyle} value={rdvAbsType} onChange={e=>setRdvAbsType(e.target.value)}><option value="conge">Conge</option><option value="maladie">Maladie</option><option value="rtt">RTT</option><option value="formation">Formation</option><option value="accident">Accident travail</option><option value="autre">Autre</option></select></Fl>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+<Fl label="Date debut"><input type="date" style={inputStyle} value={rdvDate} onChange={e=>setRdvDate(e.target.value)}/></Fl>
+<Fl label="Date fin"><input type="date" style={inputStyle} value={rdvDateFin} onChange={e=>setRdvDateFin(e.target.value)}/></Fl>
+</div>
+<Fl label="Commentaire"><input style={inputStyle} value={rdvMotif} onChange={e=>setRdvMotif(e.target.value)} placeholder="Precision..."/></Fl>
+</React.Fragment>}
+<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitRdv} style={btnStyle(rdvType==='rdv'?C.orange:C.red,true)}>Envoyer</button><button onClick={()=>setShowRdv(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
 {editTE&&<Mod title="Modifier pointage" onClose={()=>setEditTE(null)}>
 <Fl label="Debut"><input type="time" style={inputStyle} value={editTE.startTime||''} onChange={e=>setEditTE({...editTE,startTime:e.target.value})}/></Fl>
