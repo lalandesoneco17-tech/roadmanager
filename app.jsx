@@ -501,15 +501,43 @@ return(
 {/* Côté droit: lignes de chantiers */}
 <div style={{flex:1,minWidth:0}}>
 {/* Ligne heures */}
-<div style={{padding:'4px 10px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:13}}>
-<span style={{color:C.dim}}>theo {(()=>{const th0=grp.missions[0]?calcTheoreticalTimes(grp.missions[0].j,data,pMinGlobal):null;return th0?<React.Fragment><b>{th0.theoStart}</b>{'→'}<b>{th0.theoEnd}</b></React.Fragment>:'--'})()}</span>
-<span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}</span>
-{(()=>{const ji0=grp.missions[0]?grp.missions[0].j:null;if(!ji0||!ji0.billingStart)return null;const jdR=grp.m?jdReports.find(r=>r.jd_id===normJd(grp.m.name)||(grp.m.jdId&&r.jd_id===normJd(grp.m.jdId))):null;let finE=null;if(jdR&&(jdR.working_h!=null||jdR.idle_h!=null)){const[bh,bm]=ji0.billingStart.split(':').map(Number);const eMin=(bh*60+bm)+Math.round(((jdR.working_h||0)+(jdR.idle_h||0))*60);finE=pad2(Math.floor(eMin/60)%24)+':'+pad2(eMin%60)}const coup=mainTE?mainTE.breakStart||mainTE.pauseStart||null:null;const repr=mainTE?mainTE.breakEnd||mainTE.pauseEnd||null:null;return(<span style={{background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:6,padding:'2px 8px',fontSize:12,color:'#1e40af',display:'inline-flex',gap:8,alignItems:'center'}}><b>{ji0.billingStart}</b>{finE&&<span>{'→'}<b>{finE}</b></span>}{coup&&<span style={{borderLeft:'1px solid #93c5fd',paddingLeft:8}}>Coup. <b>{coup}</b>{repr?<span>{'→'}<b>{repr}</b></span>:<span style={{color:'#f97316'}}> ...</span>}</span>}</span>);})()}
-{startBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:startBadge.color+'18',color:startBadge.color}}>{startBadge.text}</span>}
-{endBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:endBadge.color+'18',color:endBadge.color}}>{endBadge.text}</span>}
-{workMin>0&&<span style={{fontWeight:700,color:C.accent,fontSize:13}}>{fmtDuration(workMin)}</span>}
-{mainTE&&mainTE.requestedEndTime&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706'}}>Deb. demandee {mainTE.requestedEndTime}</span>}
-{mainTE&&mainTE.absenceType&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red}}>{mainTE.absenceType}</span>}
+<div style={{padding:'4px 10px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:12}}>
+{(()=>{
+const ji0=grp.missions[0]?grp.missions[0].j:null;
+const th0=ji0?calcTheoreticalTimes(ji0,data,pMinGlobal):null;
+const jdR=grp.m?jdReports.find(r=>r.jd_id===normJd(grp.m.name)||(grp.m.jdId&&r.jd_id===normJd(grp.m.jdId))):null;
+let finChantier=null,arrDepot=null;
+if(ji0&&ji0.billingStart&&jdR&&(jdR.working_h!=null||jdR.idle_h!=null)){
+const[bh,bm]=ji0.billingStart.split(':').map(Number);
+const tpArr=(data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE);
+const trajR=Number(ji0.travelMinRetour)||0;
+const fcMin=(bh*60+bm)+Math.round(((jdR.working_h||0)+(jdR.idle_h||0))*60);
+finChantier=pad2(Math.floor(fcMin/60)%24)+':'+pad2(fcMin%60);
+const adMin=fcMin+trajR+tpArr;
+arrDepot=pad2(Math.floor(adMin/60)%24)+':'+pad2(adMin%60);
+}
+let debDem=null;
+if(mainTE&&mainTE.startTime){const[sh,sm]=mainTE.startTime.split(':').map(Number);const dm=(sh*60+sm)+480;debDem=pad2(Math.floor(dm/60)%24)+':'+pad2(dm%60)}
+const coup=mainTE?mainTE.breakStart||mainTE.pauseStart||null:null;
+const repr=mainTE?mainTE.breakEnd||mainTE.pauseEnd||null:null;
+const Y=t=><span style={{background:'#fef9c3',border:'1px solid #eab308',borderRadius:6,padding:'2px 7px',color:'#713f12',fontWeight:700}}>{t}</span>;
+const G=t=><span style={{background:'#dcfce7',border:'1px solid #16a34a',borderRadius:6,padding:'2px 7px',color:'#14532d',fontWeight:700}}>{t}</span>;
+const B=t=><span style={{background:'#dbeafe',border:'1px solid #3b82f6',borderRadius:6,padding:'2px 7px',color:'#1e3a8a',fontWeight:700}}>{t}</span>;
+const O=t=><span style={{background:'#fed7aa',border:'1px solid #f97316',borderRadius:6,padding:'2px 7px',color:'#9a3412',fontWeight:700}}>{t}</span>;
+return(<React.Fragment>
+{mainTE&&mainTE.startTime&&Y(mainTE.startTime)}
+{startBadge&&<span style={{padding:'2px 7px',borderRadius:6,fontWeight:700,background:startBadge.color+'18',color:startBadge.color,border:'1px solid '+startBadge.color+'50'}}>{startBadge.text}</span>}
+{th0&&G('Dem. '+th0.theoStart)}
+{ji0&&ji0.billingStart&&B('Ch. '+ji0.billingStart)}
+{coup&&Y('Coup. '+coup+(repr?'→'+repr:' ...'))}
+{debDem&&G('Deb. '+debDem)}
+{mainTE&&mainTE.endTime&&Y(mainTE.endTime)}
+{finChantier&&B('Fin '+finChantier)}
+{arrDepot&&O('Dep. '+arrDepot)}
+{workMin>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(workMin)}</span>}
+{mainTE&&mainTE.absenceType&&<span style={{padding:'2px 7px',borderRadius:6,fontWeight:700,background:C.red+'20',color:C.red,border:'1px solid '+C.red+'40'}}>{mainTE.absenceType}</span>}
+</React.Fragment>);
+})()}
 </div>
 {grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
