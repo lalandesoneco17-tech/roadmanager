@@ -516,17 +516,18 @@ finChantier=pad2(Math.floor(fcMin/60)%24)+':'+pad2(fcMin%60);
 const adMin=fcMin+trajR+tpArr;
 arrDepot=pad2(Math.floor(adMin/60)%24)+':'+pad2(adMin%60);
 }
-let debDem=null;
-if(mainTE&&mainTE.startTime){const[sh,sm]=mainTE.startTime.split(':').map(Number);const dm=(sh*60+sm)+480;debDem=pad2(Math.floor(dm/60)%24)+':'+pad2(dm%60)}
 const coup=mainTE?mainTE.breakStart||mainTE.pauseStart||null:null;
 const repr=mainTE?mainTE.breakEnd||mainTE.pauseEnd||null:null;
+let breakMin=mainTE?Number(mainTE.pauseMin)||0:0;
+if(coup&&repr){const[ch,cm]=coup.split(':').map(Number);const[rh,rm]=repr.split(':').map(Number);const bm2=(rh*60+rm)-(ch*60+cm);if(bm2>0)breakMin=bm2}
+let debDem=null;
+if(mainTE&&mainTE.startTime){const[sh,sm]=mainTE.startTime.split(':').map(Number);const dm=(sh*60+sm)+480+breakMin;debDem=pad2(Math.floor(dm/60)%24)+':'+pad2(dm%60)}
 const Y=t=><span style={{background:'#fef9c3',border:'1px solid #eab308',borderRadius:6,padding:'2px 7px',color:'#713f12',fontWeight:700}}>{t}</span>;
 const G=t=><span style={{background:'#dcfce7',border:'1px solid #16a34a',borderRadius:6,padding:'2px 7px',color:'#14532d',fontWeight:700}}>{t}</span>;
 const B=t=><span style={{background:'#dbeafe',border:'1px solid #3b82f6',borderRadius:6,padding:'2px 7px',color:'#1e3a8a',fontWeight:700}}>{t}</span>;
 const O=t=><span style={{background:'#fed7aa',border:'1px solid #f97316',borderRadius:6,padding:'2px 7px',color:'#9a3412',fontWeight:700}}>{t}</span>;
 return(<React.Fragment>
 {mainTE&&mainTE.startTime&&Y(mainTE.startTime)}
-{startBadge&&<span style={{padding:'2px 7px',borderRadius:6,fontWeight:700,background:startBadge.color+'18',color:startBadge.color,border:'1px solid '+startBadge.color+'50'}}>{startBadge.text}</span>}
 {th0&&G('Dem. '+th0.theoStart)}
 {ji0&&ji0.billingStart&&B('Ch. '+ji0.billingStart)}
 {coup&&Y('Coup. '+coup+(repr?'→'+repr:' ...'))}
@@ -580,6 +581,8 @@ return(<React.Fragment>
 {/* Details panel */}
 {openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
 <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:6,fontSize:14}}>
+{startBadge&&<span style={{padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:700,background:startBadge.color+'18',color:startBadge.color,border:'1px solid '+startBadge.color+'40'}}>{startBadge.text}</span>}
+{endBadge&&<span style={{padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:700,background:endBadge.color+'18',color:endBadge.color,border:'1px solid '+endBadge.color+'40'}}>{endBadge.text}</span>}
 <span style={{color:C.red,fontWeight:600}}>Couts -{fmtMoney(totalCostsDay)}</span>
 {dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:C.green+'18',color:C.green}}>Entretien ✓</span>}
 {!(dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse)&&<React.Fragment>
