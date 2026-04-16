@@ -1221,12 +1221,49 @@ return(
 <button onClick={()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}} style={{...btnStyle(C.accent),fontSize:14}}>Saisir mes heures</button>
 <button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{...btnStyle(C.orange),fontSize:14}}>RDV / Absence</button>
 </div>
-{dayEntries.map(t=>(<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
-<span style={{fontWeight:600,fontSize:16}}>{t.startTime} - {t.endTime||'...'} {t.pauseMin>0&&<Bg text={'pause: '+t.pauseMin+'min'} color={C.orange}/>}</span>
+{(()=>{
+const todayJobsEmp=(data.jobs||[]).filter(j=>j.employeeId===empId&&j.date===today&&j.billingStart);
+const njd=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');
+return dayEntries.map(t=>{
+const jobInfos=todayJobsEmp.map(job=>{
+const machine=(data.machines||[]).find(m=>m.id===job.machineId);
+const jdRep=machine?(data.jdReports||[]).find(r=>r.report_date===today&&(r.jd_id===njd(machine.name)||(machine.jdId&&r.jd_id===njd(machine.jdId)))):null;
+let finEst=null;
+if(jdRep&&(jdRep.working_h!=null||jdRep.idle_h!=null)){
+const[bh,bm]=job.billingStart.split(':').map(Number);
+const endMin=(bh*60+bm)+Math.round(((jdRep.working_h||0)+(jdRep.idle_h||0))*60);
+finEst=pad2(Math.floor(endMin/60)%24)+':'+pad2(endMin%60);
+}
+return{billingStart:job.billingStart,finEst,machineName:machine?machine.name:''};
+});
+const coupure=t.breakStart||t.pauseStart||null;
+const reprise=t.breakEnd||t.pauseEnd||null;
+return(
+<div key={t.id} style={{padding:'8px 0',borderBottom:'1px solid #f1f5f9'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+<span style={{fontWeight:700,fontSize:17}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:13,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
 <div style={{display:'flex',gap:4}}>
 {t.date===today&&<button onClick={()=>setEditTE({...t})} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.accent}}>&#9998;</button>}
 {t.date===today&&<button onClick={()=>delTE(t.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>}
-</div></div>))}
+</div>
+</div>
+{jobInfos.map((ji,i)=>(
+<div key={i} style={{fontSize:13,color:C.dim,marginBottom:2,paddingLeft:4,borderLeft:'3px solid '+C.accent}}>
+Debut chantier : <b style={{color:C.accent,fontSize:14}}>{ji.billingStart}</b>
+{ji.finEst&&<span> &rarr; Fin est. <b style={{color:C.green,fontSize:14}}>{ji.finEst}</b></span>}
+{ji.machineName&&<span style={{marginLeft:6,color:C.dim}}>({ji.machineName})</span>}
+</div>
+))}
+{coupure&&(
+<div style={{fontSize:13,color:C.dim,marginTop:2,paddingLeft:4,borderLeft:'3px solid '+C.orange}}>
+Coupure : <b style={{fontSize:14}}>{coupure}</b>
+{reprise?<span> &rarr; Reprise : <b style={{fontSize:14}}>{reprise}</b></span>:<span style={{color:C.orange}}> &rarr; en cours</span>}
+</div>
+)}
+</div>
+);
+});
+})()}
 </div>
 {showManual&&<Mod title="Saisir mes heures" onClose={()=>setShowManual(false)} width={450}>
 <Fl label="Date"><input type="date" style={inputStyle} value={manDate} onChange={e=>setManDate(e.target.value)}/></Fl>
