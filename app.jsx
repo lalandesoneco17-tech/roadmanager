@@ -249,6 +249,8 @@ return(
 const DEPOT_ACTIVITIES=['Rangement / nettoyage','Mecanique / entretien','Attente pieces','Formation','Administratif','Autre'];
 const PlanningPage=({data,save})=>{
 const[selDate,setSelDate]=useState(fmtDateISO(new Date()));
+const[jdReports,setJdReports]=useState([]);
+useEffect(()=>{if(!sb)return;const jdIds=(data.machines||[]).filter(m=>m.jdId).map(m=>m.jdId);if(!jdIds.length)return;sb.from('machine_daily_reports').select('*').eq('report_date',selDate).in('jd_id',jdIds).then(({data:rpts})=>{if(rpts)setJdReports(rpts)})},[selDate,data.machines]);
 const[viewDetail,setViewDetail]=useState(null);
 const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
@@ -584,6 +586,7 @@ return(<React.Fragment>
 {dTotalEntretienMach===0&&dTotalEntretienCam===0&&<div style={{color:C.muted,fontSize:9,fontStyle:'italic'}}>Aucune</div>}
 </div>
 </div>
+{(()=>{const jdReport=m&&m.jdId?jdReports.find(r=>r.jd_id===m.jdId):null;if(!m||!m.jdId)return null;return(<div style={{marginTop:6,background:'#16a34a08',borderRadius:6,padding:6,border:'1px solid #16a34a15'}}><div style={{fontWeight:800,color:'#16a34a',marginBottom:4,fontSize:11}}>CARBURANT MACHINE (JD)</div>{!jdReport?<div style={{fontSize:10,color:C.muted,fontStyle:'italic'}}>Pas de donnees JD pour ce jour</div>:(<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:4,fontSize:10}}><div style={{background:'#fff',borderRadius:4,padding:4,border:'1px solid #16a34a15'}}><div style={{fontWeight:700,color:C.dim,marginBottom:2}}>Travail</div><div>{jdReport.working_h!=null?Number(jdReport.working_h).toFixed(1):0} h</div><div style={{color:C.orange,fontWeight:600}}>{jdReport.working_fuel_l!=null?Number(jdReport.working_fuel_l).toFixed(0):0} L</div></div><div style={{background:'#fff',borderRadius:4,padding:4,border:'1px solid #16a34a15'}}><div style={{fontWeight:700,color:C.dim,marginBottom:2}}>Ralenti</div><div>{jdReport.idle_h!=null?Number(jdReport.idle_h).toFixed(1):0} h</div><div style={{color:C.orange,fontWeight:600}}>{jdReport.idle_fuel_l!=null?Number(jdReport.idle_fuel_l).toFixed(0):0} L</div></div><div style={{background:'#fff',borderRadius:4,padding:4,border:'1px solid #16a34a15'}}><div style={{fontWeight:700,color:C.dim,marginBottom:2}}>Transport</div><div>{jdReport.transport_h!=null?Number(jdReport.transport_h).toFixed(1):0} h</div><div style={{color:C.orange,fontWeight:600}}>{jdReport.transport_fuel_l!=null?Number(jdReport.transport_fuel_l).toFixed(0):0} L</div></div></div>)}</div>);})()}
 </div>}
 </div>)})}
 </div>
@@ -826,6 +829,8 @@ return(
 // ======== MACHINES ========
 const MachinesPage=({data,save})=>{
 const[sel,setSel]=useState(null);const[show,setShow]=useState(false);
+const[machinesJd,setMachinesJd]=useState([]);
+useEffect(()=>{if(!sb)return;sb.from('machines_jd').select('*').then(({data:jdData})=>{if(jdData)setMachinesJd(jdData)})},[]);
 const types=['Raboteuse','Balayeuse','Citerne'];
 const open=m=>{setSel(m?{...m}:{id:uid(),name:'',type:'Raboteuse',width:'',fuelConsumption:'',purchasePrice:'',creditMonthly:'',creditEnd:''});setShow(true)};
 const close=()=>{setShow(false);setSel(null)};
@@ -851,6 +856,7 @@ return(
 <Fl label="Type"><select style={inputStyle} value={sel.type} onChange={e=>setSel({...sel,type:e.target.value})}>{types.map(t=><option key={t} value={t}>{t}</option>)}</select></Fl>
 {sel.type==='Raboteuse'&&<Fl label="Largeur"><input style={inputStyle} value={sel.width} onChange={e=>setSel({...sel,width:e.target.value})}/></Fl>}
 <Fl label="Conso (L/h)"><input type="number" style={inputStyle} value={sel.fuelConsumption} onChange={e=>setSel({...sel,fuelConsumption:e.target.value})}/></Fl>
+<Fl label="Liaison John Deere"><select style={inputStyle} value={sel.jdId||''} onChange={e=>setSel({...sel,jdId:e.target.value||undefined})}><option value="">-- Aucune liaison JD --</option>{machinesJd.map(jd=><option key={jd.id} value={jd.id}>{jd.name||jd.id}</option>)}</select></Fl>
 <Fl label="Prix achat"><input type="number" style={inputStyle} value={sel.purchasePrice} onChange={e=>setSel({...sel,purchasePrice:e.target.value})}/></Fl>
 <Fl label="Credit mensuel"><input type="number" style={inputStyle} value={sel.creditMonthly} onChange={e=>setSel({...sel,creditMonthly:e.target.value})}/></Fl>
 <Fl label="Fin credit"><input type="date" style={inputStyle} value={sel.creditEnd||''} onChange={e=>setSel({...sel,creditEnd:e.target.value})}/></Fl>
