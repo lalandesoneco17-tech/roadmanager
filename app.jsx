@@ -299,8 +299,14 @@ const onDragOver=(e,cardId)=>{e.preventDefault();if(cardId!==dragId)setDragOverI
 const onDragEnd=()=>{if(dragId&&dragOverId&&dragId!==dragOverId){const newOrder=[...sortedCards];const fromIdx=newOrder.indexOf(dragId);const toIdx=newOrder.indexOf(dragOverId);if(fromIdx>=0&&toIdx>=0){newOrder.splice(fromIdx,1);newOrder.splice(toIdx,0,dragId);const nd=JSON.parse(JSON.stringify(data));if(!nd.cardOrder)nd.cardOrder={};nd.cardOrder[orderKey+'_all']=newOrder;save(nd)}}setDragId(null);setDragOverId(null)};
 return(
 <div>
-<div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
+<div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border,display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+<div>
 <span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:18}}>{label}</span>
+{freeM.length>0&&<div style={{marginTop:6}}>
+<span style={{fontSize:12,color:C.dim,fontWeight:600}}>Machines libres :</span>
+{freeM.map(m=><div key={m.id} style={{fontSize:14,fontWeight:700,color:MC[m.type]||C.accent,marginLeft:10,lineHeight:'1.6'}}>{m.name}{m.width?' ('+m.width+')':''}<span style={{color:C.dim,fontWeight:400,fontSize:12}}> — {m.type}</span></div>)}
+</div>}
+</div>
 </div>
 {(()=>{let shownSeparator=false;return sortedCards.map(cardId=>{
 const showSep=!shownSeparator&&cardId.startsWith('m_');
@@ -609,7 +615,7 @@ return(
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>Dispo </span>{availDrivers.map(e=><Bg key={e.id} text={e.name.split(' ')[0]} color={C.orange} style={{marginLeft:4}}/>)}</div>
 {(()=>{const newPannes=(data.panneReports||[]).filter(p=>p.status!=='resolved');return newPannes.length>0?<div style={{background:'#fef2f2',borderRadius:8,padding:'8px 14px',border:'1px solid #fecaca',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}><span style={{fontSize:14,fontWeight:700,color:C.red}}>&#9888; {newPannes.length} panne{newPannes.length>1?'s':''}</span>{newPannes.map(p=>{const allEq=[...(data.machines||[]).map(m=>({id:m.id,name:m.name})),...(data.trucks||[]).map(t=>({id:t.id,name:t.name})),...(data.cars||[]).map(c=>({id:c.id,name:c.name}))];const eq=allEq.find(x=>x.id===(p.machineId||p.truckId||p.carId));const reporter=(data.employees||[]).find(e=>e.id===p.reportedBy);return(<span key={p.id} style={{padding:'3px 10px',borderRadius:8,fontSize:13,fontWeight:600,background:p.severity==='urgent'?'#dc262618':'#d9770618',color:p.severity==='urgent'?C.red:C.orange,border:'1px solid '+(p.severity==='urgent'?'#dc262630':'#d9770630')}}>{eq?eq.name:'?'} — {(p.description||'').slice(0,30)}{p.description&&p.description.length>30?'...':''} {reporter?'('+reporter.name.split(' ')[0]+')':''} {p.severity==='urgent'?'URGENT':''}</span>)})}</div>:null})()}
 </div>
-<div className="pg" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+<div style={{display:'flex',flexDirection:'column',gap:12}}>
 {renderCol(['Raboteuse'],'Raboteuses')}
 {renderCol(['Balayeuse','Citerne'],'Balayeuses + Citernes')}
 </div>
