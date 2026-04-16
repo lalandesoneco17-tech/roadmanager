@@ -1222,38 +1222,36 @@ return(
 <button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{...btnStyle(C.orange),fontSize:14}}>RDV / Absence</button>
 </div>
 {(()=>{
-const todayJobsEmp=(data.jobs||[]).filter(j=>j.employeeId===empId&&j.date===today&&j.billingStart);
 const njd=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');
-return dayEntries.map(t=>{
-const jobInfos=todayJobsEmp.map(job=>{
-const machine=(data.machines||[]).find(m=>m.id===job.machineId);
+const todayJobsEmp=(data.jobs||[]).filter(j=>j.employeeId===empId&&j.date===today&&j.billingStart);
+const ji=todayJobsEmp[0];
+const machine=ji?(data.machines||[]).find(m=>m.id===ji.machineId):null;
 const jdRep=machine?(data.jdReports||[]).find(r=>r.report_date===today&&(r.jd_id===njd(machine.name)||(machine.jdId&&r.jd_id===njd(machine.jdId)))):null;
 let finEst=null;
-if(jdRep&&(jdRep.working_h!=null||jdRep.idle_h!=null)){
-const[bh,bm]=job.billingStart.split(':').map(Number);
+if(ji&&jdRep&&(jdRep.working_h!=null||jdRep.idle_h!=null)){
+const[bh,bm]=ji.billingStart.split(':').map(Number);
 const endMin=(bh*60+bm)+Math.round(((jdRep.working_h||0)+(jdRep.idle_h||0))*60);
 finEst=pad2(Math.floor(endMin/60)%24)+':'+pad2(endMin%60);
 }
-return{billingStart:job.billingStart,finEst,machineName:machine?machine.name:''};
-});
-const coupure=t.breakStart||t.pauseStart||null;
-const reprise=t.breakEnd||t.pauseEnd||null;
-return(
-<div key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid #f1f5f9',flexWrap:'wrap'}}>
-<span style={{fontWeight:700,fontSize:17}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
-{(jobInfos.length>0||coupure)&&(
-<div style={{background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:8,padding:'5px 10px',fontSize:13,color:'#1e40af',display:'inline-flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-{jobInfos[0]&&<span><b>{jobInfos[0].billingStart}</b>{jobInfos[0].finEst&&<span> &rarr; <b>{jobInfos[0].finEst}</b></span>}</span>}
-{coupure&&<span style={{borderLeft:'1px solid #93c5fd',paddingLeft:10}}>Coupure <b>{coupure}</b>{reprise?<span> &rarr; <b>{reprise}</b></span>:<span style={{color:'#f97316'}}> ...</span>}</span>}
+const coupure=lastEntry?lastEntry.breakStart||lastEntry.pauseStart||null:null;
+const reprise=lastEntry?lastEntry.breakEnd||lastEntry.pauseEnd||null:null;
+return(<React.Fragment>
+{ji&&(
+<div style={{background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:8,padding:'8px 12px',fontSize:14,color:'#1e40af',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:8}}>
+<span>Chantier <b>{ji.billingStart}</b>{finEst&&<span> &rarr; <b>{finEst}</b></span>}</span>
+{coupure&&<span style={{borderLeft:'1px solid #93c5fd',paddingLeft:12}}>Coupure <b>{coupure}</b>{reprise?<span> &rarr; <b>{reprise}</b></span>:<span style={{color:'#f97316'}}> en cours</span>}</span>}
 </div>
 )}
-<div style={{marginLeft:'auto',display:'flex',gap:4}}>
+{dayEntries.map(t=>(
+<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
+<span style={{fontWeight:700,fontSize:16}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
+<div style={{display:'flex',gap:4}}>
 {t.date===today&&<button onClick={()=>setEditTE({...t})} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.accent}}>&#9998;</button>}
 {t.date===today&&<button onClick={()=>delTE(t.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>}
 </div>
 </div>
-);
-});
+))}
+</React.Fragment>);
 })()}
 </div>
 {showManual&&<Mod title="Saisir mes heures" onClose={()=>setShowManual(false)} width={450}>
