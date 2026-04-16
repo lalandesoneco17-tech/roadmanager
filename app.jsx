@@ -1239,27 +1239,18 @@ return{billingStart:job.billingStart,finEst,machineName:machine?machine.name:''}
 const coupure=t.breakStart||t.pauseStart||null;
 const reprise=t.breakEnd||t.pauseEnd||null;
 return(
-<div key={t.id} style={{padding:'8px 0',borderBottom:'1px solid #f1f5f9'}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-<span style={{fontWeight:700,fontSize:17}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:13,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
-<div style={{display:'flex',gap:4}}>
+<div key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid #f1f5f9',flexWrap:'wrap'}}>
+<span style={{fontWeight:700,fontSize:17}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
+{(jobInfos.length>0||coupure)&&(
+<div style={{background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:8,padding:'5px 10px',fontSize:13,color:'#1e40af',display:'inline-flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+{jobInfos[0]&&<span><b>{jobInfos[0].billingStart}</b>{jobInfos[0].finEst&&<span> &rarr; <b>{jobInfos[0].finEst}</b></span>}</span>}
+{coupure&&<span style={{borderLeft:'1px solid #93c5fd',paddingLeft:10}}>Coupure <b>{coupure}</b>{reprise?<span> &rarr; <b>{reprise}</b></span>:<span style={{color:'#f97316'}}> ...</span>}</span>}
+</div>
+)}
+<div style={{marginLeft:'auto',display:'flex',gap:4}}>
 {t.date===today&&<button onClick={()=>setEditTE({...t})} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.accent}}>&#9998;</button>}
 {t.date===today&&<button onClick={()=>delTE(t.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>}
 </div>
-</div>
-{jobInfos.map((ji,i)=>(
-<div key={i} style={{fontSize:13,color:C.dim,marginBottom:2,paddingLeft:4,borderLeft:'3px solid '+C.accent}}>
-Debut chantier : <b style={{color:C.accent,fontSize:14}}>{ji.billingStart}</b>
-{ji.finEst&&<span> &rarr; Fin est. <b style={{color:C.green,fontSize:14}}>{ji.finEst}</b></span>}
-{ji.machineName&&<span style={{marginLeft:6,color:C.dim}}>({ji.machineName})</span>}
-</div>
-))}
-{coupure&&(
-<div style={{fontSize:13,color:C.dim,marginTop:2,paddingLeft:4,borderLeft:'3px solid '+C.orange}}>
-Coupure : <b style={{fontSize:14}}>{coupure}</b>
-{reprise?<span> &rarr; Reprise : <b style={{fontSize:14}}>{reprise}</b></span>:<span style={{color:C.orange}}> &rarr; en cours</span>}
-</div>
-)}
 </div>
 );
 });
