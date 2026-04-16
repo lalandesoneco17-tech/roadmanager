@@ -504,6 +504,7 @@ return(
 <div style={{padding:'4px 10px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',borderBottom:'1px solid '+C.border,fontSize:13}}>
 <span style={{color:C.dim}}>theo {(()=>{const th0=grp.missions[0]?calcTheoreticalTimes(grp.missions[0].j,data,pMinGlobal):null;return th0?<React.Fragment><b>{th0.theoStart}</b>{'→'}<b>{th0.theoEnd}</b></React.Fragment>:'--'})()}</span>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:<span style={{color:C.muted}}>--:--</span>}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:<span style={{color:C.muted}}>--:--</span>}</span>
+{(()=>{const ji0=grp.missions[0]?grp.missions[0].j:null;if(!ji0||!ji0.billingStart)return null;const jdR=grp.m?jdReports.find(r=>r.jd_id===normJd(grp.m.name)||(grp.m.jdId&&r.jd_id===normJd(grp.m.jdId))):null;let finE=null;if(jdR&&(jdR.working_h!=null||jdR.idle_h!=null)){const[bh,bm]=ji0.billingStart.split(':').map(Number);const eMin=(bh*60+bm)+Math.round(((jdR.working_h||0)+(jdR.idle_h||0))*60);finE=pad2(Math.floor(eMin/60)%24)+':'+pad2(eMin%60)}const coup=mainTE?mainTE.breakStart||mainTE.pauseStart||null:null;const repr=mainTE?mainTE.breakEnd||mainTE.pauseEnd||null:null;return(<span style={{background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:6,padding:'2px 8px',fontSize:12,color:'#1e40af',display:'inline-flex',gap:8,alignItems:'center'}}><b>{ji0.billingStart}</b>{finE&&<span>{'→'}<b>{finE}</b></span>}{coup&&<span style={{borderLeft:'1px solid #93c5fd',paddingLeft:8}}>Coup. <b>{coup}</b>{repr?<span>{'→'}<b>{repr}</b></span>:<span style={{color:'#f97316'}}> ...</span>}</span>}</span>);})()}
 {startBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:startBadge.color+'18',color:startBadge.color}}>{startBadge.text}</span>}
 {endBadge&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:endBadge.color+'18',color:endBadge.color}}>{endBadge.text}</span>}
 {workMin>0&&<span style={{fontWeight:700,color:C.accent,fontSize:13}}>{fmtDuration(workMin)}</span>}
@@ -1221,27 +1222,6 @@ return(
 <button onClick={()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}} style={{...btnStyle(C.accent),fontSize:14}}>Saisir mes heures</button>
 <button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{...btnStyle(C.orange),fontSize:14}}>RDV / Absence</button>
 </div>
-{(()=>{
-const njd=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');
-const todayJobsEmp=(data.jobs||[]).filter(j=>j.employeeId===empId&&j.date===today&&j.billingStart);
-const ji=todayJobsEmp[0];
-const machine=ji?(data.machines||[]).find(m=>m.id===ji.machineId):null;
-const jdRep=machine?(data.jdReports||[]).find(r=>r.report_date===today&&(r.jd_id===njd(machine.name)||(machine.jdId&&r.jd_id===njd(machine.jdId)))):null;
-let finEst=null;
-if(ji&&jdRep&&(jdRep.working_h!=null||jdRep.idle_h!=null)){
-const[bh,bm]=ji.billingStart.split(':').map(Number);
-const endMin=(bh*60+bm)+Math.round(((jdRep.working_h||0)+(jdRep.idle_h||0))*60);
-finEst=pad2(Math.floor(endMin/60)%24)+':'+pad2(endMin%60);
-}
-const coupure=lastEntry?lastEntry.breakStart||lastEntry.pauseStart||null:null;
-const reprise=lastEntry?lastEntry.breakEnd||lastEntry.pauseEnd||null:null;
-return(<React.Fragment>
-{ji&&(
-<div style={{background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:8,padding:'8px 12px',fontSize:14,color:'#1e40af',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:8}}>
-<span>Chantier <b>{ji.billingStart}</b>{finEst&&<span> &rarr; <b>{finEst}</b></span>}</span>
-{coupure&&<span style={{borderLeft:'1px solid #93c5fd',paddingLeft:12}}>Coupure <b>{coupure}</b>{reprise?<span> &rarr; <b>{reprise}</b></span>:<span style={{color:'#f97316'}}> en cours</span>}</span>}
-</div>
-)}
 {dayEntries.map(t=>(
 <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
 <span style={{fontWeight:700,fontSize:16}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
@@ -1251,8 +1231,6 @@ return(<React.Fragment>
 </div>
 </div>
 ))}
-</React.Fragment>);
-})()}
 </div>
 {showManual&&<Mod title="Saisir mes heures" onClose={()=>setShowManual(false)} width={450}>
 <Fl label="Date"><input type="date" style={inputStyle} value={manDate} onChange={e=>setManDate(e.target.value)}/></Fl>
