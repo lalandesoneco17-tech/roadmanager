@@ -5,7 +5,7 @@ const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','Transfert
 const SKEY='roadmanager-v5';
 if(!window.storage||typeof window.storage.get!=='function'){window.storage={get:function(k){try{return Promise.resolve(localStorage.getItem(k))}catch(e){return Promise.resolve(null)}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve()}};}
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,paniersPrice:12,restoPrice:15});
+const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,paniersPrice:12,restoPrice:15,anthropicApiKey:''});
 const PART_CATS=['pneu','filtre','courroie','dent','roulement','electrique','hydraulique','autre'];
 const INTER_TYPES=['reparation','entretien','changement_piece','panne'];
 const SEVERITIES=['urgent','normal','mineur'];
@@ -1171,7 +1171,8 @@ const[ot50,setOt50]=useState(data.overtime50Threshold||43);
 const[refHpd,setRefHpd]=useState(data.refHoursPerDay||1);
 const[paniersP,setPaniersP]=useState(data.paniersPrice!=null?data.paniersPrice:12);
 const[restoP,setRestoP]=useState(data.restoPrice!=null?data.restoPrice:15);
-const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP)});alert('Enregistre')};
+const[apiKey,setApiKey]=useState(data.anthropicApiKey||'');
+const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP),anthropicApiKey:apiKey});alert('Enregistre')};
 const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,'');
 return(
 <div>
@@ -1208,6 +1209,14 @@ return(
 <Fl label="Assurance RC pro (EUR/mois)"><input type="number" style={inputStyle} value={mIRC} onChange={e=>setMIRC(e.target.value)}/></Fl>
 </div>
 <Fl label="Debut exercice"><input type="date" style={inputStyle} value={yStart} onChange={e=>setYStart(e.target.value)}/></Fl>
+</div>
+<div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Assistant IA (Claude)</h3>
+<div style={{fontSize:12,color:C.dim,marginBottom:8}}>Clé API Anthropic — obtenez-la sur <b>console.anthropic.com</b> (gratuit jusqu'à 5$)</div>
+<Fl label="Clé API Anthropic (sk-ant-...)">
+<input type="password" style={inputStyle} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-ant-api03-..."/>
+</Fl>
+{apiKey&&<div style={{fontSize:12,color:C.green,marginTop:4}}>✓ Clé renseignée — chatbot actif</div>}
+{!apiKey&&<div style={{fontSize:12,color:C.orange,marginTop:4}}>⚠ Sans clé, le bouton 💬 ne fonctionnera pas</div>}
 </div>
 <div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Acces employes</h3>
 {(data.employees||[]).map(e=>{const has=!!(data.empPasswords||{})[e.id];return(
@@ -1986,7 +1995,112 @@ return(
 </div>
 <div className="main" style={{marginLeft:160,padding:20,minHeight:'100vh',background:C.bg}}>
 {content()}
-</div></div>)};
+</div>
+<AdminChatbot data={data}/>
+</div>)};
+
+// ======== CHATBOT IA ========
+const AdminChatbot=({data})=>{
+const[open,setOpen]=useState(false);
+const[msgs,setMsgs]=useState([]);
+const[input,setInput]=useState('');
+const[loading,setLoading]=useState(false);
+const bottomRef=useRef(null);
+useEffect(()=>{if(bottomRef.current)bottomRef.current.scrollIntoView({behavior:'smooth'})},[msgs,loading]);
+const todayISO=fmtDateISO(new Date());
+const buildCtx=()=>{
+const jobs=(data.jobs||[]).filter(j=>j.date===todayISO);
+const employees=data.employees||[];
+const machines=data.machines||[];
+const clients=data.clients||[];
+let ctx=`Tu es l'assistant de RoadManager, logiciel de gestion de chantiers pour SONECO (rabotage routier).
+Date du jour: ${todayISO} (${fmtDate(todayISO)})
+Nombre de chantiers aujourd'hui: ${jobs.length}
+`;
+if(jobs.length>0){
+ctx+='Chantiers du jour:\n';
+jobs.forEach(j=>{
+const emp=employees.find(e=>e.id===j.employeeId);
+const mach=machines.find(m=>m.id===j.machineId);
+const cli=clients.find(c=>c.id===j.clientId);
+const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
+ctx+=`  - ${emp?emp.name:'Chauffeur?'} | ${mach?mach.name:'Machine?'} | Client: ${cli?cli.name:j.clientId||'?'} | Forfait: ${j.forfaitType||'?'} | CA: ${ca.toFixed(0)}€${j.isNight?' (nuit)':''}\n`;
+});
+const totalCA=jobs.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);
+ctx+=`CA total aujourd'hui: ${totalCA.toFixed(0)}€\n`;
+}
+const freeMachines=machines.filter(m=>!jobs.find(j=>j.machineId===m.id&&j.date===todayISO));
+ctx+=`Machines disponibles aujourd'hui: ${freeMachines.length>0?freeMachines.map(m=>m.name).join(', '):'toutes occupées'}\n`;
+ctx+=`Nombre total d'employés: ${employees.length}, machines: ${machines.length}\n`;
+ctx+='\nRéponds toujours en français. Sois concis, direct et professionnel.';
+return ctx;
+};
+const send=async()=>{
+if(!input.trim()||loading)return;
+const key=data.anthropicApiKey;
+if(!key){alert('Clé API Claude manquante.\nVa dans Paramètres > Assistant IA pour la renseigner.');return;}
+const userMsg={role:'user',content:input.trim()};
+const newMsgs=[...msgs,userMsg];
+setMsgs(newMsgs);setInput('');setLoading(true);
+try{
+const resp=await fetch('https://api.anthropic.com/v1/messages',{
+method:'POST',
+headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+body:JSON.stringify({model:'claude-3-5-haiku-20241022',max_tokens:1024,system:buildCtx(),messages:newMsgs})
+});
+const d=await resp.json();
+if(d.content&&d.content[0]&&d.content[0].text){
+setMsgs([...newMsgs,{role:'assistant',content:d.content[0].text}]);
+}else{
+setMsgs([...newMsgs,{role:'assistant',content:'Erreur: '+(d.error?.message||JSON.stringify(d))}]);
+}
+}catch(e){
+setMsgs([...newMsgs,{role:'assistant',content:'Erreur de connexion: '+e.message}]);
+}
+setLoading(false);
+};
+const examples=['Qui travaille aujourd\'hui ?','Quel est le CA du jour ?','Quelles machines sont libres ?','Résume la journée'];
+return(
+<div style={{position:'fixed',bottom:20,right:20,zIndex:1000}}>
+{open&&(
+<div style={{position:'absolute',bottom:64,right:0,width:340,height:460,background:'#fff',borderRadius:16,boxShadow:'0 8px 40px rgba(0,0,0,0.18)',border:'1px solid '+C.border,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+<div style={{background:C.accent,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+<div style={{color:'#fff',fontWeight:700,fontSize:14}}>🤖 Assistant RoadManager</div>
+<button onClick={()=>{setOpen(false);setMsgs([])}} style={{background:'none',border:'none',color:'#fff',fontSize:22,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>×</button>
+</div>
+<div style={{flex:1,overflowY:'auto',padding:10,display:'flex',flexDirection:'column',gap:8}}>
+{msgs.length===0&&(
+<div style={{color:C.muted,fontSize:12,textAlign:'center',marginTop:12}}>
+<div style={{fontSize:22,marginBottom:6}}>💬</div>
+<div style={{marginBottom:10,color:C.dim}}>Posez une question sur le planning !</div>
+<div style={{display:'flex',flexDirection:'column',gap:4}}>
+{examples.map(ex=>(
+<button key={ex} onClick={()=>{setInput(ex)}} style={{background:'#f1f5f9',border:'1px solid '+C.border,borderRadius:8,padding:'5px 10px',fontSize:11,cursor:'pointer',color:C.text,textAlign:'left'}}>{ex}</button>
+))}
+</div>
+</div>
+)}
+{msgs.map((m,i)=>(
+<div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+<div style={{maxWidth:'85%',padding:'7px 11px',borderRadius:10,background:m.role==='user'?C.accent:'#f1f5f9',color:m.role==='user'?'#fff':C.text,fontSize:12,lineHeight:1.5,whiteSpace:'pre-wrap'}}>
+{m.content}
+</div>
+</div>
+))}
+{loading&&<div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:'#f1f5f9',borderRadius:10,padding:'7px 14px',fontSize:20,color:C.muted}}>...</div></div>}
+<div ref={bottomRef}/>
+</div>
+<div style={{padding:'8px',borderTop:'1px solid '+C.border,display:'flex',gap:6,flexShrink:0}}>
+<input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} placeholder="Votre question..." style={{flex:1,padding:'7px 10px',borderRadius:8,border:'1px solid '+C.border,fontSize:12,outline:'none'}}/>
+<button onClick={send} disabled={loading||!input.trim()} style={{background:C.accent,color:'#fff',border:'none',borderRadius:8,padding:'7px 12px',cursor:'pointer',fontWeight:700,fontSize:14,opacity:loading||!input.trim()?0.45:1,transition:'opacity .2s'}}>➤</button>
+</div>
+</div>
+)}
+<button onClick={()=>setOpen(o=>!o)} title="Assistant IA" style={{width:50,height:50,borderRadius:'50%',background:C.accent,color:'#fff',border:'none',fontSize:20,cursor:'pointer',boxShadow:'0 4px 16px rgba(0,0,0,0.2)',display:'flex',alignItems:'center',justifyContent:'center',transition:'transform .2s',transform:open?'rotate(45deg)':'none'}}>
+{open?'×':'💬'}
+</button>
+</div>
+);};
 
 // ======== APP ROOT ========
 const App=()=>{
