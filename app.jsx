@@ -526,16 +526,27 @@ const Y=t=><span style={{background:'#fef9c3',border:'1px solid #eab308',borderR
 const G=t=><span style={{background:'#dcfce7',border:'1px solid #16a34a',borderRadius:6,padding:'2px 7px',color:'#14532d',fontWeight:700}}>{t}</span>;
 const B=t=><span style={{background:'#dbeafe',border:'1px solid #3b82f6',borderRadius:6,padding:'2px 7px',color:'#1e3a8a',fontWeight:700}}>{t}</span>;
 const O=t=><span style={{background:'#fed7aa',border:'1px solid #f97316',borderRadius:6,padding:'2px 7px',color:'#9a3412',fontWeight:700}}>{t}</span>;
+// Semaine depuis lundi
+const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);
+const wkTEs=(data.timeEntries||[]).filter(te=>te.employeeId===eId&&te.date>=monISO&&te.date<=selDate);
+const wkMin=wkTEs.reduce((s,te)=>{if(!te.startTime||!te.endTime)return s;const[sh2,sm2]=te.startTime.split(':').map(Number);const[eh2,em2]=te.endTime.split(':').map(Number);const pm2=Number(te.pauseMin)||0;return s+Math.max(0,(eh2*60+em2)-(sh2*60+sm2)-pm2)},0);
+// Timeline triée chronologiquement (endTime = carré 2 séparé)
+const toM=t=>{if(!t)return 9999;const[h,m]=t.split(':').map(Number);return h*60+m};
+const tItems=[];
+if(mainTE&&mainTE.startTime)tItems.push({t:toM(mainTE.startTime),k:'emb',jsx:Y(mainTE.startTime)});
+if(th0)tItems.push({t:toM(th0.theoStart),k:'dem',jsx:G('Dem. '+th0.theoStart)});
+if(ji0&&ji0.billingStart)tItems.push({t:toM(ji0.billingStart),k:'ch',jsx:B('Ch. '+ji0.billingStart)});
+if(finChantier)tItems.push({t:toM(finChantier),k:'fin',jsx:B('Fin '+finChantier)});
+if(coup)tItems.push({t:toM(coup),k:'coup',jsx:<span style={{background:'#fef9c3',border:'2px solid #d97706',borderRadius:8,padding:'4px 12px',color:'#78350f',fontWeight:800,margin:'0 2px',fontSize:13}}>{'☕ '+coup+(repr?'→'+repr:' ...')}</span>});
+if(debDem)tItems.push({t:toM(debDem),k:'debdem',jsx:G('Deb. '+debDem)});
+if(arrDepot)tItems.push({t:toM(arrDepot),k:'dep',jsx:O('Dep. '+arrDepot)});
+tItems.sort((a,b)=>a.t-b.t);
 return(<React.Fragment>
-{mainTE&&mainTE.startTime&&Y(mainTE.startTime)}
-{th0&&G('Dem. '+th0.theoStart)}
-{ji0&&ji0.billingStart&&B('Ch. '+ji0.billingStart)}
-{coup&&Y('Coup. '+coup+(repr?'→'+repr:' ...'))}
-{debDem&&G('Deb. '+debDem)}
-{mainTE&&mainTE.endTime&&Y(mainTE.endTime)}
-{finChantier&&B('Fin '+finChantier)}
-{arrDepot&&O('Dep. '+arrDepot)}
-{workMin>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(workMin)}</span>}
+{/* Carré 1 : heures jour + semaine */}
+{(mainTE||workMin>0)&&<span style={{background:'#e0f2fe',border:'2px solid #0891b2',borderRadius:8,padding:'3px 10px',color:'#0c4a6e',fontWeight:800,whiteSpace:'nowrap',marginRight:4}}>{'⏱ '+fmtDuration(workMin)+(wkMin>0?' | Sem '+fmtDuration(wkMin):'')}</span>}
+{tItems.map(i=><React.Fragment key={i.k}>{i.jsx}</React.Fragment>)}
+{/* Carré 2 : debauche réelle pointée (séparé à droite) */}
+{mainTE&&mainTE.endTime&&<React.Fragment><span style={{color:C.muted,margin:'0 4px',fontWeight:300}}>|</span><span style={{background:'#fef9c3',border:'2px solid #eab308',borderRadius:8,padding:'3px 10px',color:'#713f12',fontWeight:800,whiteSpace:'nowrap'}}>{'↙ Deb. '+mainTE.endTime}</span></React.Fragment>}
 {mainTE&&mainTE.absenceType&&<span style={{padding:'2px 7px',borderRadius:6,fontWeight:700,background:C.red+'20',color:C.red,border:'1px solid '+C.red+'40'}}>{mainTE.absenceType}</span>}
 </React.Fragment>);
 })()}
