@@ -580,54 +580,103 @@ return(<React.Fragment>
 </div>
 {/* Details panel */}
 {openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
-<div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:6,fontSize:14}}>
-{startBadge&&<span style={{padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:700,background:startBadge.color+'18',color:startBadge.color,border:'1px solid '+startBadge.color+'40'}}>{startBadge.text}</span>}
-{endBadge&&<span style={{padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:700,background:endBadge.color+'18',color:endBadge.color,border:'1px solid '+endBadge.color+'40'}}>{endBadge.text}</span>}
-<span style={{color:C.red,fontWeight:600}}>Couts -{fmtMoney(totalCostsDay)}</span>
-{dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:C.green+'18',color:C.green}}>Entretien ✓</span>}
-{!(dTotalEntretienMach>0&&machRembourse&&dTotalEntretienCam>0&&camRembourse)&&<React.Fragment>
-{dTotalEntretienMach>0&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:(machRembourse?C.green:C.red)+'18',color:machRembourse?C.green:C.red}}>{machRembourse?'Mach. ✓':'Mach. reste '+fmtMoney(resteMach)}</span>}
-{dTotalEntretienCam>0&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:700,background:(camRembourse?C.green:C.red)+'18',color:camRembourse?C.green:C.red}}>{camRembourse?'Cam. ✓':'Cam. reste '+fmtMoney(resteCam)}</span>}
-</React.Fragment>}
-<span style={{fontWeight:700,fontSize:15,color:dBenefAffiche>0?C.green:C.red}}>Benef {dBenefAffiche>0?'+':''}{fmtMoney(dBenefAffiche)}</span>
+{(()=>{
+const jdR=m?jdReports.find(r=>r.jd_id===normJd(m.name)||(m.jdId&&r.jd_id===normJd(m.jdId))):null;
+const c2=jobCalcs.find(cx=>cx.j.id===j.id)||jobCalcs[0];
+const workH=jdR?Number(jdR.working_h)||0:0;
+const idleH=jdR?Number(jdR.idle_h)||0:0;
+const salMach=jdR?(workH+idleH)*hourly:salChantier;
+const fuelL=jdR?Number(jdR.total_fuel_l)||0:Number(j.machineFuelL)||0;
+const fuelPrM=getFuelPrice(data,c2?c2.fuelType:'diesel',j.machineFuelDepot);
+const fuelCostM=fuelL*fuelPrM;
+const fixesMach=c2?c2.fixesMach:0;
+const totalChantier=salMach+fuelCostM+fixesMach;
+const caChantier=j.priceForfait||0;
+const travelMinTotal=(Number(j.travelMinAller)||0)+(Number(j.travelMinRetour)||0);
+const travelH=travelMinTotal/60;
+const salRoute=c2?c2.salRoute:totalSalRouteDay;
+const trajL=c2?c2.trajL:0;
+const trajCost=c2?c2.trajCost:0;
+const fuelPrC=c2?getFuelPrice(data,c2.fuelType,null):getFuelPrice(data,'diesel',null);
+const fixesCam=c2?c2.fixesCam:0;
+const totalTransfert=salRoute+trajCost+fixesCam;
+const caTransfert=j.hasTransfer?j.transferPrice||0:0;
+const isEndHome=!j.endAt||j.endAt===''||j.endAt==='home';
+const costEmb=surcoutEmb;
+const costDeb=isEndHome?surcoutDeb:0;
+let depotMin=0,coutDepotCalc=coutDepot;
+if(jdR&&j.billingStart&&mainTE&&mainTE.endTime){
+const[bh,bm]=j.billingStart.split(':').map(Number);
+const tpArr=data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE;
+const trajR=Number(j.travelMinRetour)||0;
+const fcMin=(bh*60+bm)+Math.round((workH+idleH)*60);
+const adMin=fcMin+trajR+tpArr;
+const[eh,em]=mainTE.endTime.split(':').map(Number);
+depotMin=Math.max(0,(eh*60+em)-adMin);
+coutDepotCalc=(depotMin/60)*hourly;
+}
+const totalCA=caChantier+caTransfert;
+const totalCoutsCalc=totalChantier+totalTransfert+costEmb+costDeb+coutDepotCalc+mealPrice;
+const benefMach=caChantier-totalChantier;
+const benefTransf=caTransfert-totalTransfert;
+const benefTotal=totalCA-totalCoutsCalc;
+const benefAvecEntretien=benefTotal-Math.max(0,resteMach)-Math.max(0,resteCam);
+const Lr=(label,val,col,suffix)=><div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{color:'#64748b'}}>{label}</span><span style={{fontWeight:600,color:col||'#1e293b'}}>{typeof val==='number'?(suffix?val.toFixed(suffix==='h'?2:0)+' '+suffix:fmtMoney(val)):val}</span></div>;
+return(<React.Fragment>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:5,fontSize:10,marginBottom:6}}>
+<div style={{background:'#f0fdf4',borderRadius:6,padding:6,border:'1px solid #86efac'}}>
+<div style={{fontWeight:800,color:'#15803d',marginBottom:4,fontSize:11}}>1. CHANTIER</div>
+{jdR?<React.Fragment>{Lr('a Travail',workH,'#15803d','h')}{Lr('b Ralenti',idleH,'#15803d','h')}</React.Fragment>:<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>Pas de donnees JD</div>}
+{Lr('c Salaire',salMach)}
+{Lr('d Conso',fuelL,'#1e293b','L')}
+<div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{color:'#64748b'}}>e Carburant</span><span style={{fontWeight:600}}>{fmtMoney(fuelCostM)} <span style={{color:'#94a3b8',fontWeight:400,fontSize:9}}>({fuelPrM.toFixed(2)}€/L)</span></span></div>
+{fixesMach>0&&Lr('f Créd+Ass',fixesMach)}
+<div style={{borderTop:'1px solid #86efac',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>i Total</span><span style={{color:'#15803d'}}>{fmtMoney(totalChantier)}</span></div>
 </div>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:4,fontSize:10}}>
-<div style={{background:'#7c3aed08',borderRadius:6,padding:6,border:'1px solid #7c3aed15'}}>
-<div style={{fontWeight:800,color:'#7c3aed',marginBottom:4,fontSize:11}}>SALAIRE</div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>Chantier</span><span>{fmtMoney(salChantier)}</span></div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>Route</span><span>{fmtMoney(totalSalRouteDay)}</span></div>
-{surcoutEmb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Emb.</span><span>{fmtMoney(surcoutEmb)}</span></div>}
-{surcoutDeb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Deb.</span><span>{fmtMoney(surcoutDeb)}</span></div>}
-{mainTE&&mainTE.mealType&&<div style={{display:'flex',justifyContent:'space-between',color:mainTE.mealType==='RESTO'?C.orange:C.accent}}><span>{mainTE.mealType==='PANIER'?'Panier':'Resto'}</span><span>{fmtMoney(mainTE.mealType==='RESTO'?Number(data.restoPrice)||15:Number(data.paniersPrice)||12)}</span></div>}
-<div style={{borderTop:'1px solid #7c3aed20',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalSalaire)}</span></div>
+<div style={{background:'#eff6ff',borderRadius:6,padding:6,border:'1px solid #93c5fd'}}>
+<div style={{fontWeight:800,color:'#1d4ed8',marginBottom:4,fontSize:11}}>2. TRANSFERT</div>
+{Lr('a Route',travelH,'#1d4ed8','h')}
+{Lr('b Salaire',salRoute)}
+{trajL>0&&Lr('c Conso camion',trajL,'#1e293b','L')}
+{trajCost>0&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{color:'#64748b',paddingLeft:8}}>Carburant</span><span style={{fontWeight:600}}>{fmtMoney(trajCost)} <span style={{color:'#94a3b8',fontWeight:400,fontSize:9}}>({fuelPrC.toFixed(2)}€/L)</span></span></div>}
+{fixesCam>0&&Lr('d Créd+Ass cam',fixesCam)}
+<div style={{borderTop:'1px solid #93c5fd',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>e Total</span><span style={{color:'#1d4ed8'}}>{fmtMoney(totalTransfert)}</span></div>
 </div>
-<div style={{background:'#d9770608',borderRadius:6,padding:6,border:'1px solid #d9770615'}}>
-<div style={{fontWeight:800,color:'#d97706',marginBottom:4,fontSize:11}}>CARBURANT</div>
-{jobCalcs.map((c2,ci)=>c2.trajL>0?<div key={ci} style={{display:'flex',justifyContent:'space-between'}}><span>Trajet {c2.trajL.toFixed(0)}L</span><span>{fmtMoney(c2.trajCost)}</span></div>:null)}
-{jobCalcs.map((c2,ci)=>c2.machCost>0?<div key={'m'+ci} style={{display:'flex',justifyContent:'space-between'}}><span>Machine {(c2.j.machineFuelL||0)}L</span><span>{fmtMoney(c2.machCost)}</span></div>:null)}
-<div style={{borderTop:'1px solid #d9770620',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalCarbu)}</span></div>
+<div style={{background:'#fff1f2',borderRadius:6,padding:6,border:'1px solid #fca5a5'}}>
+<div style={{fontWeight:800,color:'#dc2626',marginBottom:4,fontSize:11}}>3. COUT A EVITER</div>
+{costEmb>0?Lr('a Emb. tôt',costEmb,C.red):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>a Emb. OK</div>}
+{isEndHome?(costDeb>0?Lr('b Emb. tard',costDeb,C.red):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>b Deb. OK</div>):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>b N/A (pas dom.)</div>}
+{depotMin>0?Lr('c Dépôt ('+Math.round(depotMin)+'min)',coutDepotCalc,C.red):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>c Dépôt 0min</div>}
+{mealPrice>0&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:2,borderTop:'1px solid #fca5a5',marginTop:3,paddingTop:3}}><span style={{color:'#64748b'}}>{mainTE&&mainTE.mealType==='RESTO'?'Resto':'Panier'}</span><span style={{fontWeight:600}}>{fmtMoney(mealPrice)}</span></div>}
 </div>
-<div style={{background:'#64748b08',borderRadius:6,padding:6,border:'1px solid #64748b15'}}>
-<div style={{fontWeight:800,color:'#64748b',marginBottom:4,fontSize:11}}>FIXES / JOUR</div>
-{jobCalcs.map((c2,ci)=>{const items=[];if(c2.credM>0)items.push(['Cr.mach',c2.credM]);if(c2.assM>0)items.push(['Ass.mach',c2.assM]);if(c2.ctM>0)items.push(['CT mach',c2.ctM]);if(c2.credT>0)items.push(['Cr.cam',c2.credT]);if(c2.assT>0)items.push(['Ass.cam',c2.assT]);if(c2.ctT>0)items.push(['CT cam',c2.ctT]);return items.map(([l,v],ii)=><div key={ci+'_'+ii} style={{display:'flex',justifyContent:'space-between'}}><span>{l}</span><span>{fmtMoney(v)}</span></div>)})}
-<div style={{borderTop:'1px solid #64748b20',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalFixes)}</span></div>
-</div>
-<div style={{borderRadius:6,padding:6,border:'1px solid #64748b15',background:'#f8fafc'}}>
-<div style={{fontWeight:800,color:'#64748b',marginBottom:4,fontSize:11}}>ENTRETIEN</div>
-{dTotalEntretienMach>0&&<div style={{background:machRembourse?'#16a34a08':'#dc262608',borderRadius:4,padding:4,marginBottom:3,border:'1px solid '+(machRembourse?'#16a34a15':'#dc262615')}}>
-<div style={{fontWeight:700,fontSize:9,color:machRembourse?C.green:C.red}}>MACHINE</div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>{fmtMoney(dTotalEntretienMach)}</span><span style={{color:C.green}}>{fmtMoney(Math.max(0,dTotalEntretienMach-resteMach))}</span></div>
-<div style={{height:4,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginTop:2}}><div style={{height:'100%',width:pctMach.toFixed(0)+'%',background:machRembourse?C.green:C.red,borderRadius:2}}/></div>
-</div>}
-{dTotalEntretienCam>0&&<div style={{background:camRembourse?'#16a34a08':'#dc262608',borderRadius:4,padding:4,border:'1px solid '+(camRembourse?'#16a34a15':'#dc262615')}}>
-<div style={{fontWeight:700,fontSize:9,color:camRembourse?C.green:C.red}}>CAMION</div>
-<div style={{display:'flex',justifyContent:'space-between'}}><span>{fmtMoney(dTotalEntretienCam)}</span><span style={{color:C.green}}>{fmtMoney(Math.max(0,dTotalEntretienCam-resteCam))}</span></div>
-<div style={{height:4,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginTop:2}}><div style={{height:'100%',width:pctCam.toFixed(0)+'%',background:camRembourse?C.green:C.red,borderRadius:2}}/></div>
-</div>}
-{dTotalEntretienMach===0&&dTotalEntretienCam===0&&<div style={{color:C.muted,fontSize:9,fontStyle:'italic'}}>Aucune</div>}
+<div style={{background:'#fefce8',borderRadius:6,padding:6,border:'1px solid #fde047'}}>
+<div style={{fontWeight:800,color:'#854d0e',marginBottom:4,fontSize:11}}>4. ENTRETIEN</div>
+{dTotalEntretienMach>0?<React.Fragment>{Lr('a Machine',dTotalEntretienMach,'#854d0e')}<div style={{height:3,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginBottom:2}}><div style={{height:'100%',width:pctMach.toFixed(0)+'%',background:machRembourse?C.green:C.red,borderRadius:2}}/></div>{Lr('d Remb. mach',Math.max(0,dTotalEntretienMach-resteMach),C.green)}</React.Fragment>:<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>a Machine: 0</div>}
+{dTotalEntretienCam>0?<React.Fragment>{Lr('b Camion',dTotalEntretienCam,'#854d0e')}<div style={{height:3,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginBottom:2}}><div style={{height:'100%',width:pctCam.toFixed(0)+'%',background:camRembourse?C.green:C.red,borderRadius:2}}/></div>{Lr('c Remb. cam',Math.max(0,dTotalEntretienCam-resteCam),C.green)}</React.Fragment>:<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>b Camion: 0</div>}
 </div>
 </div>
-{(()=>{const jdReport=m?jdReports.find(r=>r.jd_id===normJd(m.name)||(m.jdId&&r.jd_id===normJd(m.jdId))):null;if(!m)return null;return(<div style={{marginTop:6,background:'#16a34a08',borderRadius:6,padding:6,border:'1px solid #16a34a15'}}><div style={{fontWeight:800,color:'#16a34a',marginBottom:4,fontSize:11}}>CARBURANT MACHINE (JD)</div>{!jdReport?<div style={{fontSize:10,color:C.muted,fontStyle:'italic'}}>Pas de donnees JD pour ce jour</div>:(<div style={{fontSize:10}}><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,marginBottom:4}}><div style={{background:'#fff',borderRadius:4,padding:4,border:'1px solid #16a34a15'}}><div style={{fontWeight:700,color:C.dim,marginBottom:2}}>Travail</div><div>{jdReport.working_h!=null?Number(jdReport.working_h).toFixed(1):0} h</div></div><div style={{background:'#fff',borderRadius:4,padding:4,border:'1px solid #16a34a15'}}><div style={{fontWeight:700,color:C.dim,marginBottom:2}}>Ralenti</div><div>{jdReport.idle_h!=null?Number(jdReport.idle_h).toFixed(1):0} h</div></div></div><div style={{background:'#fff',borderRadius:4,padding:'4px 8px',border:'1px solid #d9770620',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,color:C.dim}}>Carburant total</span><span style={{fontWeight:800,color:C.orange,fontSize:12}}>{jdReport.total_fuel_l!=null?Number(jdReport.total_fuel_l).toFixed(0):0} L</span></div></div>)}</div>);})()}
+<div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:4,fontSize:10,marginBottom:4}}>
+{[['6 CA mach',caChantier,true],['7 CA transf',caTransfert,true],['13 Trop tôt',costEmb,false],['14 Dépôt',coutDepotCalc,false],['15 Deb. tard',costDeb,false],['16 Total CA',totalCA,true]].map(([lbl,val,isRev])=>(
+<div key={lbl} style={{background:'#f8fafc',borderRadius:6,padding:'4px 5px',textAlign:'center',border:'1px solid #e2e8f0'}}>
+<div style={{color:'#64748b',marginBottom:1,fontSize:9}}>{lbl}</div>
+<div style={{fontWeight:700,color:isRev?C.green:val>0?C.red:'#64748b'}}>{fmtMoney(val)}</div>
+</div>
+))}
+</div>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:4,fontSize:10,marginBottom:4}}>
+{[['8 Bénéf mach',benefMach],['9 Bénéf transf',benefTransf],['11 Total coûts',totalCoutsCalc],['10 Bénéf total',benefTotal]].map(([lbl,val])=>(
+<div key={lbl} style={{background:val>=0?'#f0fdf4':'#fff1f2',borderRadius:6,padding:'4px 6px',textAlign:'center',border:'1px solid '+(val>=0?'#86efac':'#fca5a5')}}>
+<div style={{color:'#64748b',marginBottom:1,fontSize:9}}>{lbl}</div>
+<div style={{fontWeight:700,color:val>=0?C.green:C.red}}>{val>=0?'+':''}{fmtMoney(val)}</div>
+</div>
+))}
+</div>
+<div style={{background:benefAvecEntretien>=0?'#f0fdf4':'#fff1f2',borderRadius:6,padding:'5px 10px',fontSize:10,display:'flex',justifyContent:'space-between',border:'1px solid '+(benefAvecEntretien>=0?'#86efac':'#fca5a5')}}>
+<span style={{color:'#64748b',fontWeight:600}}>12 Bénéf total avec entretien</span>
+<span style={{fontWeight:800,color:benefAvecEntretien>=0?C.green:C.red}}>{benefAvecEntretien>=0?'+':''}{fmtMoney(benefAvecEntretien)}</span>
+</div>
+</React.Fragment>);
+})()}
 </div>}
 </div>)})}
 </div>
