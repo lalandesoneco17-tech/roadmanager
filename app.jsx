@@ -5,7 +5,7 @@ const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','Transfert
 const SKEY='roadmanager-v5';
 if(!window.storage||typeof window.storage.get!=='function'){window.storage={get:function(k){try{return Promise.resolve(localStorage.getItem(k))}catch(e){return Promise.resolve(null)}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve()}};}
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1});
+const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,paniersPrice:12,restoPrice:15});
 const PART_CATS=['pneu','filtre','courroie','dent','roulement','electrique','hydraulique','autre'];
 const INTER_TYPES=['reparation','entretien','changement_piece','panne'];
 const SEVERITIES=['urgent','normal','mineur'];
@@ -412,15 +412,15 @@ coutDepot=(tempsDepotMin/60)*hourly}
 if(!hasMissions&&workMin>0){tempsDepotMin=workMin;coutDepot=salTotal}
 let totalCostsDay=0,totalRevDay=0;
 const chargesRate=Number(emp.chargesRate)||45;
-const mealAllowance=Number(emp.mealAllowance)||12;
+const mealPrice=mainTE?(mainTE.mealType==='RESTO'?Number(data.restoPrice)||15:(mainTE.mealType==='PANIER'?Number(data.paniersPrice)||12:0)):0;
 const truck2g=(data.trucks||[]).find(t=>emp&&t.id===emp.truckId);
 const jobCalcs=ej.map(j=>{const m=getMach(j.machineId);const mt=m?m.type:'';const fuelType=getMachineFuelType(data,j.machineId);const truck2=truck2g;const truckC=truck2?Number(truck2.fuelPer100)||25:25;const trajL=mt==='Raboteuse'?((j.distanceKm||0)/100)*truckC:(m?(Number(m.fuelConsumption)||0)*((j.travelMin||0)/60):0);const fuelPr=getFuelPrice(data,fuelType,j.startFrom!=='home'?j.startFrom:null);const trajCost=trajL*fuelPr;const machFuelPr=getFuelPrice(data,fuelType,j.machineFuelDepot);const machCost=(j.machineFuelL||0)*machFuelPr;const salRoute=((j.travelMin||0)/60)*hourly;const rev=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);const credM=m?(Number(m.creditMonthly)||0)/wdpm:0;const assM=m?((m.insuranceMonthly||0)/wdpm):0;const ctM=m?((m.ctCost||0)/12)/wdpm:0;const credT=truck2?(Number(truck2.creditMonthly)||0)/wdpm:0;const assT=truck2?((truck2.insuranceMonthly||0)/wdpm):0;const ctT=truck2?((truck2.ctCost||0)/12)/wdpm:0;const entretienMach=(data.interventions||[]).filter(ii=>ii.machineId===(m?m.id:'')&&ii.date>=yearStart&&ii.date<=selDate).reduce((s2,ii)=>s2+(ii.totalCost||0),0);const entretienCam=(data.interventions||[]).filter(ii=>truck2&&ii.truckId===truck2.id&&ii.date>=yearStart&&ii.date<=selDate).reduce((s2,ii)=>s2+(ii.totalCost||0),0);return{j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl:getClient(j.clientId),credM,assM,ctM,credT,assT,ctT,entretienMach,entretienCam}});
 totalRevDay=jobCalcs.reduce((s,c)=>s+c.rev,0);
 const totalSalRouteDay=jobCalcs.reduce((s,c)=>s+c.salRoute,0);
 const salChantier=Math.max(0,salTotal-totalSalRouteDay);
 const salTotalCharges=salTotal*(1+chargesRate/100);
-jobCalcs.forEach(c=>{const ratio=totalRevDay>0?(c.rev/totalRevDay):0;const salChMission=salChantier*ratio;const surcDebMission=surcoutDeb*ratio;const fixesJour=c.credM+c.assM+c.ctM+c.credT+c.assT+c.ctT;c.salChMission=salChMission;c.surcMission=surcDebMission;c.fixesJour=fixesJour;c.fixesMach=c.credM+c.assM+c.ctM;c.fixesCam=c.credT+c.assT+c.ctT;c.salTotalMission=(salChMission+c.salRoute+surcDebMission)*(1+chargesRate/100)+mealAllowance*ratio;c.totalCost=c.trajCost+c.machCost+c.salTotalMission+fixesJour;c.benefBrut=c.rev-c.totalCost;c.revForfait=c.j.priceForfait||0;c.revTransfert=c.j.hasTransfer?c.j.transferPrice||0:0;c.coutsMachJour=c.machCost+c.fixesMach+(salChMission*(1+chargesRate/100))+(mealAllowance*ratio);c.coutsCamJour=c.trajCost+c.fixesCam+(c.salRoute*(1+chargesRate/100))});
-totalCostsDay=jobCalcs.reduce((s,c)=>s+c.totalCost,0)+surcoutEmb*(1+chargesRate/100)+coutDepot*(1+chargesRate/100);
+jobCalcs.forEach(c=>{const ratio=totalRevDay>0?(c.rev/totalRevDay):0;const salChMission=salChantier*ratio;const surcDebMission=surcoutDeb*ratio;const fixesJour=c.credM+c.assM+c.ctM+c.credT+c.assT+c.ctT;c.salChMission=salChMission;c.surcMission=surcDebMission;c.fixesJour=fixesJour;c.fixesMach=c.credM+c.assM+c.ctM;c.fixesCam=c.credT+c.assT+c.ctT;c.salTotalMission=salChMission+c.salRoute+surcDebMission+mealPrice*ratio;c.totalCost=c.trajCost+c.machCost+c.salTotalMission+fixesJour;c.benefBrut=c.rev-c.totalCost;c.revForfait=c.j.priceForfait||0;c.revTransfert=c.j.hasTransfer?c.j.transferPrice||0:0;c.coutsMachJour=c.machCost+c.fixesMach+(salChMission*(1+chargesRate/100))+(mealAllowance*ratio);c.coutsCamJour=c.trajCost+c.fixesCam+(c.salRoute*(1+chargesRate/100))});
+totalCostsDay=jobCalcs.reduce((s,c)=>s+c.totalCost,0)+surcoutEmb+coutDepot;
 const benefDay=totalRevDay-totalCostsDay;
 const dTotalEntretienMach=jobCalcs.reduce((s,c)=>s+c.entretienMach,0);
 const dTotalEntretienCam=jobCalcs.length>0?jobCalcs[0].entretienCam:0;
@@ -598,6 +598,7 @@ return(<React.Fragment>
 <div style={{display:'flex',justifyContent:'space-between'}}><span>Route</span><span>{fmtMoney(totalSalRouteDay)}</span></div>
 {surcoutEmb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Emb.</span><span>{fmtMoney(surcoutEmb)}</span></div>}
 {surcoutDeb>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span>Deb.</span><span>{fmtMoney(surcoutDeb)}</span></div>}
+{mainTE&&mainTE.mealType&&<div style={{display:'flex',justifyContent:'space-between',color:mainTE.mealType==='RESTO'?C.orange:C.accent}}><span>{mainTE.mealType==='PANIER'?'Panier':'Resto'}</span><span>{fmtMoney(mainTE.mealType==='RESTO'?Number(data.restoPrice)||15:Number(data.paniersPrice)||12)}</span></div>}
 <div style={{borderTop:'1px solid #7c3aed20',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>Total</span><span>{fmtMoney(dTotalSalaire)}</span></div>
 </div>
 <div style={{background:'#d9770608',borderRadius:6,padding:6,border:'1px solid #d9770615'}}>
@@ -1119,7 +1120,9 @@ const[weeklyH,setWeeklyH]=useState(data.weeklyHoursNormal||35);
 const[ot25,setOt25]=useState(data.overtime25Threshold||35);
 const[ot50,setOt50]=useState(data.overtime50Threshold||43);
 const[refHpd,setRefHpd]=useState(data.refHoursPerDay||1);
-const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd)});alert('Enregistre')};
+const[paniersP,setPaniersP]=useState(data.paniersPrice!=null?data.paniersPrice:12);
+const[restoP,setRestoP]=useState(data.restoPrice!=null?data.restoPrice:15);
+const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP)});alert('Enregistre')};
 const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,'');
 return(
 <div>
@@ -1130,7 +1133,11 @@ return(
 <Fl label="Mot de passe"><input style={inputStyle} type="password" value={ap} onChange={e=>setAp(e.target.value)}/></Fl>
 <div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Tarification</h3>
 <Fl label="Prix carburant (EUR/L)"><input type="number" step="0.01" style={inputStyle} value={fp} onChange={e=>setFp(e.target.value)}/></Fl>
-<Fl label="Majoration nuit (%)"><input type="number" style={inputStyle} value={np} onChange={e=>setNp(e.target.value)}/></Fl></div>
+<Fl label="Majoration nuit (%)"><input type="number" style={inputStyle} value={np} onChange={e=>setNp(e.target.value)}/></Fl>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+<Fl label="Panier repas (EUR)"><input type="number" step="0.01" style={inputStyle} value={paniersP} onChange={e=>setPaniersP(e.target.value)}/></Fl>
+<Fl label="Repas Resto (EUR)"><input type="number" step="0.01" style={inputStyle} value={restoP} onChange={e=>setRestoP(e.target.value)}/></Fl>
+</div></div>
 <div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Constantes horaires</h3>
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
 <Fl label="Temps en plus depart (min)"><input type="number" style={inputStyle} value={tpDepartMin} onChange={e=>setTpDepartMin(e.target.value)}/></Fl>
