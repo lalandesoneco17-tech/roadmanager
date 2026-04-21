@@ -274,7 +274,9 @@ const depotArrival=arrs.length?arrs[arrs.length-1].hhmm:pts[pts.length-1].hhmm;
 let hopEvts=[];
 if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On').map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
 const workArrs=arrs.length>1?arrs.slice(0,-1):arrs;
-const sites=workArrs.map(arr=>{const depE=depEvts.find(d=>d.last.min>=arr.min);const siteArrival=arr.hhmm;const workEnd=depE?depE.last.hhmm:arr.hhmm;const siteDeparture=depE?depE.first.hhmm:null;const depMin=depE?depE.first.min:Infinity;const hop=hopEvts.find(h=>h.min>=arr.min&&h.min<depMin);const workStart=hop?hop.hhmm:siteArrival;return{siteArrival,workStart,workEnd,siteDeparture}});
+// depEvts[idx] = départ précédent (dépôt pour site 0, chantier 1 pour site 1, etc.)
+// → utiliser depEvts[idx].first.min comme borne basse pour chercher le "On" moteur
+const sites=workArrs.map((arr,idx)=>{const depE=depEvts.find(d=>d.last.min>=arr.min);const siteArrival=arr.hhmm;const workEnd=depE?depE.last.hhmm:arr.hhmm;const siteDeparture=depE?depE.first.hhmm:null;const depMin=depE?depE.first.min:Infinity;const prevDepMin=idx<depEvts.length?depEvts[idx].first.min:0;const hop=hopEvts.find(h=>h.min>prevDepMin&&h.min<depMin);const workStart=hop?hop.hhmm:siteArrival;return{siteArrival,workStart,workEnd,siteDeparture}});
 let fuelL=0,waterMin=999,opH=0;
 if(measText){const mr=parseCSV(measText);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
 let ehStart=0,ehEnd=0;
