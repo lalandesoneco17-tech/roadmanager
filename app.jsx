@@ -591,26 +591,15 @@ return(<React.Fragment>
 </React.Fragment>);
 })()}
 </div>
-{/* Ligne données Wirtgen machine */}
+{/* Ligne Wirtgen résumé global */}
 {(()=>{const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const mr=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(grp.m?grp.m.name:'')&&r.date===selDate);if(!mr)return null;
-const WB=(lbl,t)=>t?<span style={{background:'#fff7ed',border:'1px solid #f97316',borderRadius:6,padding:'2px 7px',color:'#9a3412',fontWeight:700,fontSize:12,whiteSpace:'nowrap'}}>{lbl+' '+t}</span>:null;
-const AB=msg=><span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 7px',color:'#991b1b',fontWeight:700,fontSize:12}}>⚠️ {msg}</span>;
-const toM=t=>{if(!t)return 0;const[h,m2]=t.split(':').map(Number);return h*60+m2};
-const alerts=[];
-const ji=grp.missions[0]?grp.missions[0].j:null;
-if(ji&&mr.sites&&mr.sites[0]&&ji.billingStart&&mr.sites[0].workStart&&Math.abs(toM(ji.billingStart)-toM(mr.sites[0].workStart))>30)alerts.push('Ch.planifié '+ji.billingStart+' ≠ machine '+mr.sites[0].workStart);
-if(mainTE&&mainTE.startTime&&mr.depotDepart&&Math.abs(toM(mainTE.startTime)-toM(mr.depotDepart))>30)alerts.push('Emb.pointé '+mainTE.startTime+' ≠ machine '+mr.depotDepart);
-if(mainTE&&mainTE.endTime&&mr.depotArrival&&Math.abs(toM(mainTE.endTime)-toM(mr.depotArrival))>30)alerts.push('Déb.pointé '+mainTE.endTime+' ≠ machine '+mr.depotArrival);
-return(<div style={{padding:'3px 10px',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',borderBottom:'1px solid '+C.border,background:'#fffbeb',fontSize:12}}>
-<span style={{color:'#9a3412',fontWeight:800,fontSize:11,marginRight:2}}>⚙️</span>
-{WB('Dep.D',mr.depotDepart)}
-{(mr.sites||[]).map((s,si)=><React.Fragment key={si}>{WB('Arr.C',s.siteArrival)}{WB('Deb.C',s.workStart)}{WB('Fin.C',s.workEnd)}{s.siteDeparture&&WB('Dep.C',s.siteDeparture)}</React.Fragment>)}
-{WB('Arr.D',mr.depotArrival)}
-{mr.fuelL>0&&<span style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:6,padding:'2px 7px',color:'#92400e',fontWeight:700,fontSize:12}}>⛽ {mr.fuelL}L</span>}
-{mr.waterMin!==null&&mr.waterMin<20&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 7px',color:'#991b1b',fontWeight:700,fontSize:12}}>💧 {mr.waterMin}%⚠️</span>}
-{mr.ehEnd>mr.ehStart&&<span style={{background:'#f0f9ff',border:'1px solid #7dd3fc',borderRadius:6,padding:'2px 7px',color:'#0c4a6e',fontWeight:700,fontSize:12}}>⚙️ {mr.ehStart}h→{mr.ehEnd}h</span>}
-{alerts.map((a,ai)=><React.Fragment key={ai}>{AB(a)}</React.Fragment>)}
-<button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.dim,padding:'0 4px'}}>×</button>
+return(<div style={{padding:'3px 10px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',borderBottom:'1px solid '+C.border,background:'#fefce8',fontSize:11}}>
+<span style={{color:'#713f12',fontWeight:800,fontSize:11}}>⚙️ Wirtgen</span>
+{mr.ehStart>0&&mr.ehEnd>mr.ehStart&&<span style={{background:'#f0f9ff',border:'1px solid #7dd3fc',borderRadius:5,padding:'1px 7px',color:'#0c4a6e',fontWeight:700}}>⏱ {mr.ehStart}h→{mr.ehEnd}h (+{mr.ehEnd-mr.ehStart}h moteur)</span>}
+{mr.fuelL>0&&<span style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:5,padding:'1px 7px',color:'#92400e',fontWeight:700}}>⛽ {mr.fuelL}L</span>}
+{mr.opH>0&&<span style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:5,padding:'1px 7px',color:'#15803d',fontWeight:700}}>⚙️ {mr.opH}h fraisage</span>}
+{mr.waterMin!==null&&mr.waterMin<20&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>💧 Eau {mr.waterMin}%⚠️</span>}
+<button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.dim,padding:'0 4px'}}>×</button>
 </div>)})()}
 {grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
@@ -650,6 +639,34 @@ return(<React.Fragment>
 <button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:C.red,fontWeight:700}}>×</button>
 </div>
 </div>
+{/* Wirtgen timeline par chantier */}
+{(()=>{const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const mr=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(grp.m?grp.m.name:'')&&r.date===selDate);if(!mr)return null;
+const mIdx=grp.missions.findIndex(mc=>mc.j.id===j.id);
+const isFirst=mIdx===0;const isLast=mIdx===grp.missions.length-1;
+const site=(mr.sites||[])[mIdx];
+const evts=[];
+if(isFirst&&mr.depotDepart)evts.push({icon:'🚛',lbl:'Dép. dépôt',t:mr.depotDepart,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
+if(site&&site.siteArrival)evts.push({icon:'📍',lbl:'Arr. chantier',t:site.siteArrival,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
+if(site&&site.workStart&&site.workStart!==site.siteArrival)evts.push({icon:'⚙️',lbl:'Début fraisage',t:site.workStart,bg:'#f0fdf4',bd:'#22c55e',tx:'#15803d'});
+if(site&&site.workEnd)evts.push({icon:'🏁',lbl:'Fin fraisage',t:site.workEnd,bg:'#fff7ed',bd:'#f97316',tx:'#c2410c'});
+if(site&&site.siteDeparture&&site.siteDeparture!==site.workEnd)evts.push({icon:'🚛',lbl:'Dép. chantier',t:site.siteDeparture,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
+if(isLast&&mr.depotArrival)evts.push({icon:'🏠',lbl:'Arr. dépôt',t:mr.depotArrival,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
+if(!evts.length)return null;
+const toM=t=>{if(!t)return 0;const[h,m2]=t.split(':').map(Number);return h*60+m2};
+const alerts=[];
+if(site&&site.workStart&&j.billingStart&&Math.abs(toM(j.billingStart)-toM(site.workStart))>30)alerts.push('⚠️ Ch. '+j.billingStart+' ≠ machine '+site.workStart);
+if(isFirst&&mainTE&&mainTE.startTime&&mr.depotDepart&&Math.abs(toM(mainTE.startTime)-toM(mr.depotDepart))>30)alerts.push('⚠️ Emb. '+mainTE.startTime+' ≠ '+mr.depotDepart);
+if(isLast&&mainTE&&mainTE.endTime&&mr.depotArrival&&Math.abs(toM(mainTE.endTime)-toM(mr.depotArrival))>30)alerts.push('⚠️ Déb. '+mainTE.endTime+' ≠ '+mr.depotArrival);
+return(<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:0,background:'#f8fafc',borderBottom:'1px solid #e2e8f0',flexWrap:'wrap',rowGap:4}}>
+{evts.map((ev,i)=><React.Fragment key={i}>
+{i>0&&<span style={{color:'#94a3b8',fontSize:18,margin:'0 4px',fontWeight:300,lineHeight:1,userSelect:'none'}}>→</span>}
+<div style={{display:'inline-flex',flexDirection:'column',alignItems:'center',gap:1}}>
+<span style={{background:ev.bg,border:'1px solid '+ev.bd,borderRadius:8,padding:'3px 10px',color:ev.tx,fontWeight:800,fontSize:13,whiteSpace:'nowrap',letterSpacing:'0.2px'}}>{ev.icon} {ev.t}</span>
+<span style={{fontSize:9,color:ev.tx,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.4px',opacity:0.8}}>{ev.lbl}</span>
+</div>
+</React.Fragment>)}
+{alerts.map((a,ai)=><span key={ai} style={{marginLeft:10,background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 8px',color:'#991b1b',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>{a}</span>)}
+</div>);})()}
 {/* Details panel */}
 {openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
 {(()=>{
