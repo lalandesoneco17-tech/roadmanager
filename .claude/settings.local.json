@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx --version)",
+      "Bash(python3 -c \"import sys,json; lines=sys.stdin.read\\(\\).strip\\(\\).split\\('\\\\n'\\); [print\\(json.loads\\(l\\).get\\('message',{}\\).get\\('content',''\\)[:3000]\\) for l in lines if 'human' in json.loads\\(l\\).get\\('message',{}\\).get\\('role',''\\) and 'jd' in json.loads\\(l\\).get\\('message',{}\\).get\\('content',''\\).lower\\(\\)]\")",
+      "Bash(python -c \"import sys,json; data=open\\('03291759-0bee-47f7-b175-7cca2d56cc7d.jsonl'\\).read\\(\\); lines=data.strip\\(\\).split\\('\\\\n'\\); msgs=[json.loads\\(l\\) for l in lines[-50:]]; [print\\(m.get\\('message',{}\\).get\\('content',''\\)[:4000]\\) for m in msgs if 'human' in m.get\\('message',{}\\).get\\('role',''\\) and len\\(m.get\\('message',{}\\).get\\('content',''\\)\\)>500]\")",
+      "Bash(python -c ':*)",
+      "Bash(pip install:*)",
+      "Read(//c/Users/Romain - Soneco/Downloads/**)",
+      "Bash(powershell -Command \"Expand-Archive -Path 'd_2026-04-21.zip' -DestinationPath 'd_2026-04-21_extracted' -Force\")"
+    ]
+  }
+}

@@ -5,7 +5,7 @@ const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','Transfert
 const SKEY='roadmanager-v5';
 if(!window.storage||typeof window.storage.get!=='function'){window.storage={get:function(k){try{return Promise.resolve(localStorage.getItem(k))}catch(e){return Promise.resolve(null)}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve()}};}
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,paniersPrice:12,restoPrice:15,anthropicApiKey:''});
+const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,paniersPrice:12,restoPrice:15,anthropicApiKey:'',machineReports:[]});
 const PART_CATS=['pneu','filtre','courroie','dent','roulement','electrique','hydraulique','autre'];
 const INTER_TYPES=['reparation','entretien','changement_piece','panne'];
 const SEVERITIES=['urgent','normal','mineur'];
@@ -245,6 +245,39 @@ return(
 <div style={{marginTop:12,textAlign:'center'}}><button onClick={toggleSent} style={btnStyle(job.sent?C.green:C.accent,true)}>{job.sent?'Envoye':'Envoyer'}</button></div>
 </div>);};
 
+// ======== WIRTGEN ZIP PARSER ========
+const parseWirtgenZip=async(file)=>{
+if(!window.JSZip)return null;
+try{
+const zip=await new window.JSZip().loadAsync(file);
+const parseCSV=text=>{
+const lines=text.trim().split(/\r?\n/);if(!lines.length)return[];
+const hdrs=[];let cur='',inQ=false;
+for(const c of lines[0]){if(c==='"'){inQ=!inQ}else if(c===','&&!inQ){hdrs.push(cur.trim());cur=''}else{cur+=c}}hdrs.push(cur.trim());
+return lines.slice(1).map(line=>{const vals=[];let vc='',vQ=false;for(const c of line){if(c==='"'){vQ=!vQ}else if(c===','&&!vQ){vals.push(vc.trim());vc=''}else{vc+=c}}vals.push(vc.trim());const obj={};hdrs.forEach((h,i)=>{obj[h]=(vals[i]||'').trim()});return obj});
+};
+const parseWT=(dateStr,timeStr)=>{const months={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};const p=dateStr.replace(/,/g,'').split(' ');const mon=months[p[0]]??0,day=parseInt(p[1]),year=parseInt(p[2]);const[tp,ap]=timeStr.split(' ');let[h,m]=tp.split(':').map(Number);if(ap==='PM'&&h!==12)h+=12;if(ap==='AM'&&h===12)h=0;return{iso:year+'-'+pad2(mon+1)+'-'+pad2(day),min:h*60+m,hhmm:pad2(h)+':'+pad2(m)}};
+let locText=null,measText=null,ehText=null;
+for(const[,entry]of Object.entries(zip.files)){if(entry.dir)continue;const n=entry.name;if(/Location/i.test(n)&&n.endsWith('.csv'))locText=await entry.async('text');else if(/Measurements/i.test(n)&&n.endsWith('.csv'))measText=await entry.async('text');else if(/EngineHours/i.test(n)&&n.endsWith('.csv'))ehText=await entry.async('text')}
+if(!locText)return null;
+const locRows=parseCSV(locText);if(!locRows.length)return null;
+const machineName=locRows[0].Nickname||'';const serial=locRows[0]['Machine Serial Number']||'';
+const pts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}}).sort((a,b)=>a.min-b.min);
+const SPTH=15;
+const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr}});
+const deps=[],arrs=[];
+for(let i=1;i<ws.length;i++){const was=ws[i-1].spd>SPTH,is=ws[i].spd>SPTH;if(!was&&is)deps.push(ws[i-1]);if(was&&!is)arrs.push(ws[i])}
+const depotDepart=deps.length?deps[0].hhmm:pts[0].hhmm;
+const depotArrival=arrs.length?arrs[arrs.length-1].hhmm:pts[pts.length-1].hhmm;
+const workArrs=arrs.filter((_,i)=>!(i===arrs.length-1&&arrs.length>1));
+const sites=workArrs.length?workArrs.map(arr=>{const dep=deps.find(d=>d.min>arr.min);return{siteArrival:arr.hhmm,workStart:arr.hhmm,workEnd:dep?dep.hhmm:arr.hhmm,siteDeparture:dep?dep.hhmm:null}}):arrs.map(arr=>{const dep=deps.find(d=>d.min>arr.min);return{siteArrival:arr.hhmm,workStart:arr.hhmm,workEnd:dep?dep.hhmm:arr.hhmm,siteDeparture:dep?dep.hhmm:null}});
+let fuelL=0,waterMin=999,opH=0;
+if(measText){const mr=parseCSV(measText);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
+let ehStart=0,ehEnd=0;
+if(ehText){const er=parseCSV(ehText);const hs=er.map(r=>parseFloat(r.Hours)).filter(v=>!isNaN(v));if(hs.length){ehStart=Math.min(...hs);ehEnd=Math.max(...hs)}}
+return{id:uid(),machineName,serial,date:pts[0].iso,depotDepart,depotArrival,sites,fuelL:Math.round(fuelL),waterMin:waterMin<999?Math.round(waterMin*10)/10:null,opH:Math.round(opH*10)/10,ehStart,ehEnd};
+}catch(e){console.error('Wirtgen ZIP parse error',e);return null}
+};
 // ======== PLANNING PAGE ========
 const DEPOT_ACTIVITIES=['Rangement / nettoyage','Mecanique / entretien','Attente pieces','Formation','Administratif','Autre'];
 const PlanningPage=({data,save})=>{
@@ -263,6 +296,7 @@ const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
 const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
 const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
+const[wirtgenTargetMach,setWirtgenTargetMach]=useState('');const wirtgenRef=useRef(null);
 const[depotFormEmpId,setDepotFormEmpId]=useState('');
 const[depotFormDepotId,setDepotFormDepotId]=useState('');
 const[depotFormActivity,setDepotFormActivity]=useState(DEPOT_ACTIVITIES[0]);
@@ -497,6 +531,7 @@ return(
 <div style={{fontSize:13,fontWeight:700,color:machColor,textAlign:'center'}}>{grp.m?grp.m.name:'?'}</div>
 {isMonthly&&<div style={{fontSize:10,color:C.dim,textAlign:'center'}}>{fmtMoney(dailySalary)}/j</div>}
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:grp.m?grp.m.id:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} style={{background:C.accent,color:'#fff',border:'none',borderRadius:4,width:22,height:22,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'20px',padding:0}}>+</button>
+<button onClick={e=>{e.stopPropagation();setWirtgenTargetMach(grp.m?grp.m.name:'');if(wirtgenRef.current)wirtgenRef.current.click()}} title="Importer ZIP Wirtgen" style={{background:'#fff7ed',color:'#9a3412',border:'1px solid #f97316',borderRadius:4,padding:'1px 5px',cursor:'pointer',fontSize:11,fontWeight:700}}>📥</button>
 </div>
 {/* Côté droit: lignes de chantiers */}
 <div style={{flex:1,minWidth:0}}>
@@ -556,6 +591,27 @@ return(<React.Fragment>
 </React.Fragment>);
 })()}
 </div>
+{/* Ligne données Wirtgen machine */}
+{(()=>{const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const mr=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(grp.m?grp.m.name:'')&&r.date===selDate);if(!mr)return null;
+const WB=(lbl,t)=>t?<span style={{background:'#fff7ed',border:'1px solid #f97316',borderRadius:6,padding:'2px 7px',color:'#9a3412',fontWeight:700,fontSize:12,whiteSpace:'nowrap'}}>{lbl+' '+t}</span>:null;
+const AB=msg=><span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 7px',color:'#991b1b',fontWeight:700,fontSize:12}}>⚠️ {msg}</span>;
+const toM=t=>{if(!t)return 0;const[h,m2]=t.split(':').map(Number);return h*60+m2};
+const alerts=[];
+const ji=grp.missions[0]?grp.missions[0].j:null;
+if(ji&&mr.sites&&mr.sites[0]&&ji.billingStart&&mr.sites[0].workStart&&Math.abs(toM(ji.billingStart)-toM(mr.sites[0].workStart))>30)alerts.push('Ch.planifié '+ji.billingStart+' ≠ machine '+mr.sites[0].workStart);
+if(mainTE&&mainTE.startTime&&mr.depotDepart&&Math.abs(toM(mainTE.startTime)-toM(mr.depotDepart))>30)alerts.push('Emb.pointé '+mainTE.startTime+' ≠ machine '+mr.depotDepart);
+if(mainTE&&mainTE.endTime&&mr.depotArrival&&Math.abs(toM(mainTE.endTime)-toM(mr.depotArrival))>30)alerts.push('Déb.pointé '+mainTE.endTime+' ≠ machine '+mr.depotArrival);
+return(<div style={{padding:'3px 10px',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',borderBottom:'1px solid '+C.border,background:'#fffbeb',fontSize:12}}>
+<span style={{color:'#9a3412',fontWeight:800,fontSize:11,marginRight:2}}>⚙️</span>
+{WB('Dep.D',mr.depotDepart)}
+{(mr.sites||[]).map((s,si)=><React.Fragment key={si}>{WB('Arr.C',s.siteArrival)}{WB('Deb.C',s.workStart)}{WB('Fin.C',s.workEnd)}{s.siteDeparture&&WB('Dep.C',s.siteDeparture)}</React.Fragment>)}
+{WB('Arr.D',mr.depotArrival)}
+{mr.fuelL>0&&<span style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:6,padding:'2px 7px',color:'#92400e',fontWeight:700,fontSize:12}}>⛽ {mr.fuelL}L</span>}
+{mr.waterMin!==null&&mr.waterMin<20&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 7px',color:'#991b1b',fontWeight:700,fontSize:12}}>💧 {mr.waterMin}%⚠️</span>}
+{mr.ehEnd>mr.ehStart&&<span style={{background:'#f0f9ff',border:'1px solid #7dd3fc',borderRadius:6,padding:'2px 7px',color:'#0c4a6e',fontWeight:700,fontSize:12}}>⚙️ {mr.ehStart}h→{mr.ehEnd}h</span>}
+{alerts.map((a,ai)=><React.Fragment key={ai}>{AB(a)}</React.Fragment>)}
+<button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.dim,padding:'0 4px'}}>×</button>
+</div>)})()}
 {grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
 const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';
@@ -710,6 +766,7 @@ return(
 </div>
 <button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={btnStyle(C.accent,true)}>+ Chantier</button>
 <button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a'),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
+<input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
 </div>
 <div style={{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}}>
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent}}>{fmtMoney(caTotal)}</span></div>
