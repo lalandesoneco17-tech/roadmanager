@@ -537,9 +537,9 @@ if(mainTE&&mainTE.startTime)tItems.push({t:toM(mainTE.startTime),k:'emb',jsx:Y(m
 if(th0)tItems.push({t:toM(th0.theoStart),k:'dem',jsx:G('Dem. '+th0.theoStart)});
 if(ji0&&ji0.billingStart)tItems.push({t:toM(ji0.billingStart),k:'ch',jsx:B('Ch. '+ji0.billingStart)});
 if(finChantier)tItems.push({t:toM(finChantier),k:'fin',jsx:B('Fin '+finChantier)});
-const pauseLabel=breakMin>0?' ('+fmtDuration(breakMin)+')':'';
-if(coup)tItems.push({t:toM(coup),k:'coup',jsx:<span style={{background:'#fef9c3',border:'2px solid #d97706',borderRadius:8,padding:'4px 12px',color:'#78350f',fontWeight:800,margin:'0 2px',fontSize:13}}>{'☕ '+coup+(repr?'→'+repr:' ...')+pauseLabel}</span>});
-else if(breakMin>0)tItems.push({t:9000,k:'coup',jsx:<span style={{background:'#fef9c3',border:'2px solid #d97706',borderRadius:8,padding:'4px 12px',color:'#78350f',fontWeight:800,margin:'0 2px',fontSize:13}}>{'☕ Pause '+fmtDuration(breakMin)}</span>});
+if(coup)tItems.push({t:toM(coup),k:'coup',jsx:Y('Coup. '+coup)});
+if(repr)tItems.push({t:toM(repr),k:'repr',jsx:Y('Repr. '+repr)});
+if(!coup&&breakMin>0)tItems.push({t:9000,k:'coup',jsx:Y('Pause '+fmtDuration(breakMin))});
 if(debDem)tItems.push({t:toM(debDem),k:'debdem',jsx:G('Deb. '+debDem)});
 if(arrDepot)tItems.push({t:toM(arrDepot),k:'dep',jsx:O('Dep. '+arrDepot)});
 tItems.sort((a,b)=>a.t-b.t);
