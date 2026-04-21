@@ -526,9 +526,11 @@ const Y=t=><span style={{background:'#fef9c3',border:'1px solid #eab308',borderR
 const G=t=><span style={{background:'#dcfce7',border:'1px solid #16a34a',borderRadius:6,padding:'2px 7px',color:'#14532d',fontWeight:700}}>{t}</span>;
 const B=t=><span style={{background:'#dbeafe',border:'1px solid #3b82f6',borderRadius:6,padding:'2px 7px',color:'#1e3a8a',fontWeight:700}}>{t}</span>;
 const O=t=><span style={{background:'#fed7aa',border:'1px solid #f97316',borderRadius:6,padding:'2px 7px',color:'#9a3412',fontWeight:700}}>{t}</span>;
-// Semaine depuis lundi
+// Jour : calculé depuis mainTE uniquement (évite double-comptage)
+const jourMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?(()=>{const[sh,sm]=mainTE.startTime.split(':').map(Number);const[eh,em]=mainTE.endTime.split(':').map(Number);return Math.max(0,(eh*60+em)-(sh*60+sm)-(mainTE.pauseMin||0))})():workMin;
+// Semaine depuis lundi (corrigé : empId)
 const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);
-const wkTEs=(data.timeEntries||[]).filter(te=>te.employeeId===eId&&te.date>=monISO&&te.date<=selDate);
+const wkTEs=(data.timeEntries||[]).filter(te=>te.empId===eId&&te.date>=monISO&&te.date<=selDate);
 const wkMin=wkTEs.reduce((s,te)=>{if(!te.startTime||!te.endTime)return s;const[sh2,sm2]=te.startTime.split(':').map(Number);const[eh2,em2]=te.endTime.split(':').map(Number);const pm2=Number(te.pauseMin)||0;return s+Math.max(0,(eh2*60+em2)-(sh2*60+sm2)-pm2)},0);
 // Timeline triée chronologiquement (endTime = carré 2 séparé)
 const toM=t=>{if(!t)return 9999;const[h,m]=t.split(':').map(Number);return h*60+m};
@@ -545,7 +547,7 @@ if(arrDepot)tItems.push({t:toM(arrDepot),k:'dep',jsx:O('Dep. '+arrDepot)});
 tItems.sort((a,b)=>a.t-b.t);
 return(<React.Fragment>
 {/* Carré 1 : heures jour + semaine */}
-{(mainTE||workMin>0)&&<span style={{background:'#e0f2fe',border:'2px solid #0891b2',borderRadius:8,padding:'3px 10px',color:'#0c4a6e',fontWeight:800,whiteSpace:'nowrap',marginRight:4}}>{'⏱ '+fmtDuration(workMin)+(wkMin>0?' | Sem '+fmtDuration(wkMin):'')}</span>}
+{(mainTE||workMin>0)&&<span style={{background:'#e0f2fe',border:'2px solid #0891b2',borderRadius:8,padding:'3px 10px',color:'#0c4a6e',fontWeight:800,whiteSpace:'nowrap',marginRight:4}}>{'⏱ '+fmtDuration(jourMin)+(wkMin>0?' | Sem '+fmtDuration(wkMin):'')}</span>}
 {tItems.map(i=><React.Fragment key={i.k}>{i.jsx}</React.Fragment>)}
 {/* Carré 2 : debauche réelle pointée (séparé à droite) */}
 {mainTE&&mainTE.endTime&&<React.Fragment><span style={{color:C.muted,margin:'0 4px',fontWeight:300}}>|</span><span style={{background:'#fef9c3',border:'2px solid #eab308',borderRadius:8,padding:'3px 10px',color:'#713f12',fontWeight:800,whiteSpace:'nowrap'}}>{'↙ Deb. '+mainTE.endTime}</span></React.Fragment>}
