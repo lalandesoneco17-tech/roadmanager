@@ -257,20 +257,24 @@ for(const c of lines[0]){if(c==='"'){inQ=!inQ}else if(c===','&&!inQ){hdrs.push(c
 return lines.slice(1).map(line=>{const vals=[];let vc='',vQ=false;for(const c of line){if(c==='"'){vQ=!vQ}else if(c===','&&!vQ){vals.push(vc.trim());vc=''}else{vc+=c}}vals.push(vc.trim());const obj={};hdrs.forEach((h,i)=>{obj[h]=(vals[i]||'').trim()});return obj});
 };
 const parseWT=(dateStr,timeStr)=>{const months={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};const p=dateStr.replace(/,/g,'').split(' ');const mon=months[p[0]]??0,day=parseInt(p[1]),year=parseInt(p[2]);const[tp,ap]=timeStr.split(' ');let[h,m]=tp.split(':').map(Number);if(ap==='PM'&&h!==12)h+=12;if(ap==='AM'&&h===12)h=0;return{iso:year+'-'+pad2(mon+1)+'-'+pad2(day),min:h*60+m,hhmm:pad2(h)+':'+pad2(m)}};
-let locText=null,measText=null,ehText=null;
-for(const[,entry]of Object.entries(zip.files)){if(entry.dir)continue;const n=entry.name;if(/Location/i.test(n)&&n.endsWith('.csv'))locText=await entry.async('text');else if(/Measurements/i.test(n)&&n.endsWith('.csv'))measText=await entry.async('text');else if(/EngineHours/i.test(n)&&n.endsWith('.csv'))ehText=await entry.async('text')}
+let locText=null,measText=null,ehText=null,hopText=null;
+for(const[,entry]of Object.entries(zip.files)){if(entry.dir)continue;const n=entry.name;if(/Location/i.test(n)&&n.endsWith('.csv'))locText=await entry.async('text');else if(/Measurements/i.test(n)&&n.endsWith('.csv'))measText=await entry.async('text');else if(/EngineHours/i.test(n)&&n.endsWith('.csv'))ehText=await entry.async('text');else if(/HoursOfOperation/i.test(n)&&n.endsWith('.csv'))hopText=await entry.async('text')}
 if(!locText)return null;
 const locRows=parseCSV(locText);if(!locRows.length)return null;
 const machineName=locRows[0].Nickname||'';const serial=locRows[0]['Machine Serial Number']||'';
 const pts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}}).sort((a,b)=>a.min-b.min);
 const SPTH=15;
 const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr}});
-const deps=[],arrs=[];
-for(let i=1;i<ws.length;i++){const was=ws[i-1].spd>SPTH,is=ws[i].spd>SPTH;if(!was&&is)deps.push(ws[i-1]);if(was&&!is)arrs.push(ws[i])}
-const depotDepart=deps.length?deps[0].hhmm:pts[0].hhmm;
+// depEvts : last=dernier pt lent (workEnd), first=premier pt rapide (siteDeparture réel)
+const depEvts=[],arrs=[];
+for(let i=1;i<ws.length;i++){const was=ws[i-1].spd>SPTH,is=ws[i].spd>SPTH;if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrs.push(ws[i])}
+const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
 const depotArrival=arrs.length?arrs[arrs.length-1].hhmm:pts[pts.length-1].hhmm;
-const workArrs=arrs.filter((_,i)=>!(i===arrs.length-1&&arrs.length>1));
-const sites=workArrs.length?workArrs.map(arr=>{const dep=deps.find(d=>d.min>arr.min);return{siteArrival:arr.hhmm,workStart:arr.hhmm,workEnd:dep?dep.hhmm:arr.hhmm,siteDeparture:dep?dep.hhmm:null}}):arrs.map(arr=>{const dep=deps.find(d=>d.min>arr.min);return{siteArrival:arr.hhmm,workStart:arr.hhmm,workEnd:dep?dep.hhmm:arr.hhmm,siteDeparture:dep?dep.hhmm:null}});
+// HoursOfOperation → premier "On" moteur = vrai début fraisage
+let hopEvts=[];
+if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On').map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
+const workArrs=arrs.length>1?arrs.slice(0,-1):arrs;
+const sites=workArrs.map(arr=>{const depE=depEvts.find(d=>d.last.min>=arr.min);const siteArrival=arr.hhmm;const workEnd=depE?depE.last.hhmm:arr.hhmm;const siteDeparture=depE?depE.first.hhmm:null;const depMin=depE?depE.first.min:Infinity;const hop=hopEvts.find(h=>h.min>=arr.min&&h.min<depMin);const workStart=hop?hop.hhmm:siteArrival;return{siteArrival,workStart,workEnd,siteDeparture}});
 let fuelL=0,waterMin=999,opH=0;
 if(measText){const mr=parseCSV(measText);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
 let ehStart=0,ehEnd=0;
