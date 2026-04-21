@@ -531,7 +531,8 @@ const jourMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?(()=>{const[sh,sm]=main
 // Semaine depuis lundi (corrigé : empId)
 const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);
 const wkTEs=(data.timeEntries||[]).filter(te=>te.empId===eId&&te.date>=monISO&&te.date<=selDate);
-const wkMin=wkTEs.reduce((s,te)=>{if(!te.startTime||!te.endTime)return s;const[sh2,sm2]=te.startTime.split(':').map(Number);const[eh2,em2]=te.endTime.split(':').map(Number);const pm2=Number(te.pauseMin)||0;return s+Math.max(0,(eh2*60+em2)-(sh2*60+sm2)-pm2)},0);
+const wkDates=[...new Set(wkTEs.filter(te=>te.startTime&&te.endTime).map(te=>te.date))];
+const wkMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te=>te.date===d&&te.startTime&&te.endTime);if(!best)return s;const[sh2,sm2]=best.startTime.split(':').map(Number);const[eh2,em2]=best.endTime.split(':').map(Number);return s+Math.max(0,(eh2*60+em2)-(sh2*60+sm2)-(best.pauseMin||0))},0);
 // Timeline triée chronologiquement (endTime = carré 2 séparé)
 const toM=t=>{if(!t)return 9999;const[h,m]=t.split(':').map(Number);return h*60+m};
 const tItems=[];
