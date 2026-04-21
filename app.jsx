@@ -266,17 +266,27 @@ const pts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parse
 const SPTH=15;
 const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr}});
 // depEvts : last=dernier pt lent (workEnd), first=premier pt rapide (siteDeparture réel)
-const depEvts=[],arrs=[];
-for(let i=1;i<ws.length;i++){const was=ws[i-1].spd>SPTH,is=ws[i].spd>SPTH;if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrs.push(ws[i])}
+// arrEvts : prev=dernier pt rapide (peut servir d'arrivée réelle), arr=premier pt lent GPS
+const depEvts=[],arrEvts=[];
+for(let i=1;i<ws.length;i++){const was=ws[i-1].spd>SPTH,is=ws[i].spd>SPTH;if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
 const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
-const depotArrival=arrs.length?arrs[arrs.length-1].hhmm:pts[pts.length-1].hhmm;
+const depotArrival=arrEvts.length?arrEvts[arrEvts.length-1].arr.hhmm:pts[pts.length-1].hhmm;
 // HoursOfOperation → premier "On" moteur = vrai début fraisage
 let hopEvts=[];
 if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On').map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
-const workArrs=arrs.length>1?arrs.slice(0,-1):arrs;
-// depEvts[idx] = départ précédent (dépôt pour site 0, chantier 1 pour site 1, etc.)
-// → utiliser depEvts[idx].first.min comme borne basse pour chercher le "On" moteur
-const sites=workArrs.map((arr,idx)=>{const depE=depEvts.find(d=>d.last.min>=arr.min);const siteArrival=arr.hhmm;const workEnd=depE?depE.last.hhmm:arr.hhmm;const siteDeparture=depE?depE.first.hhmm:null;const depMin=depE?depE.first.min:Infinity;const prevDepMin=idx<depEvts.length?depEvts[idx].first.min:0;const hop=hopEvts.find(h=>h.min>prevDepMin&&h.min<depMin);const workStart=hop?hop.hhmm:siteArrival;return{siteArrival,workStart,workEnd,siteDeparture}});
+const workArrEvts=arrEvts.length>1?arrEvts.slice(0,-1):arrEvts;
+const sites=workArrEvts.map((ae,idx)=>{
+  const depE=depEvts.find(d=>d.last.min>=ae.arr.min);
+  const workEnd=depE?depE.last.hhmm:ae.arr.hhmm;
+  const siteDeparture=depE?depE.first.hhmm:null;
+  const depMin=depE?depE.first.min:Infinity;
+  const prevDepMin=idx<depEvts.length?depEvts[idx].first.min:0;
+  const hop=hopEvts.find(h=>h.min>prevDepMin&&h.min<depMin);
+  const workStart=hop?hop.hhmm:ae.arr.hhmm;
+  // Si workStart < GPS arrival → siteArrival = dernier point transit (ae.prev) pour garder l'ordre logique
+  const siteArrival=(hop&&hop.min<ae.arr.min)?ae.prev.hhmm:ae.arr.hhmm;
+  return{siteArrival,workStart,workEnd,siteDeparture};
+});
 let fuelL=0,waterMin=999,opH=0;
 if(measText){const mr=parseCSV(measText);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
 let ehStart=0,ehEnd=0;
