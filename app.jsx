@@ -246,7 +246,7 @@ return(
 </div>);};
 
 // ======== WIRTGEN ZIP PARSER ========
-const parseWirtgenZip=async(file)=>{
+const parseWirtgenZip=async(file,targetDate=null)=>{
 if(!window.JSZip)return null;
 try{
 const zip=await new window.JSZip().loadAsync(file);
@@ -262,7 +262,10 @@ for(const[,entry]of Object.entries(zip.files)){if(entry.dir)continue;const n=ent
 if(!locText)return null;
 const locRows=parseCSV(locText);if(!locRows.length)return null;
 const machineName=locRows[0].Nickname||'';const serial=locRows[0]['Machine Serial Number']||'';
-const pts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}}).sort((a,b)=>a.min-b.min);
+// Filtrer UNIQUEMENT les points du jour cible (le ZIP peut couvrir plusieurs jours)
+const allPts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}});
+const pts=(targetDate?allPts.filter(p=>p.iso===targetDate):allPts).sort((a,b)=>a.min-b.min);
+if(!pts.length)return null;
 const SPTH=15;
 const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr}});
 // depEvts : last=dernier pt lent (workEnd), first=premier pt rapide (siteDeparture réel)
@@ -271,9 +274,9 @@ const depEvts=[],arrEvts=[];
 for(let i=1;i<ws.length;i++){const was=ws[i-1].spd>SPTH,is=ws[i].spd>SPTH;if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
 const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
 const depotArrival=arrEvts.length?arrEvts[arrEvts.length-1].arr.hhmm:pts[pts.length-1].hhmm;
-// HoursOfOperation → premier "On" moteur = vrai début fraisage
+// HoursOfOperation → filtrer sur le jour cible, "On" = vrai début fraisage
 let hopEvts=[];
-if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On').map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
+if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On'&&(!targetDate||parseWT(r.Date,r.Time).iso===targetDate)).map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
 const workArrEvts=arrEvts.length>1?arrEvts.slice(0,-1):arrEvts;
 const sites=workArrEvts.map((ae,idx)=>{
   const depE=depEvts.find(d=>d.last.min>=ae.arr.min);
@@ -288,10 +291,13 @@ const sites=workArrEvts.map((ae,idx)=>{
   return{siteArrival,workStart,workEnd,siteDeparture};
 });
 let fuelL=0,waterMin=999,opH=0;
-if(measText){const mr=parseCSV(measText);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
+// Measurements : filtrer par "Start Date" pour ne garder que le jour cible
+if(measText){const mr=parseCSV(measText).filter(r=>!targetDate||parseWT(r['Start Date']||r.Date,'12:00 AM').iso===targetDate);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
 let ehStart=0,ehEnd=0;
-if(ehText){const er=parseCSV(ehText);const hs=er.map(r=>parseFloat(r.Hours)).filter(v=>!isNaN(v));if(hs.length){ehStart=Math.min(...hs);ehEnd=Math.max(...hs)}}
-return{id:uid(),machineName,serial,date:pts[0].iso,depotDepart,depotArrival,sites,fuelL:Math.round(fuelL),waterMin:waterMin<999?Math.round(waterMin*10)/10:null,opH:Math.round(opH*10)/10,ehStart,ehEnd};
+// EngineHours : filtrer par date
+if(ehText){const er=parseCSV(ehText).filter(r=>!targetDate||parseWT(r.Date,r.Time).iso===targetDate);const hs=er.map(r=>parseFloat(r.Hours)).filter(v=>!isNaN(v));if(hs.length){ehStart=Math.min(...hs);ehEnd=Math.max(...hs)}}
+const reportDate=targetDate||pts[0].iso;
+return{id:uid(),machineName,serial,date:reportDate,depotDepart,depotArrival,sites,fuelL:Math.round(fuelL),waterMin:waterMin<999?Math.round(waterMin*10)/10:null,opH:Math.round(opH*10)/10,ehStart,ehEnd};
 }catch(e){console.error('Wirtgen ZIP parse error',e);return null}
 };
 // ======== PLANNING PAGE ========
@@ -799,7 +805,7 @@ return(
 </div>
 <button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={btnStyle(C.accent,true)}>+ Chantier</button>
 <button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a'),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
-<input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
+<input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file,selDate);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
 </div>
 <div style={{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}}>
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent}}>{fmtMoney(caTotal)}</span></div>
