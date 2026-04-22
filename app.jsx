@@ -266,12 +266,14 @@ const machineName=locRows[0].Nickname||'';const serial=locRows[0]['Machine Seria
 const allPts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}});
 const pts=(targetDate?allPts.filter(p=>p.iso===targetDate):allPts).sort((a,b)=>a.min-b.min);
 if(!pts.length)return null;
-const SPTH=15;
-const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr}});
+const SPTH=15;const DIST_KM=1.5; // fallback machines lentes (auto-tractées, GPS espacé)
+const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0,dist:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr,dist:dk}});
+// Transit = vitesse > SPTH OU saut > DIST_KM (machine lente ou GPS basse fréquence)
+const isFast=wp=>wp.spd>SPTH||wp.dist>DIST_KM;
 // depEvts : last=dernier pt lent (workEnd), first=premier pt rapide (siteDeparture réel)
 // arrEvts : prev=dernier pt rapide (peut servir d'arrivée réelle), arr=premier pt lent GPS
 const depEvts=[],arrEvts=[];
-for(let i=1;i<ws.length;i++){const was=ws[i-1].spd>SPTH,is=ws[i].spd>SPTH;if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
+for(let i=1;i<ws.length;i++){const was=isFast(ws[i-1]),is=isFast(ws[i]);if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
 const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
 const depotArrival=arrEvts.length?arrEvts[arrEvts.length-1].arr.hhmm:pts[pts.length-1].hhmm;
 // HoursOfOperation → filtrer sur le jour cible, "On" = vrai début fraisage
