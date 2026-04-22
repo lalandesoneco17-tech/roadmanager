@@ -19,6 +19,30 @@ const mergeArraysById=(local,remote)=>{if(!remote||!remote.length)return local||
 const mergeKeepLocal=(local,remote)=>{if(!remote||!remote.length)return local||[];if(!local)return[];const localIds=new Set((local||[]).filter(x=>x&&x.id).map(x=>x.id));const merged=new Map();(local||[]).forEach(item=>{if(item&&item.id)merged.set(item.id,item)});(remote||[]).forEach(item=>{if(item&&item.id&&!merged.has(item.id)&&!localIds.has(item.id)){/* item deleted locally, skip */}else if(item&&item.id&&!merged.has(item.id)){merged.set(item.id,item)}});return[...merged.values()]};
 const saveData=async(d)=>{localSave(d);if(sb){try{const{data:row}=await sb.from('app_data').select('data').eq('id','main').single();if(row&&row.data){const remote=row.data;const merged={...d};merged.timeEntries=mergeArraysById(d.timeEntries,remote.timeEntries);merged.panneReports=mergeArraysById(d.panneReports,remote.panneReports);merged.interventions=mergeKeepLocal(d.interventions,remote.interventions);merged.parts=mergeKeepLocal(d.parts,remote.parts);const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else{localSave(merged);console.log('Saved to Supabase (merged)')}}else{const{error}=await sb.from('app_data').upsert({id:'main',data:d,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else console.log('Saved to Supabase')}}catch(e){console.warn('Supabase save failed',e)}}};
 const subscribeToChanges=(callback,getCurrentData)=>{if(!sb)return()=>{};const channel=sb.channel('app_data_changes').on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_data',filter:'id=eq.main'},(payload)=>{if(payload.new&&payload.new.data){const remote={...defaultData(),...payload.new.data};const current=getCurrentData?getCurrentData():null;if(!current){localSave(remote);callback(remote);return}const merged={...current};merged.timeEntries=mergeArraysById(current.timeEntries,remote.timeEntries);merged.panneReports=mergeArraysById(current.panneReports,remote.panneReports);localSave(merged);callback(merged)}}).subscribe();return()=>{sb.removeChannel(channel)}};
+
+// ========== POINTAGE FIABLE (tables dediees time_entries / time_entries_validated) ==========
+// Chaque pointage = une ligne Supabase independante -> zero race condition entre salaries.
+// File d'attente localStorage + flush auto en cas de coupure reseau.
+// Soft-delete (champ deleted=true) : un pointage n'est jamais efface physiquement.
+const TE_QUEUE_KEY='rm-te-queue';
+const teQueueGet=()=>{try{return JSON.parse(localStorage.getItem(TE_QUEUE_KEY)||'[]')}catch(e){return[]}};
+const teQueueSet=q=>{try{localStorage.setItem(TE_QUEUE_KEY,JSON.stringify(q))}catch(e){}};
+const teQueuePush=op=>{const q=teQueueGet();q.push({...op,_ts:Date.now()});teQueueSet(q)};
+const teTableOf=key=>key==='timeEntriesValidated'?'time_entries_validated':'time_entries';
+const teToRow=e=>({id:e.id,emp_id:e.empId,date:e.date,type:e.type||null,start_time:e.startTime||null,end_time:e.endTime||null,pause_start:e.pauseStart||null,pause_end:e.pauseEnd||null,pause_min:e.pauseMin||0,break_start:e.breakStart||null,break_end:e.breakEnd||null,meal_type:e.mealType||null,absence_type:e.absenceType||null,night_hours:e.nightHours||0,requested_end_time:e.requestedEndTime||null,requested_end_motif:e.requestedEndMotif||null,ref_hours:e.refHours!=null?e.refHours:null,created_at:e.createdAt||new Date().toISOString(),updated_at:new Date().toISOString(),deleted:false});
+const teFromRow=r=>({id:r.id,empId:r.emp_id,date:r.date,type:r.type||'',startTime:r.start_time||'',endTime:r.end_time||'',pauseStart:r.pause_start||null,pauseEnd:r.pause_end||null,pauseMin:r.pause_min||0,breakStart:r.break_start||'',breakEnd:r.break_end||'',mealType:r.meal_type||'',absenceType:r.absence_type||'',nightHours:Number(r.night_hours)||0,requestedEndTime:r.requested_end_time||'',requestedEndMotif:r.requested_end_motif||'',refHours:r.ref_hours!=null?Number(r.ref_hours):undefined,createdAt:r.created_at});
+let teTablesAvailable=null;
+const teTestTables=async()=>{if(!sb)return false;if(teTablesAvailable!==null)return teTablesAvailable;try{const{error}=await sb.from('time_entries').select('id').limit(1);teTablesAvailable=!error;if(error)console.warn('time_entries table pas encore creee:',error.message);else console.log('time_entries tables OK');return teTablesAvailable}catch(e){teTablesAvailable=false;return false}};
+const teUpsertRemote=async(entry,table)=>{if(!sb)return false;try{const{error}=await sb.from(table).upsert(teToRow(entry),{onConflict:'id'});if(error){console.error('TE upsert err',table,error);return false}return true}catch(e){console.warn('TE upsert exc',e);return false}};
+const teDeleteRemote=async(id,table)=>{if(!sb)return false;try{const{error}=await sb.from(table).update({deleted:true,updated_at:new Date().toISOString()}).eq('id',id);if(error){console.error('TE del err',table,error);return false}return true}catch(e){console.warn('TE del exc',e);return false}};
+const teLoadAll=async(table)=>{if(!sb)return null;try{const{data,error}=await sb.from(table).select('*').eq('deleted',false);if(error){console.warn('TE load err',table,error);return null}return(data||[]).map(teFromRow)}catch(e){console.warn('TE load exc',e);return null}};
+const teQueueFlush=async()=>{if(!sb)return;const avail=await teTestTables();if(!avail)return;const q=teQueueGet();if(!q.length)return;const remaining=[];for(const op of q){let ok=false;if(op.kind==='upsert')ok=await teUpsertRemote(op.entry,op.table);else if(op.kind==='delete')ok=await teDeleteRemote(op.id,op.table);if(!ok)remaining.push(op)}teQueueSet(remaining);if(remaining.length<q.length)console.log('TE queue flushed:',q.length-remaining.length,'envoyes, restantes:',remaining.length)};
+const teSyncChanges=async(oldData,newData)=>{if(!sb)return;const avail=await teTestTables();for(const key of['timeEntries','timeEntriesValidated']){const table=teTableOf(key);const oldMap=new Map(((oldData||{})[key]||[]).filter(t=>t&&t.id).map(t=>[t.id,t]));const nextMap=new Map(((newData||{})[key]||[]).filter(t=>t&&t.id).map(t=>[t.id,t]));for(const[id,entry]of nextMap){const prev=oldMap.get(id);if(!prev||JSON.stringify(prev)!==JSON.stringify(entry)){if(avail){const ok=await teUpsertRemote(entry,table);if(!ok)teQueuePush({kind:'upsert',entry,table})}else{teQueuePush({kind:'upsert',entry,table})}}}for(const[id]of oldMap){if(!nextMap.has(id)){if(avail){const ok=await teDeleteRemote(id,table);if(!ok)teQueuePush({kind:'delete',id,table})}else{teQueuePush({kind:'delete',id,table})}}}}};
+const teMigrateFromBlob=async(data)=>{if(!sb||!data)return data;const avail=await teTestTables();if(!avail)return data;const merged={...data};for(const key of['timeEntries','timeEntriesValidated']){const table=teTableOf(key);const remote=await teLoadAll(table);if(remote===null){merged[key]=data[key]||[];continue}const remoteMap=new Map(remote.map(t=>[t.id,t]));const blobEntries=(data[key]||[]).filter(t=>t&&t.id);const toMigrate=blobEntries.filter(t=>!remoteMap.has(t.id));if(toMigrate.length){console.log('Migration de',toMigrate.length,key,'vers',table);for(const e of toMigrate){const ok=await teUpsertRemote(e,table);if(ok)remoteMap.set(e.id,e);else teQueuePush({kind:'upsert',entry:e,table})}}merged[key]=[...remoteMap.values()]}return merged};
+const teSubscribe=onChange=>{if(!sb)return()=>{};const ch=sb.channel('te_changes').on('postgres_changes',{event:'*',schema:'public',table:'time_entries'},p=>onChange('time_entries',p)).on('postgres_changes',{event:'*',schema:'public',table:'time_entries_validated'},p=>onChange('time_entries_validated',p)).subscribe();return()=>{try{sb.removeChannel(ch)}catch(e){}}};
+if(typeof window!=='undefined'&&!window.__teOnlineBound){window.__teOnlineBound=true;window.addEventListener('online',()=>{teQueueFlush().catch(()=>{})})}
+// ========== FIN POINTAGE FIABLE ==========
+
 const pad2=n=>String(n).padStart(2,'0');
 const fmtDate=d=>{const dt=new Date(d);const j=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];const m=['Jan','Fev','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'];return j[dt.getDay()]+' '+dt.getDate()+' '+m[dt.getMonth()]+' '+dt.getFullYear()};
 const fmtDateISO=d=>{const dt=new Date(d);return dt.getFullYear()+'-'+pad2(dt.getMonth()+1)+'-'+pad2(dt.getDate())};
@@ -245,6 +269,65 @@ return(
 <div style={{marginTop:12,textAlign:'center'}}><button onClick={toggleSent} style={btnStyle(job.sent?C.green:C.accent,true)}>{job.sent?'Envoye':'Envoyer'}</button></div>
 </div>);};
 
+// ======== WIRTGEN DETECTION (réutilisable : import + re-calcul affichage) ========
+// pts = [{iso,min,hhmm,lat,lon}], hopEvts = [{iso,min,hhmm}] triés par min
+const detectWirtgenTimeline=(pts,hopEvts)=>{
+if(!pts||!pts.length)return{depotDepart:null,depotArrival:null,sites:[]};
+const SPTH=15;const DIST_KM=1.5; // fallback machines lentes (auto-tractées, GPS espacé)
+const SITE_RADIUS_KM=0.3; // rayon zone chantier pour détection arrivée par GPS
+const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0,dist:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr,dist:dk}});
+const isFast=wp=>wp.spd>SPTH||wp.dist>DIST_KM;
+const depEvts=[],arrEvts=[];
+for(let i=1;i<ws.length;i++){const was=isFast(ws[i-1]),is=isFast(ws[i]);if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
+const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
+// Détection retour dépôt : dernière arrivée proche du 1er pt GPS (supposé dépôt) ?
+const DEPOT_RADIUS_KM=1.0;
+const firstPt=pts[0];
+const lastArrEvt=arrEvts.length?arrEvts[arrEvts.length-1]:null;
+const returnedToDepot=!!lastArrEvt&&haversine([lastArrEvt.arr.lat,lastArrEvt.arr.lon],[firstPt.lat,firstPt.lon])<DEPOT_RADIUS_KM;
+const depotArrival=returnedToDepot?lastArrEvt.arr.hhmm:null;
+const workArrEvts=returnedToDepot?arrEvts.slice(0,-1):arrEvts;
+const lastPt=pts[pts.length-1];
+const sites=workArrEvts.map((ae,idx)=>{
+  const depE=depEvts.find(d=>d.last.min>=ae.arr.min);
+  // Si pas de transit de départ après l'arrivée → la machine reste sur site → workEnd = dernier pt GPS
+  const workEnd=depE?depE.last.hhmm:lastPt.hhmm;
+  const siteDeparture=depE?depE.first.hhmm:null;
+  const depMin=depE?depE.first.min:Infinity;
+  const prevDepMin=idx<depEvts.length?depEvts[idx].first.min:0;
+  const hop=(hopEvts||[]).find(h=>h.min>prevDepMin&&h.min<depMin);
+  const workStart=hop?hop.hhmm:ae.arr.hhmm;
+  // siteArrival = plus ancien pt GPS dans rayon SITE_RADIUS_KM autour de la position du workStart
+  // (scanne en arrière depuis le pt GPS au moment du démarrage moteur, arrête dès qu'un pt sort de la zone)
+  let siteArrival=ae.arr.hhmm;
+  if(hop){
+    let hopPtIdx=0,bestDt=Infinity;
+    for(let i=0;i<pts.length;i++){const dt=Math.abs(pts[i].min-hop.min);if(dt<bestDt){bestDt=dt;hopPtIdx=i}}
+    const hopPt=pts[hopPtIdx];
+    let arrivalIdx=hopPtIdx;
+    for(let i=hopPtIdx-1;i>=0;i--){
+      const p=pts[i];
+      if(p.min<prevDepMin)break;
+      const d=haversine([p.lat,p.lon],[hopPt.lat,hopPt.lon]);
+      if(d<=SITE_RADIUS_KM)arrivalIdx=i;else break;
+    }
+    siteArrival=pts[arrivalIdx].hhmm;
+    // Cohérence: siteArrival doit précéder workStart. Si le scan n'a trouvé aucun pt antérieur
+    // dans la zone (GPS espacé, machine encore en transit au moment du démarrage moteur),
+    // fallback sur ae.prev (dernier pt de transit = pt juste avant d'entrer dans la zone).
+    if(pts[arrivalIdx].min>hop.min&&ae.prev)siteArrival=ae.prev.hhmm;
+  }
+  return{siteArrival,workStart,workEnd,siteDeparture};
+});
+return{depotDepart,depotArrival,sites};
+};
+// Re-applique la détection sur un rapport stocké si données brutes présentes (migre les anciens formats)
+const recomputeWirtgenReport=(mr)=>{
+if(!mr)return mr;
+if(!mr.rawPts||!mr.rawPts.length)return mr; // ancien format sans données brutes
+const t=detectWirtgenTimeline(mr.rawPts,mr.rawHop||[]);
+return{...mr,depotDepart:t.depotDepart,depotArrival:t.depotArrival,sites:t.sites};
+};
 // ======== WIRTGEN ZIP PARSER ========
 const parseWirtgenZip=async(file,targetDate=null)=>{
 if(!window.JSZip)return null;
@@ -266,32 +349,10 @@ const machineName=locRows[0].Nickname||'';const serial=locRows[0]['Machine Seria
 const allPts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}});
 const pts=(targetDate?allPts.filter(p=>p.iso===targetDate):allPts).sort((a,b)=>a.min-b.min);
 if(!pts.length)return null;
-const SPTH=15;const DIST_KM=1.5; // fallback machines lentes (auto-tractées, GPS espacé)
-const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0,dist:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr,dist:dk}});
-// Transit = vitesse > SPTH OU saut > DIST_KM (machine lente ou GPS basse fréquence)
-const isFast=wp=>wp.spd>SPTH||wp.dist>DIST_KM;
-// depEvts : last=dernier pt lent (workEnd), first=premier pt rapide (siteDeparture réel)
-// arrEvts : prev=dernier pt rapide (peut servir d'arrivée réelle), arr=premier pt lent GPS
-const depEvts=[],arrEvts=[];
-for(let i=1;i<ws.length;i++){const was=isFast(ws[i-1]),is=isFast(ws[i]);if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
-const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
-const depotArrival=arrEvts.length?arrEvts[arrEvts.length-1].arr.hhmm:pts[pts.length-1].hhmm;
 // HoursOfOperation → filtrer sur le jour cible, "On" = vrai début fraisage
 let hopEvts=[];
 if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On'&&(!targetDate||parseWT(r.Date,r.Time).iso===targetDate)).map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
-const workArrEvts=arrEvts.length>1?arrEvts.slice(0,-1):arrEvts;
-const sites=workArrEvts.map((ae,idx)=>{
-  const depE=depEvts.find(d=>d.last.min>=ae.arr.min);
-  const workEnd=depE?depE.last.hhmm:ae.arr.hhmm;
-  const siteDeparture=depE?depE.first.hhmm:null;
-  const depMin=depE?depE.first.min:Infinity;
-  const prevDepMin=idx<depEvts.length?depEvts[idx].first.min:0;
-  const hop=hopEvts.find(h=>h.min>prevDepMin&&h.min<depMin);
-  const workStart=hop?hop.hhmm:ae.arr.hhmm;
-  // Si workStart < GPS arrival → siteArrival = dernier point transit (ae.prev) pour garder l'ordre logique
-  const siteArrival=(hop&&hop.min<ae.arr.min)?ae.prev.hhmm:ae.arr.hhmm;
-  return{siteArrival,workStart,workEnd,siteDeparture};
-});
+const {depotDepart,depotArrival,sites}=detectWirtgenTimeline(pts,hopEvts);
 let fuelL=0,waterMin=999,opH=0;
 // Measurements : filtrer par "Start Date" pour ne garder que le jour cible
 if(measText){const mr=parseCSV(measText).filter(r=>!targetDate||parseWT(r['Start Date']||r.Date,'12:00 AM').iso===targetDate);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
@@ -299,7 +360,7 @@ let ehStart=0,ehEnd=0;
 // EngineHours : filtrer par date
 if(ehText){const er=parseCSV(ehText).filter(r=>!targetDate||parseWT(r.Date,r.Time).iso===targetDate);const hs=er.map(r=>parseFloat(r.Hours)).filter(v=>!isNaN(v));if(hs.length){ehStart=Math.min(...hs);ehEnd=Math.max(...hs)}}
 const reportDate=targetDate||pts[0].iso;
-return{id:uid(),machineName,serial,date:reportDate,depotDepart,depotArrival,sites,fuelL:Math.round(fuelL),waterMin:waterMin<999?Math.round(waterMin*10)/10:null,opH:Math.round(opH*10)/10,ehStart,ehEnd};
+return{id:uid(),machineName,serial,date:reportDate,depotDepart,depotArrival,sites,fuelL:Math.round(fuelL),waterMin:waterMin<999?Math.round(waterMin*10)/10:null,opH:Math.round(opH*10)/10,ehStart,ehEnd,rawPts:pts.map(p=>({iso:p.iso,min:p.min,hhmm:p.hhmm,lat:p.lat,lon:p.lon})),rawHop:hopEvts.map(h=>({iso:h.iso,min:h.min,hhmm:h.hhmm}))};
 }catch(e){console.error('Wirtgen ZIP parse error',e);return null}
 };
 // ======== PLANNING PAGE ========
@@ -623,6 +684,7 @@ return(<div style={{padding:'3px 10px',display:'flex',alignItems:'center',gap:5,
 {mr.fuelL>0&&<span style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:5,padding:'1px 7px',color:'#92400e',fontWeight:700}}>⛽ {mr.fuelL}L</span>}
 {mr.opH>0&&<span style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:5,padding:'1px 7px',color:'#15803d',fontWeight:700}}>⚙️ {mr.opH}h fraisage</span>}
 {mr.waterMin!==null&&mr.waterMin<20&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>💧 Eau {mr.waterMin}%⚠️</span>}
+{(!mr.rawPts||!mr.rawPts.length)&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>⚠️ Ancien format — supprimer (×) puis ré-importer le ZIP pour voir les 6 heures</span>}
 <button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.dim,padding:'0 4px'}}>×</button>
 </div>)})()}
 {grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
@@ -664,7 +726,7 @@ return(<React.Fragment>
 </div>
 </div>
 {/* Wirtgen timeline par chantier */}
-{(()=>{const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const mr=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(grp.m?grp.m.name:'')&&r.date===selDate);if(!mr)return null;
+{(()=>{const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const mrRaw=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(grp.m?grp.m.name:'')&&r.date===selDate);if(!mrRaw)return null;const mr=recomputeWirtgenReport(mrRaw);
 const mIdx=grp.missions.findIndex(mc=>mc.j.id===j.id);
 const isFirst=mIdx===0;const isLast=mIdx===grp.missions.length-1;
 const site=(mr.sites||[])[mIdx];
@@ -1519,7 +1581,10 @@ return(
 {tes.map(t=>{let wm=0;if(t.startTime&&t.endTime){const[sh3,sm3]=t.startTime.split(':').map(Number);const[eh3,em3]=t.endTime.split(':').map(Number);wm=(eh3*60+em3)-(sh3*60+sm3)-(t.pauseMin||0)}return(
 <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:14,marginBottom:4,padding:'4px 0',borderBottom:'1px solid #f1f5f9'}}>
 <div><span style={{fontWeight:700,fontSize:16}}>{t.startTime} - {t.endTime||'...'}</span>{t.pauseMin>0&&<span style={{marginLeft:6}}><Bg text={'pause '+t.pauseMin+'min'} color={C.orange}/></span>}{wm>0&&<span style={{marginLeft:6,fontWeight:600,color:C.accent}}>{fmtDuration(wm)}</span>}</div>
+<div style={{display:'flex',gap:4}}>
 <button onClick={()=>setEditTE({...t})} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.accent}}>&#9998;</button>
+<button onClick={()=>delTE(t.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
+</div>
 </div>)})}
 {jbs.map(j=>{const cl=(data.clients||[]).find(c=>c.id===j.clientId);const m=(data.machines||[]).find(x=>x.id===j.machineId);const depN=j.startFrom==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.startFrom)||{}).name||'';const arrN=j.endAt==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.endAt)||{}).name||'';const isDepot=j.type==='depot';const depotObj=isDepot?(data.depots||[]).find(d=>d.id===j.depotId):null;return(
 <div key={j.id} style={{background:j.ack?'#dcfce7':isDepot?'#f8fafc':C.card,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(isDepot?'#64748b':m?MC[m.type]||C.accent:C.muted)}}>
@@ -1548,6 +1613,7 @@ return(
 {t.pauseMin>0&&<Bg text={t.pauseMin+'min pause'} color={C.orange}/>}
 {wm2>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(wm2)}</span>}
 <button onClick={()=>setEditTE({...t})} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.accent}}>&#9998;</button>
+<button onClick={()=>delTE(t.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
 </div></div>)})}
 <div style={{display:'flex',gap:16,marginTop:12,padding:'8px 0',borderTop:'2px solid '+C.border}}>
 <div style={{fontSize:14}}><span style={{color:C.dim}}>Semaine: </span><span style={{fontWeight:800,color:C.accent,fontSize:16}}>{fmtDuration(weeklyTotal)}</span></div>
@@ -2226,8 +2292,18 @@ const undoStack=useRef([]);
 const dataRef=useRef(data);
 useEffect(()=>{dataRef.current=data},[data]);
 useEffect(()=>{try{localStorage.setItem('rm-session',JSON.stringify({screen,empId}))}catch(e){}},[screen,empId]);
-useEffect(()=>{loadData().then(d=>setData(d));const unsub=subscribeToChanges((nd)=>{if(!savingRef.current)setData(nd)},()=>dataRef.current);return()=>unsub()},[]);
-const doSave=useCallback(async nd=>{savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);await saveData(nd);setTimeout(()=>{savingRef.current=false},2000)},[data]);
+useEffect(()=>{
+// Charge le blob app_data, puis fusionne/migre les pointages depuis time_entries / time_entries_validated
+loadData().then(async d=>{const migrated=await teMigrateFromBlob(d);setData(migrated)});
+// Subscribe blob changes (machines, employes, missions, etc.) — comportement existant
+const unsub=subscribeToChanges((nd)=>{if(!savingRef.current)setData(nd)},()=>dataRef.current);
+// Subscribe aux tables dediees pointage : toute modif d'un autre client met a jour la vue
+const unsubTE=teSubscribe(async(table)=>{if(savingRef.current)return;const key=table==='time_entries_validated'?'timeEntriesValidated':'timeEntries';const list=await teLoadAll(table);if(list===null)return;setData(prev=>prev?{...prev,[key]:list}:prev)});
+// Flush les pointages en attente (si reseau coupe au precedent usage, ils partent maintenant)
+teQueueFlush().catch(()=>{});
+return()=>{unsub();unsubTE()};
+},[]);
+const doSave=useCallback(async nd=>{savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);await teSyncChanges(data,nd);await saveData(nd);setTimeout(()=>{savingRef.current=false},2000)},[data]);
 const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savingRef.current=true;setData(prevData);await saveData(prevData);setTimeout(()=>{savingRef.current=false},2000)},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
