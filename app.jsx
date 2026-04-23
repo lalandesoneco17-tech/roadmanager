@@ -2362,28 +2362,40 @@ const bottomRef=useRef(null);
 useEffect(()=>{if(bottomRef.current)bottomRef.current.scrollIntoView({behavior:'smooth'})},[msgs,loading]);
 const todayISO=fmtDateISO(new Date());
 const buildCtx=()=>{
-const jobs=(data.jobs||[]).filter(j=>j.date===todayISO);
 const employees=data.employees||[];
 const machines=data.machines||[];
 const clients=data.clients||[];
+// Genere les 14 prochains jours (aujourd'hui + 13 jours suivants)
+const horizonDays=14;
+const horizon=[];for(let i=0;i<horizonDays;i++){const d=new Date();d.setDate(d.getDate()+i);horizon.push(fmtDateISO(d))}
+const jobsHorizon=(data.jobs||[]).filter(j=>horizon.includes(j.date));
+const jobsToday=jobsHorizon.filter(j=>j.date===todayISO);
 let ctx=`Tu es l'assistant de RoadManager, logiciel de gestion de chantiers pour SONECO (rabotage routier).
 Date du jour: ${todayISO} (${fmtDate(todayISO)})
-Nombre de chantiers aujourd'hui: ${jobs.length}
+Tu as acces au planning des ${horizonDays} prochains jours (aujourd'hui inclus).
 `;
-if(jobs.length>0){
-ctx+='Chantiers du jour:\n';
-jobs.forEach(j=>{
+// Affiche les jobs groupes par date, aujourd'hui + 13 jours a venir
+const fmtJobLine=(j)=>{
 const emp=employees.find(e=>e.id===j.employeeId);
 const mach=machines.find(m=>m.id===j.machineId);
 const cli=clients.find(c=>c.id===j.clientId);
 const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
-ctx+=`  - ${emp?emp.name:'Chauffeur?'} | ${mach?mach.name:'Machine?'} | Client: ${cli?cli.name:j.clientId||'?'} | Forfait: ${j.forfaitType||'?'} | CA: ${ca.toFixed(0)}€${j.isNight?' (nuit)':''}\n`;
+return `  - ${emp?emp.name:'Chauffeur?'} | ${mach?mach.name:'Machine?'} | Client: ${cli?cli.name:j.clientId||'?'} | Forfait: ${j.forfaitType||'?'} | CA: ${ca.toFixed(0)}€${j.isNight?' (nuit)':''}`;
+};
+horizon.forEach(d=>{
+const djs=jobsHorizon.filter(j=>j.date===d);
+if(djs.length===0)return;
+const lbl=d===todayISO?"Aujourd'hui":(d===horizon[1]?'Demain':fmtDate(d));
+ctx+=`\n${lbl} (${d}) — ${djs.length} chantier(s):\n`;
+djs.forEach(j=>{ctx+=fmtJobLine(j)+'\n'});
 });
-const totalCA=jobs.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);
-ctx+=`CA total aujourd'hui: ${totalCA.toFixed(0)}€\n`;
+// CA du jour
+if(jobsToday.length>0){
+const totalCAToday=jobsToday.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);
+ctx+=`\nCA total aujourd'hui: ${totalCAToday.toFixed(0)}€\n`;
 }
-const freeMachines=machines.filter(m=>!jobs.find(j=>j.machineId===m.id&&j.date===todayISO));
-ctx+=`Machines disponibles aujourd'hui: ${freeMachines.length>0?freeMachines.map(m=>m.name).join(', '):'toutes occupées'}\n`;
+const freeToday=machines.filter(m=>!jobsToday.find(j=>j.machineId===m.id));
+ctx+=`\nMachines disponibles aujourd'hui: ${freeToday.length>0?freeToday.map(m=>m.name).join(', '):'toutes occupées'}\n`;
 ctx+=`Nombre total d'employés: ${employees.length}, machines: ${machines.length}\n`;
 if(employees.length>0){
 ctx+='\nListe des salaries (id | nom) — utilise ces IDs pour envoyer des messages:\n';
