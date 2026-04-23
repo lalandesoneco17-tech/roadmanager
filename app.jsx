@@ -1446,6 +1446,10 @@ const EmployeeView=({data,save,empId,onLogout})=>{
 const emp=(data.employees||[]).find(e=>e.id===empId);
 const[view,setView]=useState('Jour');const[offset,setOffset]=useState(0);
 const[editTE,setEditTE]=useState(null);
+const[showInbox,setShowInbox]=useState(false);
+const myMsgs=((data.messages||[]).filter(m=>m.toEmpId===empId)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+const unreadCount=myMsgs.filter(m=>!m.read).length;
+const openInbox=()=>{setShowInbox(true);if(unreadCount>0){const nd=JSON.parse(JSON.stringify(data));(nd.messages||[]).forEach(m=>{if(m.toEmpId===empId&&!m.read)m.read=true});save(nd)}};
 const[showManual,setShowManual]=useState(false);
 const[manDate,setManDate]=useState(fmtDateISO(new Date()));
 const[manStart,setManStart]=useState('');
@@ -1544,8 +1548,20 @@ return(
 <div style={{width:40,height:40,borderRadius:'50%',background:'#fff3',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:18}}>{(emp.name||'?')[0].toUpperCase()}</div>
 <div><div style={{fontWeight:700,fontSize:18}}>{emp.name}</div><div style={{fontSize:14,opacity:.8}}>Espace chauffeur</div></div>
 </div>
-<div style={{display:'flex',gap:6}}><button onClick={()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>↻</button><button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button></div>
+<div style={{display:'flex',gap:6}}>
+<button onClick={openInbox} title="Messages" style={{position:'relative',background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:16}}>🔔{unreadCount>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#ef4444',color:'#fff',borderRadius:'50%',minWidth:18,height:18,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{unreadCount}</span>}</button>
+<button onClick={()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>↻</button>
+<button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button>
 </div>
+</div>
+{showInbox&&<Mod title={'Mes messages ('+myMsgs.length+')'} onClose={()=>setShowInbox(false)} width={500}>
+{myMsgs.length===0?<div style={{textAlign:'center',color:C.muted,padding:'20px 0',fontSize:14}}>Aucun message</div>:myMsgs.map(m=>(
+<div key={m.id} style={{background:'#f8fafc',border:'1px solid '+C.border,borderRadius:8,padding:'10px 12px',marginBottom:8}}>
+<div style={{fontSize:11,color:C.muted,marginBottom:4}}>{m.date?new Date(m.date).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):''} · De l'administration</div>
+<div style={{fontSize:14,color:C.text,whiteSpace:'pre-wrap',lineHeight:1.5}}>{m.content}</div>
+</div>
+))}
+</Mod>}
 <div style={{display:'flex',gap:6,marginBottom:16}}>
 {[{k:'heures',l:'Heures'},{k:'chantier',l:'Chantier'},{k:'machine',l:'Machine'}].map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{...btnStyle(C.accent,tab===x.k),flex:1,fontSize:15,padding:'10px 4px'}}>{x.l}</button>)}
 </div>
@@ -2324,11 +2340,20 @@ return(
 <div className="main" style={{marginLeft:160,padding:20,minHeight:'100vh',background:C.bg}}>
 {content()}
 </div>
-<AdminChatbot data={data}/>
+<AdminChatbot data={data} save={save}/>
 </div>)};
 
 // ======== CHATBOT IA ========
-const AdminChatbot=({data})=>{
+// Extrait un JSON de proposition d'action d'une reponse Claude.
+// Claude est instruit de repondre avec un bloc ```json { "action":"send_message", ... } ``` quand il propose une action.
+const parseProposal=(text)=>{
+if(!text)return null;
+const m=text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+if(!m)return null;
+try{const obj=JSON.parse(m[1]);if(obj&&obj.action==='send_message'&&obj.toEmpId&&obj.content){const intro=text.slice(0,m.index).trim();return{intro,proposal:obj}}}catch(e){}
+return null;
+};
+const AdminChatbot=({data,save})=>{
 const[open,setOpen]=useState(false);
 const[msgs,setMsgs]=useState([]);
 const[input,setInput]=useState('');
@@ -2360,9 +2385,38 @@ ctx+=`CA total aujourd'hui: ${totalCA.toFixed(0)}€\n`;
 const freeMachines=machines.filter(m=>!jobs.find(j=>j.machineId===m.id&&j.date===todayISO));
 ctx+=`Machines disponibles aujourd'hui: ${freeMachines.length>0?freeMachines.map(m=>m.name).join(', '):'toutes occupées'}\n`;
 ctx+=`Nombre total d'employés: ${employees.length}, machines: ${machines.length}\n`;
-ctx+='\nRéponds toujours en français. Sois concis, direct et professionnel.';
+if(employees.length>0){
+ctx+='\nListe des salaries (id | nom) — utilise ces IDs pour envoyer des messages:\n';
+employees.forEach(e=>{ctx+=`  - ${e.id} | ${e.name}\n`});
+}
+ctx+=`\n=== ENVOI DE MESSAGES AUX SALARIES ===
+Si l'admin te demande d'envoyer/transmettre un message a un salarie (ex: "dis a Franck que...", "previens Paul de...", "envoie un message a Marie..."), tu dois:
+1. Ecrire une courte phrase d'intro en francais ("Voici le message que je propose d'envoyer a X :")
+2. Puis ajouter un bloc JSON (et SEULEMENT ce format) avec le message a envoyer:
+\`\`\`json
+{"action":"send_message","toEmpId":"<id_du_salarie>","content":"<texte clair et concis du message, commence par une majuscule>"}
+\`\`\`
+Regles:
+- Identifie le salarie par son ID exact tire de la liste ci-dessus (matching tolerant sur le prenom/nom)
+- Si le salarie est ambigu ou introuvable, NE PAS envoyer le JSON — demande une clarification
+- Un seul message JSON par reponse
+- Le contenu du message doit etre redige directement comme s'il etait lu par le salarie (pas "dit a Franck de...", plutot "Franck, merci de...")
+- Ne JAMAIS envoyer le message toi-meme: l'admin valide ou modifie avant envoi
+Pour les autres questions (analyses, planning, CA), reponds normalement en texte sans bloc JSON.
+Repond toujours en francais. Sois concis, direct, professionnel.`;
 return ctx;
 };
+const validateProposal=(msgIdx)=>{
+const m=msgs[msgIdx];if(!m||!m.proposal)return;
+const p=m.proposal;
+const nd=JSON.parse(JSON.stringify(data));
+if(!nd.messages)nd.messages=[];
+nd.messages.push({id:'msg_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),toEmpId:p.toEmpId,content:p.content,date:new Date().toISOString(),read:false,from:'admin'});
+save(nd);
+setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposalStatus:'sent'}:x));
+};
+const cancelProposal=(msgIdx)=>{setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposalStatus:'cancelled'}:x))};
+const editProposal=(msgIdx,newContent)=>{setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposal:{...x.proposal,content:newContent}}:x))};
 const send=async()=>{
 if(!input.trim()||loading)return;
 const key=data.anthropicApiKey;
@@ -2370,15 +2424,23 @@ if(!key){alert('Clé API Claude manquante.\nVa dans Paramètres > Assistant IA p
 const userMsg={role:'user',content:input.trim()};
 const newMsgs=[...msgs,userMsg];
 setMsgs(newMsgs);setInput('');setLoading(true);
+// On n'envoie que role/content a l'API (pas les champs proposal/proposalStatus internes)
+const apiMsgs=newMsgs.map(m=>({role:m.role,content:m.content}));
 try{
 const resp=await fetch('https://api.anthropic.com/v1/messages',{
 method:'POST',
 headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-body:JSON.stringify({model:'claude-3-5-haiku-20241022',max_tokens:1024,system:buildCtx(),messages:newMsgs})
+body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1024,system:buildCtx(),messages:apiMsgs})
 });
 const d=await resp.json();
 if(d.content&&d.content[0]&&d.content[0].text){
-setMsgs([...newMsgs,{role:'assistant',content:d.content[0].text}]);
+const txt=d.content[0].text;
+const prop=parseProposal(txt);
+if(prop){
+setMsgs([...newMsgs,{role:'assistant',content:prop.intro||'Voici le message a envoyer :',proposal:prop.proposal,proposalStatus:'pending'}]);
+}else{
+setMsgs([...newMsgs,{role:'assistant',content:txt}]);
+}
 }else{
 setMsgs([...newMsgs,{role:'assistant',content:'Erreur: '+(d.error?.message||JSON.stringify(d))}]);
 }
@@ -2387,11 +2449,12 @@ setMsgs([...newMsgs,{role:'assistant',content:'Erreur de connexion: '+e.message}
 }
 setLoading(false);
 };
-const examples=['Qui travaille aujourd\'hui ?','Quel est le CA du jour ?','Quelles machines sont libres ?','Résume la journée'];
+const examples=['Qui travaille aujourd\'hui ?','Quel est le CA du jour ?','Dis au premier salarie de la liste de passer me voir','Résume la journée'];
+const getEmpName=(id)=>{const e=(data.employees||[]).find(x=>x.id===id);return e?e.name:id};
 return(
 <div style={{position:'fixed',bottom:20,right:20,zIndex:1000}}>
 {open&&(
-<div style={{position:'absolute',bottom:64,right:0,width:340,height:460,background:'#fff',borderRadius:16,boxShadow:'0 8px 40px rgba(0,0,0,0.18)',border:'1px solid '+C.border,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+<div style={{position:'absolute',bottom:64,right:0,width:360,height:500,background:'#fff',borderRadius:16,boxShadow:'0 8px 40px rgba(0,0,0,0.18)',border:'1px solid '+C.border,display:'flex',flexDirection:'column',overflow:'hidden'}}>
 <div style={{background:C.accent,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
 <div style={{color:'#fff',fontWeight:700,fontSize:14}}>🤖 Assistant RoadManager</div>
 <button onClick={()=>{setOpen(false);setMsgs([])}} style={{background:'none',border:'none',color:'#fff',fontSize:22,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>×</button>
@@ -2400,7 +2463,7 @@ return(
 {msgs.length===0&&(
 <div style={{color:C.muted,fontSize:12,textAlign:'center',marginTop:12}}>
 <div style={{fontSize:22,marginBottom:6}}>💬</div>
-<div style={{marginBottom:10,color:C.dim}}>Posez une question sur le planning !</div>
+<div style={{marginBottom:10,color:C.dim}}>Posez une question ou demandez d'envoyer un message a un salarie !</div>
 <div style={{display:'flex',flexDirection:'column',gap:4}}>
 {examples.map(ex=>(
 <button key={ex} onClick={()=>{setInput(ex)}} style={{background:'#f1f5f9',border:'1px solid '+C.border,borderRadius:8,padding:'5px 10px',fontSize:11,cursor:'pointer',color:C.text,textAlign:'left'}}>{ex}</button>
@@ -2409,10 +2472,24 @@ return(
 </div>
 )}
 {msgs.map((m,i)=>(
-<div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+<div key={i} style={{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start',gap:6}}>
 <div style={{maxWidth:'85%',padding:'7px 11px',borderRadius:10,background:m.role==='user'?C.accent:'#f1f5f9',color:m.role==='user'?'#fff':C.text,fontSize:12,lineHeight:1.5,whiteSpace:'pre-wrap'}}>
 {m.content}
 </div>
+{m.proposal&&(
+<div style={{width:'95%',border:'1.5px solid '+C.accent,borderRadius:10,background:'#fff',padding:10,fontSize:12}}>
+<div style={{fontWeight:700,color:C.accent,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>📨 Message a {getEmpName(m.proposal.toEmpId)}</div>
+{m.proposalStatus==='pending'&&(<>
+<textarea value={m.proposal.content} onChange={e=>editProposal(i,e.target.value)} rows={3} style={{width:'100%',padding:6,borderRadius:6,border:'1px solid '+C.border,fontSize:12,fontFamily:'inherit',resize:'vertical',marginBottom:6,outline:'none'}}/>
+<div style={{display:'flex',gap:6}}>
+<button onClick={()=>validateProposal(i)} style={{flex:1,background:C.green||'#16a34a',color:'#fff',border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontWeight:700,fontSize:12}}>✓ Envoyer</button>
+<button onClick={()=>cancelProposal(i)} style={{flex:1,background:'#f1f5f9',color:C.text,border:'1px solid '+C.border,borderRadius:6,padding:'6px 10px',cursor:'pointer',fontWeight:600,fontSize:12}}>✕ Annuler</button>
+</div>
+</>)}
+{m.proposalStatus==='sent'&&(<div style={{color:C.green||'#16a34a',fontWeight:600,fontSize:12}}>✓ Message envoye a {getEmpName(m.proposal.toEmpId)}</div>)}
+{m.proposalStatus==='cancelled'&&(<div style={{color:C.muted,fontStyle:'italic',fontSize:12}}>✕ Annule</div>)}
+</div>
+)}
 </div>
 ))}
 {loading&&<div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:'#f1f5f9',borderRadius:10,padding:'7px 14px',fontSize:20,color:C.muted}}>...</div></div>}
