@@ -685,7 +685,7 @@ return(<div style={{padding:'3px 10px',display:'flex',alignItems:'center',gap:5,
 {mr.opH>0&&<span style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:5,padding:'1px 7px',color:'#15803d',fontWeight:700}}>⚙️ {mr.opH}h fraisage</span>}
 {mr.waterMin!==null&&mr.waterMin<20&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>💧 Eau {mr.waterMin}%⚠️</span>}
 {(!mr.rawPts||!mr.rawPts.length)&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>⚠️ Ancien format — supprimer (×) puis ré-importer le ZIP pour voir les 6 heures</span>}
-<button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.dim,padding:'0 4px'}}>×</button>
+<button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen (le chantier sera conservé) ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} title="Supprime uniquement le rapport Wirtgen (le chantier reste)" style={{marginLeft:'auto',background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:11,color:'#991b1b',fontWeight:700}}>🗑 Suppr rapport</button>
 </div>)})()}
 {grp.missions.map(({j,m,mt,fuelType,trajL,trajCost,machCost,salRoute,rev,cl,benefAffiche,marginPct})=>{
 const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
@@ -1515,6 +1515,27 @@ const submitEntFaire=()=>{if(!selectedMachineId||!entFaireDesc.trim()){alert('Ma
 const setEquipStatus=(eqId,status)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.machineEquipmentStatus)nd.machineEquipmentStatus={};if(!nd.machineEquipmentStatus[selectedMachineId])nd.machineEquipmentStatus[selectedMachineId]={};nd.machineEquipmentStatus[selectedMachineId][eqId]=status;save(nd)};
 const openPanneForSelected=()=>{setPanneEquip(selectedMachineId||'');setPanneSev('normal');setPanneDesc('');setShowPanne(true)};
 const openTakePartForSelected=()=>{const m=selectedMachine;setTakePartType(m?m.type:'');setTakePartEquip(selectedMachineId||'');setTakePartId('');setTakePartQte(1);setTakePartReason('');setShowTakePart(true)};
+const notifyJobsRef=useRef(null);
+useEffect(()=>{if(typeof Notification!=='undefined'&&Notification.permission==='default'){try{Notification.requestPermission().catch(()=>{})}catch(e){}}},[]);
+useEffect(()=>{
+const myJobs=(data.jobs||[]).filter(j=>j.employeeId===empId);
+if(notifyJobsRef.current===null){notifyJobsRef.current=myJobs;return}
+const prev=notifyJobsRef.current;
+notifyJobsRef.current=myJobs;
+if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
+const strip=j=>{const{ack,ackDate,...r}=j||{};return JSON.stringify(r)};
+const prevMap=new Map(prev.map(j=>[j.id,j]));
+for(const job of myJobs){
+const p=prevMap.get(job.id);
+if(!p||strip(p)!==strip(job)){
+const cl=(data.clients||[]).find(c=>c.id===job.clientId);
+const mach=(data.machines||[]).find(m=>m.id===job.machineId);
+const title=!p?'Nouveau chantier':'Chantier modifie';
+const body=(cl?cl.name:'Chantier')+' - '+fmtDate(new Date(job.date))+(job.billingStart?' a '+job.billingStart:'')+(mach?' ('+mach.name+')':'');
+try{const n=new Notification(title,{body,icon:'logo.png',tag:'job-'+job.id});n.onclick=()=>{window.focus();n.close()}}catch(e){}
+}
+}
+},[data.jobs,empId,data.clients,data.machines]);
 if(!emp)return(<div style={{fontSize:14}}>Employe non trouve</div>);
 return(
 <div style={{maxWidth:700,margin:'0 auto',padding:16,fontSize:14}}>
