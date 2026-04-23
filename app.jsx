@@ -2380,7 +2380,9 @@ const emp=employees.find(e=>e.id===j.employeeId);
 const mach=machines.find(m=>m.id===j.machineId);
 const cli=clients.find(c=>c.id===j.clientId);
 const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
-return `  - ${emp?emp.name:'Chauffeur?'} | ${mach?mach.name:'Machine?'} | Client: ${cli?cli.name:j.clientId||'?'} | Forfait: ${j.forfaitType||'?'} | CA: ${ca.toFixed(0)}€${j.isNight?' (nuit)':''}`;
+const theo=calcTheoreticalTimes(j,data,0);
+const hStr=theo?` | Embauche theo: ${theo.theoStart} → Debauche theo: ${theo.theoEnd}`:(j.billingStart?` | Facturation: ${j.billingStart}`:'');
+return `  - ${emp?emp.name:'Chauffeur?'} | ${mach?mach.name:'Machine?'} | Client: ${cli?cli.name:j.clientId||'?'} | Forfait: ${j.forfaitType||'?'} | CA: ${ca.toFixed(0)}€${j.isNight?' (nuit)':''}${hStr}`;
 };
 horizon.forEach(d=>{
 const djs=jobsHorizon.filter(j=>j.date===d);
