@@ -1117,6 +1117,7 @@ return(
 {t==='Raboteuse'&&m.width&&<div style={{fontSize:13,color:C.dim}}>Largeur: {m.width}</div>}
 <div style={{fontSize:13,color:C.dim}}>Chauffeur: {driver(m.id)}</div>
 <div style={{fontSize:13,color:C.dim}}>Conso: {m.fuelConsumption||0} L/h</div>
+{(()=>{const stat=((data.machineEquipmentStatus||{})[m.id])||{};const miss=Object.values(stat).filter(v=>v==='missing').length;return miss>0?<div style={{fontSize:13,fontWeight:700,color:C.red,marginTop:4}}>⚠ {miss} equipement(s) manquant(s)</div>:null})()}
 </div>))}
 </div></div>)})}
 {show&&sel&&<Mod title={sel.name||'Nouvelle machine'} onClose={close}>
@@ -1135,6 +1136,42 @@ return(
 </div></div>
 <div style={{display:'flex',gap:8,marginTop:16}}><button style={btnStyle(C.accent,true)} onClick={doSave}>Enregistrer</button><button style={btnStyle(C.red)} onClick={delItem}>Supprimer</button></div>
 </Mod>}
+</div>)};
+
+// ======== EQUIPMENT LISTS (per machine type) ========
+const EquipmentListsPage=({data,save})=>{
+const types=['Raboteuse','Balayeuse','Citerne'];
+const[newName,setNewName]=useState({Raboteuse:'',Balayeuse:'',Citerne:''});
+const addItem=(type)=>{const nm=(newName[type]||'').trim();if(!nm)return;const nd=JSON.parse(JSON.stringify(data));if(!nd.equipmentLists)nd.equipmentLists={Raboteuse:[],Balayeuse:[],Citerne:[]};if(!nd.equipmentLists[type])nd.equipmentLists[type]=[];nd.equipmentLists[type].push({id:uid(),name:nm});save(nd);setNewName({...newName,[type]:''})};
+const delItem=(type,id)=>{if(!confirm('Supprimer cet equipement ?'))return;const nd=JSON.parse(JSON.stringify(data));nd.equipmentLists[type]=((nd.equipmentLists||{})[type]||[]).filter(x=>x.id!==id);save(nd)};
+const renameItem=(type,id,name)=>{const nd=JSON.parse(JSON.stringify(data));const arr=((nd.equipmentLists||{})[type]||[]);const idx=arr.findIndex(x=>x.id===id);if(idx>=0){arr[idx]={...arr[idx],name};save(nd)}};
+const machinesByType=t=>(data.machines||[]).filter(m=>m.type===t);
+return(
+<div>
+<h2 style={{margin:'0 0 16px'}}>Equipements par type de machine</h2>
+<div style={{fontSize:13,color:C.dim,marginBottom:16}}>Definissez la liste des equipements que chaque type de machine doit avoir. Les chauffeurs verront cette liste dans leur espace et pourront signaler les equipements manquants.</div>
+{types.map(t=>{const list=((data.equipmentLists||{})[t]||[]);const macs=machinesByType(t);return(
+<div key={t} style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,borderLeft:'4px solid '+(MC[t]||C.accent),marginBottom:16}}>
+<h3 style={{color:MC[t]||C.accent,margin:'0 0 12px'}}>{t}s ({macs.length} machine{macs.length>1?'s':''})</h3>
+{list.length===0&&<div style={{fontSize:14,color:C.dim,marginBottom:8}}>Aucun equipement configure.</div>}
+{list.map(eq=>(
+<div key={eq.id} style={{display:'flex',gap:6,alignItems:'center',marginBottom:6}}>
+<input style={{...inputStyle,flex:1}} value={eq.name} onChange={e=>renameItem(t,eq.id,e.target.value)}/>
+<button onClick={()=>delItem(t,eq.id)} style={{...btnStyle(C.red),fontSize:13,padding:'6px 10px'}}>x</button>
+</div>))}
+<div style={{display:'flex',gap:6,marginTop:8}}>
+<input style={{...inputStyle,flex:1}} placeholder="Nouvel equipement..." value={newName[t]} onChange={e=>setNewName({...newName,[t]:e.target.value})} onKeyDown={e=>{if(e.key==='Enter')addItem(t)}}/>
+<button onClick={()=>addItem(t)} style={btnStyle(C.accent,true)}>+ Ajouter</button>
+</div>
+{macs.length>0&&list.length>0&&<div style={{marginTop:12,paddingTop:8,borderTop:'1px dashed '+C.border}}>
+<div style={{fontSize:13,fontWeight:700,marginBottom:6,color:C.dim}}>Etat par machine :</div>
+{macs.map(m=>{const stat=((data.machineEquipmentStatus||{})[m.id])||{};const missing=list.filter(eq=>stat[eq.id]==='missing');const present=list.filter(eq=>stat[eq.id]==='present').length;return(
+<div key={m.id} style={{fontSize:13,marginBottom:4,padding:'4px 8px',background:missing.length>0?'#fef2f2':'#f8fafc',borderRadius:6,border:'1px solid '+(missing.length>0?'#fecaca':C.border)}}>
+<strong>{m.name}</strong> <span style={{color:C.dim}}>— {present}/{list.length} presents</span>
+{missing.length>0&&<span style={{marginLeft:6,color:C.red,fontWeight:700}}>⚠ Manquants : {missing.map(eq=>eq.name).join(', ')}</span>}
+</div>)})}
+</div>}
+</div>)})}
 </div>)};
 
 // ======== TRUCKS ========
@@ -1481,41 +1518,15 @@ const openTakePartForSelected=()=>{const m=selectedMachine;setTakePartType(m?m.t
 if(!emp)return(<div style={{fontSize:14}}>Employe non trouve</div>);
 return(
 <div style={{maxWidth:700,margin:'0 auto',padding:16,fontSize:14}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,background:C.accent,color:'#fff',padding:'12px 16px',borderRadius:10}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,background:C.accent,color:'#fff',padding:'12px 16px',borderRadius:10}}>
 <div style={{display:'flex',alignItems:'center',gap:10}}>
 <div style={{width:40,height:40,borderRadius:'50%',background:'#fff3',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:18}}>{(emp.name||'?')[0].toUpperCase()}</div>
 <div><div style={{fontWeight:700,fontSize:18}}>{emp.name}</div><div style={{fontSize:14,opacity:.8}}>Espace chauffeur</div></div>
 </div>
 <div style={{display:'flex',gap:6}}><button onClick={()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>↻</button><button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button></div>
 </div>
-<div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginBottom:16}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-<h3 style={{margin:0,fontSize:18}}>Pointage - {fmtDate(new Date())}</h3>
-<div style={{width:14,height:14,borderRadius:'50%',background:status==='on'?C.green:status==='pause'?C.orange:C.muted}}/>
-</div>
-<div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-{status==='off'&&<button onClick={()=>doTime('start')} style={{...btnStyle(C.green,true),fontSize:16,padding:'10px 18px'}}>Debut de journee</button>}
-{status==='on'&&<button onClick={()=>doTime('pause_start')} style={{...btnStyle(C.orange,true),fontSize:16,padding:'10px 18px'}}>Pause</button>}
-{status==='on'&&<button onClick={()=>doTime('done')} style={{...btnStyle(C.red,true),fontSize:16,padding:'10px 18px'}}>Fin de journee</button>}
-{status==='pause'&&<button onClick={()=>doTime('resume')} style={{...btnStyle(C.green,true),fontSize:16,padding:'10px 18px'}}>Reprise</button>}
-</div>
-{status!=='off'&&lastEntry&&<div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}>
-<span style={{fontSize:13,color:C.dim}}>Repas :</span>
-{['PANIER','RESTO'].map(m=><button key={m} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.mealType=m;save(nd)}}} style={{...btnStyle(m==='PANIER'?C.accent:C.orange,lastEntry.mealType===m),padding:'4px 12px',fontSize:12}}>{m}</button>)}
-</div>}
-<div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-<button onClick={()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}} style={{...btnStyle(C.accent),fontSize:14}}>Saisir mes heures</button>
-<button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{...btnStyle(C.orange),fontSize:14}}>RDV / Absence</button>
-</div>
-{dayEntries.map(t=>(
-<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
-<span style={{fontWeight:700,fontSize:16}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
-<div style={{display:'flex',gap:4}}>
-<button onClick={()=>setEditTE({...t})} style={{background:C.accent+'15',border:'1px solid '+C.accent,color:C.accent,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>✎ Modifier</button>
-<button onClick={()=>delTE(t.id)} style={{background:C.red+'15',border:'1px solid '+C.red,color:C.red,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>🗑 Suppr</button>
-</div>
-</div>
-))}
+<div style={{display:'flex',gap:6,marginBottom:16}}>
+{[{k:'heures',l:'Heures'},{k:'chantier',l:'Chantier'},{k:'machine',l:'Machine'}].map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{...btnStyle(C.accent,tab===x.k),flex:1,fontSize:15,padding:'10px 4px'}}>{x.l}</button>)}
 </div>
 {showManual&&<Mod title="Saisir mes heures" onClose={()=>setShowManual(false)} width={450}>
 <Fl label="Date"><input type="date" style={inputStyle} value={manDate} onChange={e=>setManDate(e.target.value)}/></Fl>
@@ -1557,10 +1568,6 @@ return(
 <Fl label="Pause (min)"><input type="number" style={inputStyle} value={editTE.pauseMin||0} onChange={e=>setEditTE({...editTE,pauseMin:Number(e.target.value)})}/></Fl>
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveEdit} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>setEditTE(null)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
-<div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-<button onClick={()=>setShowPanne(true)} style={{...btnStyle(C.red,true),fontSize:14}}>&#9888; Signaler une panne</button>
-<button onClick={()=>setShowTakePart(true)} style={{...btnStyle(C.cyan,true),fontSize:14}}>&#128295; Prendre une piece</button>
-</div>
 {showPanne&&<Mod title="Signaler une panne" onClose={()=>setShowPanne(false)}>
 <Fl label="Equipement"><select style={inputStyle} value={panneEquip} onChange={e=>setPanneEquip(e.target.value)}><option value="">--</option>{allEquipEmp.map(eq=><option key={eq.id} value={eq.id}>({eq.t}) {eq.name}</option>)}</select></Fl>
 <Fl label="Severite"><select style={inputStyle} value={panneSev} onChange={e=>setPanneSev(e.target.value)}>{SEVERITIES.map(s=><option key={s} value={s}>{s}</option>)}</select></Fl>
@@ -1579,16 +1586,66 @@ return(
 {takePartEquip&&<Fl label="Raison"><input style={inputStyle} value={takePartReason} onChange={e=>setTakePartReason(e.target.value)} placeholder="Remplacement, reparation..."/></Fl>}
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitTakePart} style={btnStyle(C.cyan,true)}>Confirmer</button><button onClick={()=>setShowTakePart(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
+{showEntFait&&<Mod title={'Entretien fait'+(selectedMachine?' - '+selectedMachine.name:'')} onClose={()=>setShowEntFait(false)}>
+<Fl label="Description de l'entretien"><textarea style={{...inputStyle,height:90}} value={entFaitDesc} onChange={e=>setEntFaitDesc(e.target.value)} placeholder="Vidange, graissage, controle niveaux..."/></Fl>
+<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitEntFait} style={btnStyle(C.green,true)}>Enregistrer</button><button onClick={()=>setShowEntFait(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+</Mod>}
+{showEntFaire&&<Mod title={'Entretien a faire'+(selectedMachine?' - '+selectedMachine.name:'')} onClose={()=>setShowEntFaire(false)}>
+<Fl label="Decrire le besoin"><textarea style={{...inputStyle,height:90}} value={entFaireDesc} onChange={e=>setEntFaireDesc(e.target.value)} placeholder="Ex: prevoir vidange, changement filtre..."/></Fl>
+<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitEntFaire} style={btnStyle(C.orange,true)}>Envoyer</button><button onClick={()=>setShowEntFaire(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+</Mod>}
+{showEquip&&selectedMachine&&(()=>{const list=(data.equipmentLists||{})[selectedMachine.type]||[];const statMap=((data.machineEquipmentStatus||{})[selectedMachineId])||{};return(
+<Mod title={'Equipements - '+selectedMachine.name+' ('+selectedMachine.type+')'} onClose={()=>setShowEquip(false)} width={500}>
+{list.length===0&&<div style={{fontSize:14,color:C.dim,padding:12,textAlign:'center'}}>Aucun equipement configure pour ce type. Demandez a l'admin.</div>}
+{list.map(eq=>{const st=statMap[eq.id]||'';return(
+<div key={eq.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid #f1f5f9'}}>
+<span style={{fontWeight:600,fontSize:15}}>{eq.name}</span>
+<div style={{display:'flex',gap:6}}>
+<button onClick={()=>setEquipStatus(eq.id,'present')} style={{...btnStyle(C.green,st==='present'),padding:'4px 12px',fontSize:13}}>Present</button>
+<button onClick={()=>setEquipStatus(eq.id,'missing')} style={{...btnStyle(C.red,st==='missing'),padding:'4px 12px',fontSize:13}}>Manquant</button>
+</div>
+</div>)})}
+<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={()=>setShowEquip(false)} style={btnStyle(C.accent,true)}>Fermer</button></div>
+</Mod>)})()}
+{tab==='heures'&&<React.Fragment>
+<div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginBottom:16}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+<h3 style={{margin:0,fontSize:18}}>Pointage - {fmtDate(new Date())}</h3>
+<div style={{width:14,height:14,borderRadius:'50%',background:status==='on'?C.green:status==='pause'?C.orange:C.muted}}/>
+</div>
+<div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+{status==='off'&&<button onClick={()=>doTime('start')} style={{...btnStyle(C.green,true),fontSize:16,padding:'10px 18px'}}>Debut de journee</button>}
+{status==='on'&&<button onClick={()=>doTime('pause_start')} style={{...btnStyle(C.orange,true),fontSize:16,padding:'10px 18px'}}>Pause</button>}
+{status==='on'&&<button onClick={()=>doTime('done')} style={{...btnStyle(C.red,true),fontSize:16,padding:'10px 18px'}}>Fin de journee</button>}
+{status==='pause'&&<button onClick={()=>doTime('resume')} style={{...btnStyle(C.green,true),fontSize:16,padding:'10px 18px'}}>Reprise</button>}
+</div>
+{status!=='off'&&lastEntry&&<div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}>
+<span style={{fontSize:13,color:C.dim}}>Repas :</span>
+{['PANIER','RESTO'].map(m=><button key={m} onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.mealType=m;save(nd)}}} style={{...btnStyle(m==='PANIER'?C.accent:C.orange,lastEntry.mealType===m),padding:'4px 12px',fontSize:12}}>{m}</button>)}
+</div>}
+<div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+<button onClick={()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}} style={{...btnStyle(C.accent),fontSize:14}}>Saisir mes heures</button>
+<button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{...btnStyle(C.orange),fontSize:14}}>RDV / Absence</button>
+</div>
+{dayEntries.map(t=>(
+<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
+<span style={{fontWeight:700,fontSize:16}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
+<div style={{display:'flex',gap:4}}>
+<button onClick={()=>setEditTE({...t})} style={{background:C.accent+'15',border:'1px solid '+C.accent,color:C.accent,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>✎ Modifier</button>
+<button onClick={()=>delTE(t.id)} style={{background:C.red+'15',border:'1px solid '+C.red,color:C.red,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>🗑 Suppr</button>
+</div>
+</div>
+))}
+</div>
 <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap'}}>
 {['Jour','Semaine'].map(v=><button key={v} onClick={()=>{setView(v);setOffset(0)}} style={{...btnStyle(C.accent,view===v),fontSize:14}}>{v}</button>)}
 <button onClick={()=>setOffset(o=>o-1)} style={btnStyle(C.dim)}>{'<'}</button><span style={{fontWeight:600,fontSize:14}}>{range.label}</span><button onClick={()=>setOffset(o=>o+1)} style={btnStyle(C.dim)}>{'>'}</button>
 </div>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
 <div style={{background:C.card,borderRadius:10,padding:12,border:'1px solid '+C.border,textAlign:'center'}}><div style={{fontSize:14,color:C.dim}}>Travail</div><div style={{fontSize:18,fontWeight:800,color:C.accent}}>{fmtDuration(totalWork)}</div></div>
 <div style={{background:C.card,borderRadius:10,padding:12,border:'1px solid '+C.border,textAlign:'center'}}><div style={{fontSize:14,color:C.dim}}>Pause</div><div style={{fontSize:18,fontWeight:800,color:C.orange}}>{fmtDuration(totalPause)}</div></div>
-<div style={{background:C.card,borderRadius:10,padding:12,border:'1px solid '+C.border,textAlign:'center'}}><div style={{fontSize:14,color:C.dim}}>Missions</div><div style={{fontSize:18,fontWeight:800,color:C.text}}>{periodJobs.length}</div></div>
 </div>
-{dates.map(date=>{const tes=periodTE.filter(t=>t.date===date);const jbs=periodJobs.filter(j=>j.date===date);return(
+{dates.filter(d=>periodTE.some(t=>t.date===d)).map(date=>{const tes=periodTE.filter(t=>t.date===date);return(
 <div key={date} style={{background:C.card,borderRadius:10,padding:12,marginBottom:10,border:'1px solid '+C.border}}>
 <div style={{fontWeight:700,fontSize:16,marginBottom:6,color:C.accent}}>{fmtDate(new Date(date))}</div>
 {tes.map(t=>{let wm=0;if(t.startTime&&t.endTime){const[sh3,sm3]=t.startTime.split(':').map(Number);const[eh3,em3]=t.endTime.split(':').map(Number);wm=(eh3*60+em3)-(sh3*60+sm3)-(t.pauseMin||0)}return(
@@ -1598,21 +1655,6 @@ return(
 <button onClick={()=>setEditTE({...t})} style={{background:C.accent+'15',border:'1px solid '+C.accent,color:C.accent,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>✎ Modifier</button>
 <button onClick={()=>delTE(t.id)} style={{background:C.red+'15',border:'1px solid '+C.red,color:C.red,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>🗑 Suppr</button>
 </div>
-</div>)})}
-{jbs.map(j=>{const cl=(data.clients||[]).find(c=>c.id===j.clientId);const m=(data.machines||[]).find(x=>x.id===j.machineId);const depN=j.startFrom==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.startFrom)||{}).name||'';const arrN=j.endAt==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.endAt)||{}).name||'';const isDepot=j.type==='depot';const depotObj=isDepot?(data.depots||[]).find(d=>d.id===j.depotId):null;return(
-<div key={j.id} style={{background:j.ack?'#dcfce7':isDepot?'#f8fafc':C.card,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(isDepot?'#64748b':m?MC[m.type]||C.accent:C.muted)}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-<div style={{fontWeight:700,fontSize:16}}>{isDepot?<span style={{color:'#64748b'}}>{depotObj?depotObj.name:'Depot'} — {j.depotActivity||'Depot'}{j.depotDescription?' ('+j.depotDescription+')':''}</span>:(cl?cl.name:'Pas de client')}{!isDepot&&j.agencyName?' - '+j.agencyName:''}</div>
-{!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>}
-</div>
-<div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
-{j.siteManager&&<div style={{color:C.dim,fontSize:14,marginTop:2}}>{j.siteManager} {j.siteManagerPhone&&<a href={'tel:'+j.siteManagerPhone} style={{color:C.accent}}>{j.siteManagerPhone}</a>}</div>}
-{j.location&&<div style={{fontSize:14,marginTop:2}}>{j.gps?<a href={'https://www.google.com/maps?q='+j.gps} target="_blank" rel="noopener" style={{color:C.accent}}>{j.location}</a>:<span style={{color:C.dim}}>{j.location}</span>}</div>}
-{(depN||arrN)&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:4}}>
-{depN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depN}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
-{arrN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrN}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
-</div>}
-{(()=>{const cols=(data.jobs||[]).filter(jj=>jj.id!==j.id&&jj.date===j.date&&jj.employeeId&&jj.employeeId!==empId&&j.location&&jj.location&&jj.location.trim().toLowerCase()===j.location.trim().toLowerCase());if(!cols.length)return null;return(<div style={{marginTop:6,padding:'6px 8px',background:'#f0f9ff',borderRadius:8,border:'1px solid #bae6fd'}}><div style={{fontSize:12,color:'#0369a1',fontWeight:700,marginBottom:4}}>{'👷 Equipe sur ce chantier :'}</div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{cols.map(jj=>{const ce=(data.employees||[]).find(e=>e.id===jj.employeeId);return ce?<span key={jj.id} style={{background:'#0891b2',borderRadius:6,padding:'3px 10px',fontSize:13,fontWeight:700,color:'#fff'}}>{ce.name}</span>:null})}</div></div>);})()}
 </div>)})}
 </div>)})}
 <div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginTop:16}}>
@@ -1633,6 +1675,56 @@ return(
 <div style={{fontSize:14}}><span style={{color:C.dim}}>Mois: </span><span style={{fontWeight:800,color:C.green,fontSize:16}}>{fmtDuration(monthlyTotal)}</span></div>
 </div>
 </div>
+</React.Fragment>}
+{tab==='chantier'&&<React.Fragment>
+<div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+{['Jour','Semaine'].map(v=><button key={v} onClick={()=>{setView(v);setOffset(0)}} style={{...btnStyle(C.accent,view===v),fontSize:14}}>{v}</button>)}
+<button onClick={()=>setOffset(o=>o-1)} style={btnStyle(C.dim)}>{'<'}</button><span style={{fontWeight:600,fontSize:14}}>{range.label}</span><button onClick={()=>setOffset(o=>o+1)} style={btnStyle(C.dim)}>{'>'}</button>
+</div>
+<div style={{background:C.card,borderRadius:10,padding:12,border:'1px solid '+C.border,textAlign:'center',marginBottom:16}}><div style={{fontSize:14,color:C.dim}}>Missions sur la periode</div><div style={{fontSize:22,fontWeight:800,color:C.text}}>{periodJobs.length}</div></div>
+{dates.filter(d=>periodJobs.some(j=>j.date===d)).length===0&&<div style={{fontSize:14,color:C.dim,textAlign:'center',padding:24}}>Aucun chantier sur la periode.</div>}
+{dates.filter(d=>periodJobs.some(j=>j.date===d)).map(date=>{const jbs=periodJobs.filter(j=>j.date===date);return(
+<div key={date} style={{background:C.card,borderRadius:10,padding:12,marginBottom:10,border:'1px solid '+C.border}}>
+<div style={{fontWeight:700,fontSize:16,marginBottom:6,color:C.accent}}>{fmtDate(new Date(date))}</div>
+{jbs.map(j=>{const cl=(data.clients||[]).find(c=>c.id===j.clientId);const m=(data.machines||[]).find(x=>x.id===j.machineId);const depN=j.startFrom==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.startFrom)||{}).name||'';const arrN=j.endAt==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.endAt)||{}).name||'';const isDepot=j.type==='depot';const depotObj=isDepot?(data.depots||[]).find(d=>d.id===j.depotId):null;return(
+<div key={j.id} style={{background:j.ack?'#dcfce7':isDepot?'#f8fafc':C.card,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(isDepot?'#64748b':m?MC[m.type]||C.accent:C.muted)}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<div style={{fontWeight:700,fontSize:16}}>{isDepot?<span style={{color:'#64748b'}}>{depotObj?depotObj.name:'Depot'} — {j.depotActivity||'Depot'}{j.depotDescription?' ('+j.depotDescription+')':''}</span>:(cl?cl.name:'Pas de client')}{!isDepot&&j.agencyName?' - '+j.agencyName:''}</div>
+{!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>}
+</div>
+<div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
+{j.siteManager&&<div style={{color:C.dim,fontSize:14,marginTop:2}}>{j.siteManager} {j.siteManagerPhone&&<a href={'tel:'+j.siteManagerPhone} style={{color:C.accent}}>{j.siteManagerPhone}</a>}</div>}
+{j.location&&<div style={{fontSize:14,marginTop:2}}>{j.gps?<a href={'https://www.google.com/maps?q='+j.gps} target="_blank" rel="noopener" style={{color:C.accent}}>{j.location}</a>:<span style={{color:C.dim}}>{j.location}</span>}</div>}
+{(depN||arrN)&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:4}}>
+{depN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depN}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
+{arrN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrN}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
+</div>}
+{(()=>{const cols=(data.jobs||[]).filter(jj=>jj.id!==j.id&&jj.date===j.date&&jj.employeeId&&jj.employeeId!==empId&&j.location&&jj.location&&jj.location.trim().toLowerCase()===j.location.trim().toLowerCase());if(!cols.length)return null;return(<div style={{marginTop:6,padding:'6px 8px',background:'#f0f9ff',borderRadius:8,border:'1px solid #bae6fd'}}><div style={{fontSize:12,color:'#0369a1',fontWeight:700,marginBottom:4}}>{'👷 Equipe sur ce chantier :'}</div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{cols.map(jj=>{const ce=(data.employees||[]).find(e=>e.id===jj.employeeId);return ce?<span key={jj.id} style={{background:'#0891b2',borderRadius:6,padding:'3px 10px',fontSize:13,fontWeight:700,color:'#fff'}}>{ce.name}</span>:null})}</div></div>);})()}
+</div>)})}
+</div>)})}
+</React.Fragment>}
+{tab==='machine'&&<React.Fragment>
+<div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginBottom:16}}>
+<Fl label="Machine selectionnee">
+<select style={inputStyle} value={selectedMachineId} onChange={e=>setSelectedMachineId(e.target.value)}>
+<option value="">-- Choisir une machine --</option>
+{(data.machines||[]).map(m=><option key={m.id} value={m.id}>{m.name} ({m.type})</option>)}
+</select>
+</Fl>
+{selectedMachine?<div style={{background:(MC[selectedMachine.type]||C.accent)+'15',borderRadius:8,padding:10,marginTop:8,fontSize:14}}>
+<div style={{fontWeight:700,fontSize:16,color:MC[selectedMachine.type]||C.accent}}>{selectedMachine.name}</div>
+<div style={{fontSize:13,color:C.dim}}>{selectedMachine.type}{selectedMachine.width?' - '+selectedMachine.width+'m':''}</div>
+{(()=>{const stat=((data.machineEquipmentStatus||{})[selectedMachine.id])||{};const missing=Object.entries(stat).filter(([_,v])=>v==='missing').length;return missing>0?<div style={{marginTop:6,fontSize:13,fontWeight:700,color:C.red}}>⚠ {missing} equipement(s) manquant(s)</div>:null})()}
+</div>:<div style={{fontSize:14,color:C.dim,padding:8,textAlign:'center'}}>Aucune machine selectionnee.</div>}
+</div>
+{selectedMachineId&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+<button onClick={()=>{setEntFaitDesc('');setShowEntFait(true)}} style={{...btnStyle(C.green,true),fontSize:14,padding:'14px 8px'}}>✓ Entretien fait</button>
+<button onClick={()=>{setEntFaireDesc('');setShowEntFaire(true)}} style={{...btnStyle(C.orange,true),fontSize:14,padding:'14px 8px'}}>🔧 Entretien a faire</button>
+<button onClick={openPanneForSelected} style={{...btnStyle(C.red,true),fontSize:14,padding:'14px 8px'}}>⚠ Signaler panne</button>
+<button onClick={()=>setShowEquip(true)} style={{...btnStyle(C.accent,true),fontSize:14,padding:'14px 8px'}}>📋 Equipement</button>
+<button onClick={openTakePartForSelected} style={{...btnStyle(C.cyan,true),fontSize:14,padding:'14px 8px',gridColumn:'1 / span 2'}}>🔩 Prendre une piece</button>
+</div>}
+</React.Fragment>}
 </div>)};
 
 // ======== STOCK PIECES ========
@@ -1725,6 +1817,9 @@ const openEdit=i=>{setSel({...i,partsUsed:[...(i.partsUsed||[])]});setShowAdd(tr
 const doSave=()=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.interventions)nd.interventions=[];const partsCost=(sel.partsUsed||[]).reduce((s,p)=>s+(p.totalPrice||0),0);sel.totalCost=partsCost+(Number(sel.laborCost)||0);const idx=nd.interventions.findIndex(i=>i.id===sel.id);if(idx>=0)nd.interventions[idx]=sel;else{sel.id=uid();nd.interventions.push(sel)}sel.partsUsed.forEach(pu=>{const pp=nd.parts.find(x=>x.id===pu.partId);if(pp){pp.quantity=Math.max(0,(pp.quantity||0)-pu.quantity);if(!pp.history)pp.history=[];pp.history.unshift({type:'out',quantity:pu.quantity,date:sel.date,reason:sel.description});pp.history=pp.history.slice(0,50)}});save(nd);setShowAdd(false);setSel(null)};
 const delInter=id=>{if(!confirm('Supprimer ?'))return;save({...data,interventions:(data.interventions||[]).filter(i=>i.id!==id)})};
 const updatePanneStatus=(pid,status)=>{const nd=JSON.parse(JSON.stringify(data));const p=(nd.panneReports||[]).find(x=>x.id===pid);if(p){p.status=status;if(status==='resolved')p.resolvedDate=fmtDateISO(new Date());save(nd)}};
+const maintReqs=(data.maintenanceRequests||[]).sort((a,b)=>b.date.localeCompare(a.date));
+const updateMaintStatus=(mid,status)=>{const nd=JSON.parse(JSON.stringify(data));const m=(nd.maintenanceRequests||[]).find(x=>x.id===mid);if(m){m.status=status;if(status==='done')m.doneDate=fmtDateISO(new Date());save(nd)}};
+const delMaintReq=(mid)=>{if(!confirm('Supprimer cette demande ?'))return;save({...data,maintenanceRequests:(data.maintenanceRequests||[]).filter(x=>x.id!==mid)})};
 const getCompatParts=()=>{const eqId=sel?(sel.machineId||sel.truckId||sel.carId):'';return(data.parts||[]).filter(p=>p.quantity>0&&(!eqId||(p.compatibleWith||[]).length===0||(p.compatibleWith||[]).includes(eqId)))};
 const confirmAddPart=()=>{if(!pickerPartId)return;const part=(data.parts||[]).find(p=>p.id===pickerPartId);if(!part)return;const qte=Math.min(pickerQte,part.quantity);if(qte<=0)return;setSel({...sel,partsUsed:[...(sel.partsUsed||[]),{partId:part.id,partName:part.name,quantity:qte,unitPrice:part.unitPrice,totalPrice:qte*part.unitPrice}]});setShowPartPicker(false);setPickerPartId('');setPickerQte(1)};
 const removePartFromInter=(idx)=>{if(!sel)return;const pu=[...(sel.partsUsed||[])];pu.splice(idx,1);setSel({...sel,partsUsed:pu})};
@@ -1734,6 +1829,7 @@ return(
 <div style={{display:'flex',gap:6}}>
 <button onClick={()=>setPanneTab('interventions')} style={btnStyle(C.accent,panneTab==='interventions')}>Interventions</button>
 <button onClick={()=>setPanneTab('pannes')} style={btnStyle(C.orange,panneTab==='pannes')}>Pannes ({pannes.filter(p=>p.status!=='resolved').length})</button>
+<button onClick={()=>setPanneTab('maintenance_requests')} style={btnStyle(C.cyan,panneTab==='maintenance_requests')}>Entretiens demandes ({maintReqs.filter(m=>m.status==='new').length})</button>
 </div>
 <button style={btnStyle(C.accent,true)} onClick={openAdd}>+ Intervention</button>
 </div>
@@ -1762,6 +1858,23 @@ return(
 <div style={{fontSize:13}}>{p.machineId?equipName(p.machineId):p.truckId?equipName(p.truckId):p.carId?equipName(p.carId):'-'}</div>
 <div style={{fontSize:13,color:C.dim}}>{p.description}</div>
 {reporter&&<div style={{fontSize:12,color:C.muted}}>Signale par: {reporter.name}</div>}
+</div>)})}
+</div>}
+{panneTab==='maintenance_requests'&&<div>
+{maintReqs.length===0&&<div style={{fontSize:14,color:C.dim,padding:24,textAlign:'center'}}>Aucune demande d'entretien.</div>}
+{maintReqs.map(mr=>{const reporter=(data.employees||[]).find(e=>e.id===mr.reportedBy);const mach=(data.machines||[]).find(m=>m.id===mr.machineId);return(
+<div key={mr.id} style={{background:C.card,borderRadius:10,padding:12,marginBottom:8,border:'1px solid '+C.border,borderLeft:'3px solid '+(mr.status==='done'?C.green:C.cyan)}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+<div><span style={{fontWeight:700}}>{mr.date}</span> <Bg text={mr.status==='done'?'Fait':'A faire'} color={mr.status==='done'?C.green:C.cyan}/></div>
+<div style={{display:'flex',gap:4,alignItems:'center'}}>
+{mr.status!=='done'&&<button onClick={()=>updateMaintStatus(mr.id,'done')} style={{...btnStyle(C.green),padding:'2px 10px',fontSize:12}}>Marquer fait</button>}
+{mr.status==='done'&&<button onClick={()=>updateMaintStatus(mr.id,'new')} style={{...btnStyle(C.dim),padding:'2px 10px',fontSize:12}}>Rouvrir</button>}
+{isAdmin&&<button onClick={()=>delMaintReq(mr.id)} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:16}}>x</button>}
+</div>
+</div>
+<div style={{fontSize:13,fontWeight:600}}>{mach?mach.name+' ('+mach.type+')':'Machine inconnue'}</div>
+<div style={{fontSize:13,color:C.dim,marginTop:2}}>{mr.description}</div>
+{reporter&&<div style={{fontSize:12,color:C.muted,marginTop:2}}>Demande par: {reporter.name}</div>}
 </div>)})}
 </div>}
 {showAdd&&sel&&<Mod title="Intervention" onClose={()=>{setShowAdd(false);setSel(null)}} width={550}>
@@ -2172,8 +2285,8 @@ return(
 // ======== ADMIN PANEL ========
 const AdminPanel=({data,save,onLogout,onUndo})=>{
 const[pg,setPg]=useState('planning');const[mobOpen,setMobOpen]=useState(false);
-const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
-const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
+const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'equipements',l:'Equipements',i:'&#129520;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
+const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'equipements':return(<EquipmentListsPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
 return(
 <div>
 {mobOpen&&<div className="sb-overlay" style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.3)',zIndex:199}} onClick={()=>setMobOpen(false)}/>}
