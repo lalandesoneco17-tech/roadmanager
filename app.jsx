@@ -1,4 +1,3 @@
-console.log('🟢 app.jsx v3 LOADED at',new Date().toISOString());
 const {useState,useEffect,useRef,useCallback,useMemo}=React;
 const C={bg:'#334155',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
 const MC={Raboteuse:'#008965',Balayeuse:'#16a34a',Citerne:'#0891b2'};
@@ -341,19 +340,15 @@ return{depotDepart,depotArrival,sites};
 // Si pas de rawPts, applique au moins la contrainte workStart > siteArrival (filet de sécurité legacy)
 const recomputeWirtgenReport=(mr)=>{
 if(!mr)return mr;
-console.log('[Wirtgen recompute v3]',mr.machineName,mr.date,'hasRawPts:',!!(mr.rawPts&&mr.rawPts.length),'sites:',JSON.stringify(mr.sites));
 if(mr.rawPts&&mr.rawPts.length){
   const t=detectWirtgenTimeline(mr.rawPts,mr.rawHop||[]);
-  console.log('[Wirtgen recompute v3] full →',JSON.stringify(t));
   return{...mr,depotDepart:t.depotDepart,depotArrival:t.depotArrival,sites:t.sites};
 }
 const toMinL=t=>{if(!t)return 0;const[h,m]=t.split(':').map(Number);return h*60+m};
 const minToHHMML=mn=>String(Math.floor(mn/60)).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
 const fixedSites=(mr.sites||[]).map(s=>{
   if(s&&s.workStart&&s.siteArrival&&toMinL(s.workStart)<=toMinL(s.siteArrival)){
-    const fixed={...s,workStart:minToHHMML(toMinL(s.siteArrival)+5)};
-    console.log('[Wirtgen recompute v3] legacy fix:',s.workStart,'→',fixed.workStart);
-    return fixed;
+    return{...s,workStart:minToHHMML(toMinL(s.siteArrival)+5)};
   }
   return s;
 });
