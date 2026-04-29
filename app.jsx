@@ -1,3 +1,4 @@
+console.log('🟢 app.jsx v3 LOADED at',new Date().toISOString());
 const {useState,useEffect,useRef,useCallback,useMemo}=React;
 const C={bg:'#334155',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
 const MC={Raboteuse:'#008965',Balayeuse:'#16a34a',Citerne:'#0891b2'};
@@ -280,11 +281,21 @@ const isFast=wp=>wp.spd>SPTH||wp.dist>DIST_KM;
 const depEvts=[],arrEvts=[];
 for(let i=1;i<ws.length;i++){const was=isFast(ws[i-1]),is=isFast(ws[i]);if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
 const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
-// Détection retour dépôt : dernière arrivée proche du 1er pt GPS (supposé dépôt) ?
-const DEPOT_RADIUS_KM=1.0;
+// Détection retour dépôt :
+// (a) dernière arrivée proche du 1er pt GPS (aller-retour classique), OU
+// (b) machine stationnaire à la fin (bbox<200m après la dernière arrivée → parking de fin de journée)
+const DEPOT_RADIUS_KM=1.0;const STATIONARY_RADIUS_KM=0.2;
 const firstPt=pts[0];
 const lastArrEvt=arrEvts.length?arrEvts[arrEvts.length-1]:null;
-const returnedToDepot=!!lastArrEvt&&haversine([lastArrEvt.arr.lat,lastArrEvt.arr.lon],[firstPt.lat,firstPt.lon])<DEPOT_RADIUS_KM;
+let returnedToDepot=false;
+if(lastArrEvt){
+  const nearStart=haversine([lastArrEvt.arr.lat,lastArrEvt.arr.lon],[firstPt.lat,firstPt.lon])<DEPOT_RADIUS_KM;
+  // Stationnaire à la fin = tous les pts après la dernière arrivée restent dans un rayon STATIONARY_RADIUS_KM
+  const ptsAfter=pts.filter(p=>p.min>=lastArrEvt.arr.min);
+  const maxDist=ptsAfter.reduce((mx,p)=>Math.max(mx,haversine([p.lat,p.lon],[lastArrEvt.arr.lat,lastArrEvt.arr.lon])),0);
+  const stationaryAtEnd=ptsAfter.length>=2&&maxDist<STATIONARY_RADIUS_KM;
+  returnedToDepot=nearStart||stationaryAtEnd;
+}
 const depotArrival=returnedToDepot?lastArrEvt.arr.hhmm:null;
 const workArrEvts=returnedToDepot?arrEvts.slice(0,-1):arrEvts;
 const lastPt=pts[pts.length-1];
@@ -296,7 +307,7 @@ const sites=workArrEvts.map((ae,idx)=>{
   const depMin=depE?depE.first.min:Infinity;
   const prevDepMin=idx<depEvts.length?depEvts[idx].first.min:0;
   const hop=(hopEvts||[]).find(h=>h.min>prevDepMin&&h.min<depMin);
-  const workStart=hop?hop.hhmm:ae.arr.hhmm;
+  let workStart=hop?hop.hhmm:ae.arr.hhmm;
   // siteArrival = plus ancien pt GPS dans rayon SITE_RADIUS_KM autour de la position du workStart
   // (scanne en arrière depuis le pt GPS au moment du démarrage moteur, arrête dès qu'un pt sort de la zone)
   let siteArrival=ae.arr.hhmm;
@@ -317,16 +328,36 @@ const sites=workArrEvts.map((ae,idx)=>{
     // fallback sur ae.prev (dernier pt de transit = pt juste avant d'entrer dans la zone).
     if(pts[arrivalIdx].min>hop.min&&ae.prev)siteArrival=ae.prev.hhmm;
   }
+  // Cohérence finale : workStart > siteArrival. Si le seul "On" moteur trouvé est pendant le transit
+  // (hop avant l'arrivée GPS), utilise ae.arr (premier pt GPS lent au chantier) qui est naturellement
+  // qq minutes après siteArrival = délai réaliste de positionnement.
+  const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+  if(toMin(workStart)<=toMin(siteArrival))workStart=ae.arr.hhmm;
   return{siteArrival,workStart,workEnd,siteDeparture};
 });
 return{depotDepart,depotArrival,sites};
 };
 // Re-applique la détection sur un rapport stocké si données brutes présentes (migre les anciens formats)
+// Si pas de rawPts, applique au moins la contrainte workStart > siteArrival (filet de sécurité legacy)
 const recomputeWirtgenReport=(mr)=>{
 if(!mr)return mr;
-if(!mr.rawPts||!mr.rawPts.length)return mr; // ancien format sans données brutes
-const t=detectWirtgenTimeline(mr.rawPts,mr.rawHop||[]);
-return{...mr,depotDepart:t.depotDepart,depotArrival:t.depotArrival,sites:t.sites};
+console.log('[Wirtgen recompute v3]',mr.machineName,mr.date,'hasRawPts:',!!(mr.rawPts&&mr.rawPts.length),'sites:',JSON.stringify(mr.sites));
+if(mr.rawPts&&mr.rawPts.length){
+  const t=detectWirtgenTimeline(mr.rawPts,mr.rawHop||[]);
+  console.log('[Wirtgen recompute v3] full →',JSON.stringify(t));
+  return{...mr,depotDepart:t.depotDepart,depotArrival:t.depotArrival,sites:t.sites};
+}
+const toMinL=t=>{if(!t)return 0;const[h,m]=t.split(':').map(Number);return h*60+m};
+const minToHHMML=mn=>String(Math.floor(mn/60)).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
+const fixedSites=(mr.sites||[]).map(s=>{
+  if(s&&s.workStart&&s.siteArrival&&toMinL(s.workStart)<=toMinL(s.siteArrival)){
+    const fixed={...s,workStart:minToHHMML(toMinL(s.siteArrival)+5)};
+    console.log('[Wirtgen recompute v3] legacy fix:',s.workStart,'→',fixed.workStart);
+    return fixed;
+  }
+  return s;
+});
+return{...mr,sites:fixedSites};
 };
 // ======== WIRTGEN ZIP PARSER ========
 const parseWirtgenZip=async(file,targetDate=null)=>{
