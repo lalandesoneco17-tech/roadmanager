@@ -451,26 +451,39 @@ if(!pts.length)return null;
 let hopEvts=[];
 if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On'&&(!targetDate||parseWT(r.Date,r.Time).iso===targetDate)).map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
 let fuelL=0,waterMin=999,opH=0;
-let opTimeBuckets=[]; // [{startMin, endMin, opH}] tranches horaires en LOCAL avec temps fraisage actif
+let opTimeBuckets=[]; // [{startMin, endMin, opH, powerPct?, fuelL?}] tranches horaires LOCAL
+const powerByHour={};const fuelByHour={};
 // Measurements : filtrer par "Start Date" pour ne garder que le jour cible
 if(measText){
   const mr=parseCSV(measText).filter(r=>!targetDate||parseWT(r['Start Date']||r.Date,'12:00 AM').iso===targetDate);
+  // Wirtgen stocke en UTC. France = UTC+2 (CEST avr-oct) ou UTC+1 (CET).
+  const offsetH=(()=>{const m=parseInt((targetDate||(mr[0]&&parseWT(mr[0]['Start Date'],mr[0]['Start Time']).iso)||'2026-06-01').split('-')[1]);return(m>=4&&m<=10)?2:1})();
   mr.forEach(r=>{
     const v=parseFloat(r.Value);if(isNaN(v))return;
     const cat=r.Category||'';
-    if(cat==='Fuel Used')fuelL+=v;
+    if(cat==='Fuel Used'){
+      fuelL+=v;
+      const start=parseWT(r['Start Date'],r['Start Time']);
+      fuelByHour[start.min+offsetH*60]=v;
+    }
     if(cat==='Operation Time'){
       opH+=v;
-      // Wirtgen stocke les heures en UTC. France = UTC+2 (CEST avril-octobre) ou UTC+1 (CET).
       const start=parseWT(r['Start Date'],r['Start Time']);
       const end=parseWT(r['End Date'],r['End Time']);
-      const month=parseInt((targetDate||start.iso).split('-')[1]);
-      const offsetH=(month>=4&&month<=10)?2:1;
       opTimeBuckets.push({startMin:start.min+offsetH*60,endMin:end.min+offsetH*60,opH:v});
+    }
+    if(cat==='Engine Power Percentage'){
+      const start=parseWT(r['Start Date'],r['Start Time']);
+      powerByHour[start.min+offsetH*60]=v;
     }
     if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v);
   });
   opTimeBuckets.sort((a,b)=>a.startMin-b.startMin);
+  // Enrichit chaque bucket avec power % et fuel L correspondants
+  opTimeBuckets.forEach(b=>{
+    if(powerByHour[b.startMin]!==undefined)b.powerPct=Math.round(powerByHour[b.startMin]);
+    if(fuelByHour[b.startMin]!==undefined)b.fuelL=Math.round(fuelByHour[b.startMin]);
+  });
 }
 const {depotDepart,depotArrival,sites}=detectWirtgenTimeline(pts,hopEvts,opTimeBuckets);
 let ehStart=0,ehEnd=0;
@@ -799,7 +812,8 @@ return(<div style={{padding:'3px 10px',display:'flex',alignItems:'center',gap:5,
 <span style={{color:'#713f12',fontWeight:800,fontSize:11}}>⚙️ Wirtgen</span>
 {mr.ehStart>0&&mr.ehEnd>mr.ehStart&&<span style={{background:'#f0f9ff',border:'1px solid #7dd3fc',borderRadius:5,padding:'1px 7px',color:'#0c4a6e',fontWeight:700}}>⏱ {mr.ehStart}h→{mr.ehEnd}h (+{mr.ehEnd-mr.ehStart}h moteur)</span>}
 {mr.fuelL>0&&<span style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:5,padding:'1px 7px',color:'#92400e',fontWeight:700}}>⛽ {mr.fuelL}L</span>}
-{mr.opH>0&&(()=>{const buckets=mr.opTimeBuckets||[];const sigBuckets=buckets.filter(b=>b.opH>=0.05);const tooltip=sigBuckets.length?'Détail fraisage par heure :\n'+sigBuckets.map(b=>{const h1=Math.floor(b.startMin/60),m1=b.startMin%60,h2=Math.floor(b.endMin/60),m2=b.endMin%60;const min=Math.round(b.opH*60);return String(h1).padStart(2,'0')+':'+String(m1).padStart(2,'0')+'-'+String(h2).padStart(2,'0')+':'+String(m2).padStart(2,'0')+' → '+min+' min'}).join('\n'):'Pas de détail horaire disponible';return<span title={tooltip} style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:5,padding:'1px 7px',color:'#15803d',fontWeight:700,cursor:buckets.length?'help':'default'}}>⚙️ {mr.opH}h fraisage{buckets.length?' ⓘ':''}</span>})()}
+{mr.opH>0&&(()=>{const buckets=mr.opTimeBuckets||[];const sigBuckets=buckets.filter(b=>b.opH>=0.05);const tooltip=sigBuckets.length?'Détail fraisage par heure (heure locale) :\n'+sigBuckets.map(b=>{const h1=Math.floor(b.startMin/60),m1=b.startMin%60,h2=Math.floor(b.endMin/60),m2=b.endMin%60;const min=Math.round(b.opH*60);const power=b.powerPct!=null?' / '+b.powerPct+'% puiss.':'';const fuel=b.fuelL!=null?' / '+b.fuelL+'L':'';return String(h1).padStart(2,'0')+':'+String(m1).padStart(2,'0')+'-'+String(h2).padStart(2,'0')+':'+String(m2).padStart(2,'0')+' → '+min+' min'+power+fuel}).join('\n'):'Pas de détail horaire disponible';return<span title={tooltip} style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:5,padding:'1px 7px',color:'#15803d',fontWeight:700,cursor:buckets.length?'help':'default'}}>⚙️ {mr.opH}h fraisage{buckets.length?' ⓘ':''}</span>})()}
+{(()=>{const buckets=(mr.opTimeBuckets||[]).filter(b=>b.opH>=0.05&&b.powerPct!=null);if(!buckets.length)return null;const totalOpH=buckets.reduce((s,b)=>s+b.opH,0);if(totalOpH<=0)return null;const wAvg=buckets.reduce((s,b)=>s+b.opH*b.powerPct,0)/totalOpH;const avg=Math.round(wAvg);const color=avg>=60?'#dc2626':avg>=40?'#d97706':'#16a34a';return<span title="Puissance moyenne pondérée pendant les heures de fraisage actif" style={{background:'#f5f3ff',border:'1px solid #8b5cf6',borderRadius:5,padding:'1px 7px',color:color,fontWeight:700,cursor:'help'}}>💪 {avg}% puiss.</span>})()}
 {mr.waterMin!==null&&mr.waterMin<20&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>💧 Eau {mr.waterMin}%⚠️</span>}
 {(!mr.rawPts||!mr.rawPts.length)&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>⚠️ Ancien format — supprimer (×) puis ré-importer le ZIP pour voir les 6 heures</span>}
 <button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen (le chantier sera conservé) ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} title="Supprime uniquement le rapport Wirtgen (le chantier reste)" style={{marginLeft:'auto',background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:11,color:'#991b1b',fontWeight:700}}>🗑 Suppr rapport</button>
