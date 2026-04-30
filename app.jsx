@@ -269,97 +269,77 @@ return(
 <div style={{marginTop:12,textAlign:'center'}}><button onClick={toggleSent} style={btnStyle(job.sent?C.green:C.accent,true)}>{job.sent?'Envoye':'Envoyer'}</button></div>
 </div>);};
 
-// ======== WIRTGEN DETECTION (réutilisable : import + re-calcul affichage) ========
+// ======== WIRTGEN DETECTION (algo simple basé sur "On" moteur + zone GPS) ========
 // pts = [{iso,min,hhmm,lat,lon}], hopEvts = [{iso,min,hhmm}] triés par min
+//
+// Algorithme :
+// 1. Position GPS de chaque "On" moteur → définit la zone chantier (rayon 1km)
+// 2. siteArrival/siteDeparture = 1er/dernier pt GPS dans la zone
+// 3. depotDepart/depotArrival = pt GPS hors zone (avant/après)
+// 4. workStart = 1er "On" après siteArrival (fallback siteArrival+5min si écart >4h)
+// 5. workEnd = dernier pt GPS dans la zone
 const detectWirtgenTimeline=(pts,hopEvts)=>{
 if(!pts||!pts.length)return{depotDepart:null,depotArrival:null,sites:[]};
-const SPTH=15;const DIST_KM=1.5; // fallback machines lentes (auto-tractées, GPS espacé)
-const SITE_RADIUS_KM=0.3; // rayon zone chantier pour détection arrivée par GPS
-const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0,dist:0};const pr=pts[i-1];const dk=haversine([pr.lat,pr.lon],[p.lat,p.lon]);const hr=Math.max(0.001,(p.min-pr.min)/60);return{...p,spd:dk/hr,dist:dk}});
-const isFast=wp=>wp.spd>SPTH||wp.dist>DIST_KM;
-const depEvts=[],arrEvts=[];
-for(let i=1;i<ws.length;i++){const was=isFast(ws[i-1]),is=isFast(ws[i]);if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
-// Détection démarrage déjà sur chantier : si la 1ère phase lente contient des "On" moteur,
-// la journée a commencé sur un chantier (machine restée la veille). On ajoute un arrEvt virtuel
-// pour que ce chantier matinal soit traité comme un site (sinon le 1er fraisage est perdu).
-const firstSlowEnd=depEvts.length?depEvts[0].last.min:pts[pts.length-1].min;
-const firstSlowHasWork=(hopEvts||[]).some(h=>h.min>=pts[0].min&&h.min<=firstSlowEnd);
-if(firstSlowHasWork)arrEvts.unshift({prev:null,arr:pts[0]});
-// depotDepart = null si démarrage déjà sur chantier (pas de "départ dépôt" ce jour-là)
-const depotDepart=firstSlowHasWork?null:(depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm);
-// Détection retour dépôt :
-// (a) dernière arrivée proche du 1er pt GPS (aller-retour classique), OU
-// (b) machine stationnaire à la fin (bbox<200m après la dernière arrivée)
-// ET aucun "On" moteur après cette arrivée (sinon c'est un chantier, pas un dépôt)
-const DEPOT_RADIUS_KM=1.0;const STATIONARY_RADIUS_KM=0.2;
-const firstPt=pts[0];
-const lastArrEvt=arrEvts.length?arrEvts[arrEvts.length-1]:null;
-let returnedToDepot=false;
-if(lastArrEvt&&lastArrEvt.prev){ // skip implicite (sans prev = démarrage sur chantier)
-  const nearStart=haversine([lastArrEvt.arr.lat,lastArrEvt.arr.lon],[firstPt.lat,firstPt.lon])<DEPOT_RADIUS_KM;
-  const ptsAfter=pts.filter(p=>p.min>=lastArrEvt.arr.min);
-  const maxDist=ptsAfter.reduce((mx,p)=>Math.max(mx,haversine([p.lat,p.lon],[lastArrEvt.arr.lat,lastArrEvt.arr.lon])),0);
-  const stationaryAtEnd=ptsAfter.length>=1&&maxDist<STATIONARY_RADIUS_KM;
-  const hasWorkAfter=(hopEvts||[]).some(h=>h.min>=lastArrEvt.arr.min);
-  returnedToDepot=(nearStart||stationaryAtEnd)&&!hasWorkAfter;
-}
-const depotArrival=returnedToDepot?lastArrEvt.arr.hhmm:null;
 const lastPt=pts[pts.length-1];
-// Filtre des arrêts intermédiaires : un site sans aucun "On" moteur entre la fenêtre
-// (transit avant arrivée → départ après) n'est pas un chantier (pause/transit) → on l'écarte.
-// On commence à compter les "On" depuis le départ précédent (transit qui amène ici), pas depuis
-// l'arrivée GPS, pour ne pas rater un démarrage moteur en plein porte-char.
-const allWorkArr=returnedToDepot?arrEvts.slice(0,-1):arrEvts;
-const workArrEvts=allWorkArr.filter(ae=>{
-  const depAfter=depEvts.find(d=>d.first.min>ae.arr.min);
-  const endMin=depAfter?depAfter.first.min:lastPt.min;
-  const depBefore=[...depEvts].reverse().find(d=>d.first.min<=ae.arr.min);
-  const startMin=depBefore?depBefore.first.min:0;
-  return(hopEvts||[]).some(h=>h.min>=startMin&&h.min<=endMin);
+if(!hopEvts||!hopEvts.length){
+  return{depotDepart:pts[0].hhmm,depotArrival:lastPt.hhmm,sites:[]};
+}
+// 1. Position GPS de chaque "On" (point GPS le + proche en temps)
+const hopPosAll=hopEvts.map(h=>{
+  let best=pts[0],bestDt=Math.abs(pts[0].min-h.min);
+  for(const p of pts){const dt=Math.abs(p.min-h.min);if(dt<bestDt){bestDt=dt;best=p}}
+  return{...h,lat:best.lat,lon:best.lon};
 });
-const sites=workArrEvts.map((ae,idx)=>{
-  const isImplicit=!ae.prev;
-  const depE=depEvts.find(d=>d.last.min>=ae.arr.min);
-  const workEnd=depE?depE.last.hhmm:lastPt.hhmm;
-  const siteDeparture=depE?depE.first.hhmm:null;
-  const depMin=depE?depE.first.min:Infinity;
-  // prevDepMin = 0 pour le 1er site, sinon transit qui suit l'arrivée précédente
-  let prevDepMin;
-  if(idx===0)prevDepMin=0;
-  else{const prevArrMin=workArrEvts[idx-1].arr.min;const prevDep=depEvts.find(d=>d.first.min>prevArrMin);prevDepMin=prevDep?prevDep.first.min:0}
-  const hop=(hopEvts||[]).find(h=>h.min>prevDepMin&&h.min<depMin);
-  let workStart=hop?hop.hhmm:ae.arr.hhmm;
-  // siteArrival : null si démarrage déjà sur chantier (heure inconnue, avant début du fichier).
-  // Sinon scan GPS arrière depuis position du démarrage moteur (rayon 300m).
-  let siteArrival=isImplicit?null:ae.arr.hhmm;
-  if(hop&&!isImplicit){
-    let hopPtIdx=0,bestDt=Infinity;
-    for(let i=0;i<pts.length;i++){const dt=Math.abs(pts[i].min-hop.min);if(dt<bestDt){bestDt=dt;hopPtIdx=i}}
-    const hopPt=pts[hopPtIdx];
-    let arrivalIdx=hopPtIdx;
-    for(let i=hopPtIdx-1;i>=0;i--){
-      const p=pts[i];
-      if(p.min<prevDepMin)break;
-      const d=haversine([p.lat,p.lon],[hopPt.lat,hopPt.lon]);
-      if(d<=SITE_RADIUS_KM)arrivalIdx=i;else break;
-    }
-    siteArrival=pts[arrivalIdx].hhmm;
-    if(pts[arrivalIdx].min>hop.min&&ae.prev)siteArrival=ae.prev.hhmm;
+// Clusterise les "On" par position (rayon 5km) et garde le cluster principal.
+// Écarte les "On" isolés (démarrage auxiliaire pendant transit, etc.) qui pollueraient la zone.
+const CLUSTER_KM=5.0;const ZONE_KM=1.0;const STATIONARY_KM=0.2;
+const clusters=[];
+for(const h of hopPosAll){
+  const c=clusters.find(cl=>cl.hops.some(ch=>haversine([ch.lat,ch.lon],[h.lat,h.lon])<=CLUSTER_KM));
+  if(c)c.hops.push(h);else clusters.push({hops:[h]});
+}
+clusters.sort((a,b)=>b.hops.length-a.hops.length);
+const hopPos=clusters[0].hops;
+const inZone=p=>hopPos.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM);
+// 2. 1er et dernier pt GPS dans la zone chantier
+let firstInZoneIdx=-1,lastInZoneIdx=-1;
+for(let i=0;i<pts.length;i++){if(inZone(pts[i])){if(firstInZoneIdx===-1)firstInZoneIdx=i;lastInZoneIdx=i}}
+if(firstInZoneIdx===-1){
+  return{depotDepart:pts[0].hhmm,depotArrival:lastPt.hhmm,sites:[]};
+}
+const startedInZone=firstInZoneIdx===0;
+const endedInZone=lastInZoneIdx===pts.length-1;
+// 3. depotDepart, siteArrival, siteDeparture
+const depotDepart=startedInZone?null:pts[0].hhmm;
+const siteArrival=startedInZone?null:pts[firstInZoneIdx].hhmm;
+const siteDeparture=endedInZone?null:pts[lastInZoneIdx+1].hhmm;
+// depotArrival = début de la dernière phase stationnaire (si la machine sort de la zone)
+let depotArrival=null;
+if(!endedInZone){
+  let stationaryStartIdx=pts.length-1;
+  for(let i=pts.length-2;i>=0;i--){
+    if(haversine([pts[i].lat,pts[i].lon],[lastPt.lat,lastPt.lon])<STATIONARY_KM)stationaryStartIdx=i;
+    else break;
   }
-  // Cohérence finale : workStart > siteArrival. Si le 1er "On" est pendant le transit (avant arrivée),
-  // chercher un "On" SUIVANT après l'arrivée (= vrai démarrage moteur au chantier).
-  // Sinon fallback sur ae.arr (1er pt GPS lent au chantier).
-  if(siteArrival){
-    const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
-    if(toMin(workStart)<=toMin(siteArrival)){
-      const siteArrMin=toMin(siteArrival);
-      const nextHop=(hopEvts||[]).find(h=>h.min>siteArrMin&&h.min<depMin);
-      workStart=nextHop?nextHop.hhmm:ae.arr.hhmm;
-    }
-  }
-  return{siteArrival,workStart,workEnd,siteDeparture};
-});
-return{depotDepart,depotArrival,sites};
+  depotArrival=pts[stationaryStartIdx].hhmm;
+}
+// 4. workStart : 1er "On" en zone après siteArrival, fallback +5min si écart > 4h (lunch break)
+const inZoneHops=hopPos.filter(h=>inZone(h));
+const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+const minToHHMM=mn=>String(Math.floor(mn/60)).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
+let workStart;
+if(siteArrival){
+  const siteArrMin=toMin(siteArrival);
+  const hopAfterArr=inZoneHops.find(h=>h.min>=siteArrMin);
+  if(hopAfterArr&&hopAfterArr.min-siteArrMin<=240)workStart=hopAfterArr.hhmm;
+  else workStart=minToHHMM(siteArrMin+5);
+}else{
+  workStart=inZoneHops.length?inZoneHops[0].hhmm:pts[firstInZoneIdx].hhmm;
+}
+// 5. workEnd = dernier pt GPS dans la zone
+let workEnd=pts[lastInZoneIdx].hhmm;
+if(toMin(workEnd)<toMin(workStart))workEnd=workStart;
+return{depotDepart,depotArrival,sites:[{siteArrival,workStart,workEnd,siteDeparture}]};
 };
 // Re-applique la détection sur un rapport stocké si données brutes présentes (migre les anciens formats)
 // Si pas de rawPts, applique au moins la contrainte workStart > siteArrival (filet de sécurité legacy)
@@ -1571,13 +1551,14 @@ const setEquipStatus=(eqId,status)=>{const nd=JSON.parse(JSON.stringify(data));i
 const openPanneForSelected=()=>{setPanneEquip(selectedMachineId||'');setPanneSev('normal');setPanneDesc('');setShowPanne(true)};
 const openTakePartForSelected=()=>{const m=selectedMachine;setTakePartType(m?m.type:'');setTakePartEquip(selectedMachineId||'');setTakePartId('');setTakePartQte(1);setTakePartReason('');setShowTakePart(true)};
 const notifyJobsRef=useRef(null);
+const[toasts,setToasts]=useState([]);
+const pushToast=(kind,text)=>{const id=uid();setToasts(ts=>[...ts,{id,kind,text}]);setTimeout(()=>setToasts(ts=>ts.filter(t=>t.id!==id)),10000)};
 useEffect(()=>{if(typeof Notification!=='undefined'&&Notification.permission==='default'){try{Notification.requestPermission().catch(()=>{})}catch(e){}}},[]);
 useEffect(()=>{
 const myJobs=(data.jobs||[]).filter(j=>j.employeeId===empId);
 if(notifyJobsRef.current===null){notifyJobsRef.current=myJobs;return}
 const prev=notifyJobsRef.current;
 notifyJobsRef.current=myJobs;
-if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
 const strip=j=>{const{ack,ackDate,...r}=j||{};return JSON.stringify(r)};
 const prevMap=new Map(prev.map(j=>[j.id,j]));
 for(const job of myJobs){
@@ -1585,15 +1566,24 @@ const p=prevMap.get(job.id);
 if(!p||strip(p)!==strip(job)){
 const cl=(data.clients||[]).find(c=>c.id===job.clientId);
 const mach=(data.machines||[]).find(m=>m.id===job.machineId);
-const title=!p?'Nouveau chantier':'Chantier modifie';
-const body=(cl?cl.name:'Chantier')+' - '+fmtDate(new Date(job.date))+(job.billingStart?' a '+job.billingStart:'')+(mach?' ('+mach.name+')':'');
-try{const n=new Notification(title,{body,icon:'logo.png',tag:'job-'+job.id});n.onclick=()=>{window.focus();n.close()}}catch(e){}
+const isNew=!p;
+const title=isNew?'Nouveau chantier':'Chantier modifie';
+const body=(cl?cl.name:'Chantier')+' — '+fmtDate(new Date(job.date))+(job.billingStart?' a '+job.billingStart:'')+(mach?' ('+mach.name+')':'');
+pushToast(isNew?'new':'mod',title+' : '+body);
+if(typeof Notification!=='undefined'&&Notification.permission==='granted'){try{const n=new Notification(title,{body,icon:'logo.png',tag:'job-'+job.id});n.onclick=()=>{window.focus();n.close()}}catch(e){}}
 }
 }
 },[data.jobs,empId,data.clients,data.machines]);
 if(!emp)return(<div style={{fontSize:14}}>Employe non trouve</div>);
 return(
 <div style={{maxWidth:700,margin:'0 auto',padding:16,fontSize:14}}>
+<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',zIndex:9999,display:'flex',flexDirection:'column',gap:6,maxWidth:'92vw',width:'420px'}}>
+{toasts.map(t=>(
+<div key={t.id} onClick={()=>setToasts(ts=>ts.filter(x=>x.id!==t.id))} style={{background:t.kind==='new'?C.green:C.orange,color:'#fff',padding:'12px 16px',borderRadius:10,boxShadow:'0 6px 20px rgba(0,0,0,.25)',fontWeight:700,fontSize:14,cursor:'pointer'}}>
+{t.kind==='new'?'🆕 ':'✏️ '}{t.text}
+</div>
+))}
+</div>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,background:C.accent,color:'#fff',padding:'12px 16px',borderRadius:10}}>
 <div style={{display:'flex',alignItems:'center',gap:10}}>
 <div style={{width:40,height:40,borderRadius:'50%',background:'#fff3',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:18}}>{(emp.name||'?')[0].toUpperCase()}</div>
@@ -2604,7 +2594,9 @@ const unsub=subscribeToChanges((nd)=>{if(!savingRef.current)setData(nd)},()=>dat
 const unsubTE=teSubscribe(async(table)=>{if(savingRef.current)return;const key=table==='time_entries_validated'?'timeEntriesValidated':'timeEntries';const list=await teLoadAll(table);if(list===null)return;setData(prev=>prev?{...prev,[key]:list}:prev)});
 // Flush les pointages en attente (si reseau coupe au precedent usage, ils partent maintenant)
 teQueueFlush().catch(()=>{});
-return()=>{unsub();unsubTE()};
+// Polling fallback toutes les 30s : si le realtime Supabase n'est pas actif, on rattrape ici
+const pollId=setInterval(()=>{if(savingRef.current)return;loadData().then(d=>{if(!d)return;setData(prev=>{if(!prev)return d;const merged={...d};merged.timeEntries=mergeArraysById(prev.timeEntries,d.timeEntries);merged.panneReports=mergeArraysById(prev.panneReports,d.panneReports);return merged})}).catch(()=>{})},30000);
+return()=>{unsub();unsubTE();clearInterval(pollId)};
 },[]);
 const doSave=useCallback(async nd=>{savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);await teSyncChanges(data,nd);await saveData(nd);setTimeout(()=>{savingRef.current=false},2000)},[data]);
 const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savingRef.current=true;setData(prevData);await saveData(prevData);setTimeout(()=>{savingRef.current=false},2000)},[]);
