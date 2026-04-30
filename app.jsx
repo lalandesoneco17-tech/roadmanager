@@ -290,11 +290,25 @@ const hopPosAll=hopEvts.map(h=>{
   for(const p of pts){const dt=Math.abs(p.min-h.min);if(dt<bestDt){bestDt=dt;best=p}}
   return{...h,lat:best.lat,lon:best.lon};
 });
+// Détecte si pts[0] est un dépôt (la machine n'y reste pas) ou un chantier (elle y reste).
+// Si dépôt, on filtre les "On" qui sont au dépôt (démarrage moteur avant le trajet).
+const PTS0_DEPOT_THRESH_MIN=30;
+let lastVicinityIdx=0;
+for(let i=1;i<pts.length;i++){
+  if(haversine([pts[i].lat,pts[i].lon],[pts[0].lat,pts[0].lon])<=1.0)lastVicinityIdx=i;
+  else break;
+}
+const pts0IsDepot=(pts[lastVicinityIdx].min-pts[0].min)<PTS0_DEPOT_THRESH_MIN;
+let hopPosClean=hopPosAll;
+if(pts0IsDepot){
+  const filtered=hopPosAll.filter(h=>haversine([h.lat,h.lon],[pts[0].lat,pts[0].lon])>1.0);
+  if(filtered.length>0)hopPosClean=filtered; // garde si au moins 1 hop reste
+}
 // Clusterise les "On" par position (rayon 5km) et garde le cluster principal.
 // Écarte les "On" isolés (démarrage auxiliaire pendant transit, etc.) qui pollueraient la zone.
 const CLUSTER_KM=5.0;const ZONE_KM=1.0;const STATIONARY_KM=0.2;
 const clusters=[];
-for(const h of hopPosAll){
+for(const h of hopPosClean){
   const c=clusters.find(cl=>cl.hops.some(ch=>haversine([ch.lat,ch.lon],[h.lat,h.lon])<=CLUSTER_KM));
   if(c)c.hops.push(h);else clusters.push({hops:[h]});
 }
