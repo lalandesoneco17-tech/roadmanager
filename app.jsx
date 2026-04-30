@@ -279,38 +279,60 @@ const ws=pts.map((p,i)=>{if(!i)return{...p,spd:0,dist:0};const pr=pts[i-1];const
 const isFast=wp=>wp.spd>SPTH||wp.dist>DIST_KM;
 const depEvts=[],arrEvts=[];
 for(let i=1;i<ws.length;i++){const was=isFast(ws[i-1]),is=isFast(ws[i]);if(!was&&is)depEvts.push({last:ws[i-1],first:ws[i]});if(was&&!is)arrEvts.push({prev:ws[i-1],arr:ws[i]})}
-const depotDepart=depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm;
+// Détection démarrage déjà sur chantier : si la 1ère phase lente contient des "On" moteur,
+// la journée a commencé sur un chantier (machine restée la veille). On ajoute un arrEvt virtuel
+// pour que ce chantier matinal soit traité comme un site (sinon le 1er fraisage est perdu).
+const firstSlowEnd=depEvts.length?depEvts[0].last.min:pts[pts.length-1].min;
+const firstSlowHasWork=(hopEvts||[]).some(h=>h.min>=pts[0].min&&h.min<=firstSlowEnd);
+if(firstSlowHasWork)arrEvts.unshift({prev:null,arr:pts[0]});
+// depotDepart = null si démarrage déjà sur chantier (pas de "départ dépôt" ce jour-là)
+const depotDepart=firstSlowHasWork?null:(depEvts.length?depEvts[0].last.hhmm:pts[0].hhmm);
 // Détection retour dépôt :
 // (a) dernière arrivée proche du 1er pt GPS (aller-retour classique), OU
-// (b) machine stationnaire à la fin (bbox<200m après la dernière arrivée → parking de fin de journée)
+// (b) machine stationnaire à la fin (bbox<200m après la dernière arrivée)
+// ET aucun "On" moteur après cette arrivée (sinon c'est un chantier, pas un dépôt)
 const DEPOT_RADIUS_KM=1.0;const STATIONARY_RADIUS_KM=0.2;
 const firstPt=pts[0];
 const lastArrEvt=arrEvts.length?arrEvts[arrEvts.length-1]:null;
 let returnedToDepot=false;
-if(lastArrEvt){
+if(lastArrEvt&&lastArrEvt.prev){ // skip implicite (sans prev = démarrage sur chantier)
   const nearStart=haversine([lastArrEvt.arr.lat,lastArrEvt.arr.lon],[firstPt.lat,firstPt.lon])<DEPOT_RADIUS_KM;
-  // Stationnaire à la fin = tous les pts après la dernière arrivée restent dans un rayon STATIONARY_RADIUS_KM
   const ptsAfter=pts.filter(p=>p.min>=lastArrEvt.arr.min);
   const maxDist=ptsAfter.reduce((mx,p)=>Math.max(mx,haversine([p.lat,p.lon],[lastArrEvt.arr.lat,lastArrEvt.arr.lon])),0);
-  const stationaryAtEnd=ptsAfter.length>=2&&maxDist<STATIONARY_RADIUS_KM;
-  returnedToDepot=nearStart||stationaryAtEnd;
+  const stationaryAtEnd=ptsAfter.length>=1&&maxDist<STATIONARY_RADIUS_KM;
+  const hasWorkAfter=(hopEvts||[]).some(h=>h.min>=lastArrEvt.arr.min);
+  returnedToDepot=(nearStart||stationaryAtEnd)&&!hasWorkAfter;
 }
 const depotArrival=returnedToDepot?lastArrEvt.arr.hhmm:null;
-const workArrEvts=returnedToDepot?arrEvts.slice(0,-1):arrEvts;
 const lastPt=pts[pts.length-1];
+// Filtre des arrêts intermédiaires : un site sans aucun "On" moteur entre la fenêtre
+// (transit avant arrivée → départ après) n'est pas un chantier (pause/transit) → on l'écarte.
+// On commence à compter les "On" depuis le départ précédent (transit qui amène ici), pas depuis
+// l'arrivée GPS, pour ne pas rater un démarrage moteur en plein porte-char.
+const allWorkArr=returnedToDepot?arrEvts.slice(0,-1):arrEvts;
+const workArrEvts=allWorkArr.filter(ae=>{
+  const depAfter=depEvts.find(d=>d.first.min>ae.arr.min);
+  const endMin=depAfter?depAfter.first.min:lastPt.min;
+  const depBefore=[...depEvts].reverse().find(d=>d.first.min<=ae.arr.min);
+  const startMin=depBefore?depBefore.first.min:0;
+  return(hopEvts||[]).some(h=>h.min>=startMin&&h.min<=endMin);
+});
 const sites=workArrEvts.map((ae,idx)=>{
+  const isImplicit=!ae.prev;
   const depE=depEvts.find(d=>d.last.min>=ae.arr.min);
-  // Si pas de transit de départ après l'arrivée → la machine reste sur site → workEnd = dernier pt GPS
   const workEnd=depE?depE.last.hhmm:lastPt.hhmm;
   const siteDeparture=depE?depE.first.hhmm:null;
   const depMin=depE?depE.first.min:Infinity;
-  const prevDepMin=idx<depEvts.length?depEvts[idx].first.min:0;
+  // prevDepMin = 0 pour le 1er site, sinon transit qui suit l'arrivée précédente
+  let prevDepMin;
+  if(idx===0)prevDepMin=0;
+  else{const prevArrMin=workArrEvts[idx-1].arr.min;const prevDep=depEvts.find(d=>d.first.min>prevArrMin);prevDepMin=prevDep?prevDep.first.min:0}
   const hop=(hopEvts||[]).find(h=>h.min>prevDepMin&&h.min<depMin);
   let workStart=hop?hop.hhmm:ae.arr.hhmm;
-  // siteArrival = plus ancien pt GPS dans rayon SITE_RADIUS_KM autour de la position du workStart
-  // (scanne en arrière depuis le pt GPS au moment du démarrage moteur, arrête dès qu'un pt sort de la zone)
-  let siteArrival=ae.arr.hhmm;
-  if(hop){
+  // siteArrival : null si démarrage déjà sur chantier (heure inconnue, avant début du fichier).
+  // Sinon scan GPS arrière depuis position du démarrage moteur (rayon 300m).
+  let siteArrival=isImplicit?null:ae.arr.hhmm;
+  if(hop&&!isImplicit){
     let hopPtIdx=0,bestDt=Infinity;
     for(let i=0;i<pts.length;i++){const dt=Math.abs(pts[i].min-hop.min);if(dt<bestDt){bestDt=dt;hopPtIdx=i}}
     const hopPt=pts[hopPtIdx];
@@ -322,16 +344,19 @@ const sites=workArrEvts.map((ae,idx)=>{
       if(d<=SITE_RADIUS_KM)arrivalIdx=i;else break;
     }
     siteArrival=pts[arrivalIdx].hhmm;
-    // Cohérence: siteArrival doit précéder workStart. Si le scan n'a trouvé aucun pt antérieur
-    // dans la zone (GPS espacé, machine encore en transit au moment du démarrage moteur),
-    // fallback sur ae.prev (dernier pt de transit = pt juste avant d'entrer dans la zone).
     if(pts[arrivalIdx].min>hop.min&&ae.prev)siteArrival=ae.prev.hhmm;
   }
-  // Cohérence finale : workStart > siteArrival. Si le seul "On" moteur trouvé est pendant le transit
-  // (hop avant l'arrivée GPS), utilise ae.arr (premier pt GPS lent au chantier) qui est naturellement
-  // qq minutes après siteArrival = délai réaliste de positionnement.
-  const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
-  if(toMin(workStart)<=toMin(siteArrival))workStart=ae.arr.hhmm;
+  // Cohérence finale : workStart > siteArrival. Si le 1er "On" est pendant le transit (avant arrivée),
+  // chercher un "On" SUIVANT après l'arrivée (= vrai démarrage moteur au chantier).
+  // Sinon fallback sur ae.arr (1er pt GPS lent au chantier).
+  if(siteArrival){
+    const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+    if(toMin(workStart)<=toMin(siteArrival)){
+      const siteArrMin=toMin(siteArrival);
+      const nextHop=(hopEvts||[]).find(h=>h.min>siteArrMin&&h.min<depMin);
+      workStart=nextHop?nextHop.hhmm:ae.arr.hhmm;
+    }
+  }
   return{siteArrival,workStart,workEnd,siteDeparture};
 });
 return{depotDepart,depotArrival,sites};
