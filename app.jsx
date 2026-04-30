@@ -278,7 +278,9 @@ return(
 // 3. depotDepart/depotArrival = pt GPS hors zone (avant/après)
 // 4. workStart = 1er "On" après siteArrival (fallback siteArrival+5min si écart >4h)
 // 5. workEnd = dernier pt GPS dans la zone
-const detectWirtgenTimeline=(pts,hopEvts)=>{
+// opTimeBuckets (optionnel) : tranches horaires avec temps fraisage actif (depuis Measurements.csv)
+//   → utilisé pour valider qu'un "On" moteur correspond à du vrai fraisage
+const detectWirtgenTimeline=(pts,hopEvts,opTimeBuckets)=>{
 if(!pts||!pts.length)return{depotDepart:null,depotArrival:null,sites:[]};
 const lastPt=pts[pts.length-1];
 if(!hopEvts||!hopEvts.length){
@@ -348,17 +350,61 @@ if(siteDeparture&&depotArrival&&siteDeparture===depotArrival){
 const inZoneHops=hopPos.filter(h=>inZone(h));
 const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
 const minToHHMM=mn=>String(Math.floor(mn/60)).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
+// Helper : un "On" est confirmé "vrai fraisage" si sa tranche horaire OpTime a >= 3min de fraisage actif
+const MIN_OP_H=0.05; // 3 min
+const hopHasOpTime=h=>{
+  if(!opTimeBuckets||!opTimeBuckets.length)return null; // pas de données → indéterminé
+  const bucket=opTimeBuckets.find(b=>h.min>=b.startMin&&h.min<b.endMin);
+  return bucket?bucket.opH>=MIN_OP_H:false;
+};
+// Helper : position GPS interpolée à l'instant exact du hop (au lieu du GPS le + proche en temps).
+// Plus précis pour savoir où était la machine au moment de l'évt moteur.
+const hopInterpInZone=h=>{
+  let before=null,after=null;
+  for(const p of pts){
+    if(p.min<=h.min&&(!before||p.min>before.min))before=p;
+    if(p.min>=h.min&&(!after||p.min<after.min))after=p;
+  }
+  let ipLat,ipLon;
+  if(before&&after&&before.min!==after.min){
+    const t=(h.min-before.min)/(after.min-before.min);
+    ipLat=before.lat+t*(after.lat-before.lat);
+    ipLon=before.lon+t*(after.lon-before.lon);
+  }else if(before){ipLat=before.lat;ipLon=before.lon}
+  else if(after){ipLat=after.lat;ipLon=after.lon}
+  else return false;
+  return hopPos.some(hp=>haversine([ipLat,ipLon],[hp.lat,hp.lon])<=ZONE_KM);
+};
 let workStart;
 if(siteArrival){
   const siteArrMin=toMin(siteArrival);
   const hopAfterArr=inZoneHops.find(h=>h.min>=siteArrMin);
-  if(hopAfterArr&&hopAfterArr.min-siteArrMin<=240)workStart=hopAfterArr.hhmm;
+  // Cherche aussi un hop juste avant siteArrival (tolérance 10 min)
+  // SI : OpTime confirme + position interpolée à l'instant du hop est dans la zone (= machine quasi arrivée)
+  // Évite d'utiliser un "On" pendant transit lointain (porte-char) à tort.
+  const hopJustBefore=inZoneHops.slice().reverse().find(h=>
+    h.min<siteArrMin&&
+    siteArrMin-h.min<=10&&
+    hopHasOpTime(h)===true&&
+    hopInterpInZone(h)
+  );
+  if(hopJustBefore)workStart=hopJustBefore.hhmm;
+  else if(hopAfterArr&&hopAfterArr.min-siteArrMin<=240)workStart=hopAfterArr.hhmm;
   else workStart=minToHHMM(siteArrMin+5);
 }else{
   workStart=inZoneHops.length?inZoneHops[0].hhmm:pts[firstInZoneIdx].hhmm;
 }
-// 5. workEnd = dernier pt GPS dans la zone
+// 5. workEnd = dernier pt GPS dans la zone, raffiné par OpTime si disponible
 let workEnd=pts[lastInZoneIdx].hhmm;
+if(opTimeBuckets&&opTimeBuckets.length){
+  // Dernière tranche avec fraisage significatif → estime fin = startMin + opH*60 minutes
+  const sigBuckets=opTimeBuckets.filter(b=>b.opH>=MIN_OP_H);
+  if(sigBuckets.length){
+    const lastSig=sigBuckets[sigBuckets.length-1];
+    const millingEndEst=lastSig.startMin+Math.round(lastSig.opH*60);
+    if(millingEndEst<toMin(workEnd))workEnd=minToHHMM(millingEndEst);
+  }
+}
 if(toMin(workEnd)<toMin(workStart))workEnd=workStart;
 return{depotDepart,depotArrival,sites:[{siteArrival,workStart,workEnd,siteDeparture}]};
 };
@@ -367,7 +413,7 @@ return{depotDepart,depotArrival,sites:[{siteArrival,workStart,workEnd,siteDepart
 const recomputeWirtgenReport=(mr)=>{
 if(!mr)return mr;
 if(mr.rawPts&&mr.rawPts.length){
-  const t=detectWirtgenTimeline(mr.rawPts,mr.rawHop||[]);
+  const t=detectWirtgenTimeline(mr.rawPts,mr.rawHop||[],mr.opTimeBuckets||[]);
   return{...mr,depotDepart:t.depotDepart,depotArrival:t.depotArrival,sites:t.sites};
 }
 const toMinL=t=>{if(!t)return 0;const[h,m]=t.split(':').map(Number);return h*60+m};
@@ -404,15 +450,34 @@ if(!pts.length)return null;
 // HoursOfOperation → filtrer sur le jour cible, "On" = vrai début fraisage
 let hopEvts=[];
 if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On'&&(!targetDate||parseWT(r.Date,r.Time).iso===targetDate)).map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
-const {depotDepart,depotArrival,sites}=detectWirtgenTimeline(pts,hopEvts);
 let fuelL=0,waterMin=999,opH=0;
+let opTimeBuckets=[]; // [{startMin, endMin, opH}] tranches horaires en LOCAL avec temps fraisage actif
 // Measurements : filtrer par "Start Date" pour ne garder que le jour cible
-if(measText){const mr=parseCSV(measText).filter(r=>!targetDate||parseWT(r['Start Date']||r.Date,'12:00 AM').iso===targetDate);mr.forEach(r=>{const v=parseFloat(r.Value);if(isNaN(v))return;const cat=r.Category||'';if(cat==='Fuel Used')fuelL+=v;if(cat==='Operation Time')opH+=v;if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v)})}
+if(measText){
+  const mr=parseCSV(measText).filter(r=>!targetDate||parseWT(r['Start Date']||r.Date,'12:00 AM').iso===targetDate);
+  mr.forEach(r=>{
+    const v=parseFloat(r.Value);if(isNaN(v))return;
+    const cat=r.Category||'';
+    if(cat==='Fuel Used')fuelL+=v;
+    if(cat==='Operation Time'){
+      opH+=v;
+      // Wirtgen stocke les heures en UTC. France = UTC+2 (CEST avril-octobre) ou UTC+1 (CET).
+      const start=parseWT(r['Start Date'],r['Start Time']);
+      const end=parseWT(r['End Date'],r['End Time']);
+      const month=parseInt((targetDate||start.iso).split('-')[1]);
+      const offsetH=(month>=4&&month<=10)?2:1;
+      opTimeBuckets.push({startMin:start.min+offsetH*60,endMin:end.min+offsetH*60,opH:v});
+    }
+    if(cat==='Water Tank Level'||cat==='Water Tank')waterMin=Math.min(waterMin,v);
+  });
+  opTimeBuckets.sort((a,b)=>a.startMin-b.startMin);
+}
+const {depotDepart,depotArrival,sites}=detectWirtgenTimeline(pts,hopEvts,opTimeBuckets);
 let ehStart=0,ehEnd=0;
 // EngineHours : filtrer par date
 if(ehText){const er=parseCSV(ehText).filter(r=>!targetDate||parseWT(r.Date,r.Time).iso===targetDate);const hs=er.map(r=>parseFloat(r.Hours)).filter(v=>!isNaN(v));if(hs.length){ehStart=Math.min(...hs);ehEnd=Math.max(...hs)}}
 const reportDate=targetDate||pts[0].iso;
-return{id:uid(),machineName,serial,date:reportDate,depotDepart,depotArrival,sites,fuelL:Math.round(fuelL),waterMin:waterMin<999?Math.round(waterMin*10)/10:null,opH:Math.round(opH*10)/10,ehStart,ehEnd,rawPts:pts.map(p=>({iso:p.iso,min:p.min,hhmm:p.hhmm,lat:p.lat,lon:p.lon})),rawHop:hopEvts.map(h=>({iso:h.iso,min:h.min,hhmm:h.hhmm}))};
+return{id:uid(),machineName,serial,date:reportDate,depotDepart,depotArrival,sites,fuelL:Math.round(fuelL),waterMin:waterMin<999?Math.round(waterMin*10)/10:null,opH:Math.round(opH*10)/10,ehStart,ehEnd,rawPts:pts.map(p=>({iso:p.iso,min:p.min,hhmm:p.hhmm,lat:p.lat,lon:p.lon})),rawHop:hopEvts.map(h=>({iso:h.iso,min:h.min,hhmm:h.hhmm})),opTimeBuckets};
 }catch(e){console.error('Wirtgen ZIP parse error',e);return null}
 };
 // ======== PLANNING PAGE ========
@@ -734,7 +799,7 @@ return(<div style={{padding:'3px 10px',display:'flex',alignItems:'center',gap:5,
 <span style={{color:'#713f12',fontWeight:800,fontSize:11}}>⚙️ Wirtgen</span>
 {mr.ehStart>0&&mr.ehEnd>mr.ehStart&&<span style={{background:'#f0f9ff',border:'1px solid #7dd3fc',borderRadius:5,padding:'1px 7px',color:'#0c4a6e',fontWeight:700}}>⏱ {mr.ehStart}h→{mr.ehEnd}h (+{mr.ehEnd-mr.ehStart}h moteur)</span>}
 {mr.fuelL>0&&<span style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:5,padding:'1px 7px',color:'#92400e',fontWeight:700}}>⛽ {mr.fuelL}L</span>}
-{mr.opH>0&&<span style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:5,padding:'1px 7px',color:'#15803d',fontWeight:700}}>⚙️ {mr.opH}h fraisage</span>}
+{mr.opH>0&&(()=>{const buckets=mr.opTimeBuckets||[];const sigBuckets=buckets.filter(b=>b.opH>=0.05);const tooltip=sigBuckets.length?'Détail fraisage par heure :\n'+sigBuckets.map(b=>{const h1=Math.floor(b.startMin/60),m1=b.startMin%60,h2=Math.floor(b.endMin/60),m2=b.endMin%60;const min=Math.round(b.opH*60);return String(h1).padStart(2,'0')+':'+String(m1).padStart(2,'0')+'-'+String(h2).padStart(2,'0')+':'+String(m2).padStart(2,'0')+' → '+min+' min'}).join('\n'):'Pas de détail horaire disponible';return<span title={tooltip} style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:5,padding:'1px 7px',color:'#15803d',fontWeight:700,cursor:buckets.length?'help':'default'}}>⚙️ {mr.opH}h fraisage{buckets.length?' ⓘ':''}</span>})()}
 {mr.waterMin!==null&&mr.waterMin<20&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>💧 Eau {mr.waterMin}%⚠️</span>}
 {(!mr.rawPts||!mr.rawPts.length)&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>⚠️ Ancien format — supprimer (×) puis ré-importer le ZIP pour voir les 6 heures</span>}
 <button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen (le chantier sera conservé) ?')){const nd=JSON.parse(JSON.stringify(data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} title="Supprime uniquement le rapport Wirtgen (le chantier reste)" style={{marginLeft:'auto',background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:11,color:'#991b1b',fontWeight:700}}>🗑 Suppr rapport</button>
