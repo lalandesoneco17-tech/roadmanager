@@ -312,7 +312,7 @@ const endedInZone=lastInZoneIdx===pts.length-1;
 // 3. depotDepart, siteArrival, siteDeparture
 const depotDepart=startedInZone?null:pts[0].hhmm;
 const siteArrival=startedInZone?null:pts[firstInZoneIdx].hhmm;
-const siteDeparture=endedInZone?null:pts[lastInZoneIdx+1].hhmm;
+let siteDeparture=endedInZone?null:pts[lastInZoneIdx+1].hhmm;
 // depotArrival = début de la dernière phase stationnaire (si la machine sort de la zone)
 let depotArrival=null;
 if(!endedInZone){
@@ -322,6 +322,13 @@ if(!endedInZone){
     else break;
   }
   depotArrival=pts[stationaryStartIdx].hhmm;
+}
+// Si GPS trop espacé : le 1er pt hors zone est déjà le dépôt → siteDeparture = depotArrival.
+// On répartit : Dép. Chantier à mi-chemin entre dernier pt en zone et 1er pt hors zone.
+const minToHHMM_=mn=>String(Math.floor(mn/60)).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
+if(siteDeparture&&depotArrival&&siteDeparture===depotArrival){
+  const midMin=Math.round((pts[lastInZoneIdx].min+pts[lastInZoneIdx+1].min)/2);
+  siteDeparture=minToHHMM_(midMin);
 }
 // 4. workStart : 1er "On" en zone après siteArrival, fallback +5min si écart > 4h (lunch break)
 const inZoneHops=hopPos.filter(h=>inZone(h));
