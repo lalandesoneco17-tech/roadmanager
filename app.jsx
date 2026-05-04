@@ -2544,48 +2544,191 @@ const todayISO=fmtDateISO(new Date());
 const buildCtx=()=>{
 const employees=data.employees||[];
 const machines=data.machines||[];
+const trucks=data.trucks||[];
+const cars=data.cars||[];
+const depots=data.depots||[];
 const clients=data.clients||[];
-// Genere les 14 prochains jours (aujourd'hui + 13 jours suivants)
-const horizonDays=14;
-const horizon=[];for(let i=0;i<horizonDays;i++){const d=new Date();d.setDate(d.getDate()+i);horizon.push(fmtDateISO(d))}
-const jobsHorizon=(data.jobs||[]).filter(j=>horizon.includes(j.date));
-const jobsToday=jobsHorizon.filter(j=>j.date===todayISO);
-let ctx=`Tu es l'assistant de RoadManager, logiciel de gestion de chantiers pour SONECO (rabotage routier).
-Date du jour: ${todayISO} (${fmtDate(todayISO)})
-Tu as acces au planning des ${horizonDays} prochains jours (aujourd'hui inclus).
-`;
-// Affiche les jobs groupes par date, aujourd'hui + 13 jours a venir
-const fmtJobLine=(j)=>{
-const emp=employees.find(e=>e.id===j.employeeId);
-const mach=machines.find(m=>m.id===j.machineId);
-const cli=clients.find(c=>c.id===j.clientId);
-const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
-const theo=calcTheoreticalTimes(j,data,0);
-const hStr=theo?` | Embauche theo: ${theo.theoStart} → Debauche theo: ${theo.theoEnd}`:(j.billingStart?` | Facturation: ${j.billingStart}`:'');
-return `  - ${emp?emp.name:'Chauffeur?'} | ${mach?mach.name:'Machine?'} | Client: ${cli?cli.name:j.clientId||'?'} | Forfait: ${j.forfaitType||'?'} | CA: ${ca.toFixed(0)}€${j.isNight?' (nuit)':''}${hStr}`;
-};
-horizon.forEach(d=>{
-const djs=jobsHorizon.filter(j=>j.date===d);
-if(djs.length===0)return;
-const lbl=d===todayISO?"Aujourd'hui":(d===horizon[1]?'Demain':fmtDate(d));
-ctx+=`\n${lbl} (${d}) — ${djs.length} chantier(s):\n`;
-djs.forEach(j=>{ctx+=fmtJobLine(j)+'\n'});
-});
-// CA du jour
-if(jobsToday.length>0){
-const totalCAToday=jobsToday.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);
-ctx+=`\nCA total aujourd'hui: ${totalCAToday.toFixed(0)}€\n`;
-}
-const freeToday=machines.filter(m=>!jobsToday.find(j=>j.machineId===m.id));
-ctx+=`\nMachines disponibles aujourd'hui: ${freeToday.length>0?freeToday.map(m=>m.name).join(', '):'toutes occupées'}\n`;
-ctx+=`Nombre total d'employés: ${employees.length}, machines: ${machines.length}\n`;
-if(employees.length>0){
-ctx+='\nListe des salaries (id | nom) — utilise ces IDs pour envoyer des messages:\n';
-employees.forEach(e=>{ctx+=`  - ${e.id} | ${e.name}\n`});
-}
-// === DETECTION D'ANOMALIES (sur les 7 derniers jours + planning a venir) ===
+const forfaits=data.forfaits||{};
+const allJobs=data.jobs||[];
+const allTE=data.timeEntries||[];
+const pannes=data.panneReports||[];
+const interventions=data.interventions||[];
+const maintenanceReqs=data.maintenanceRequests||[];
+const parts=data.parts||[];
+const messagesArr=data.messages||[];
+// Helpers de noms
+const empName=id=>{const e=employees.find(x=>x.id===id);return e?e.name:'?'};
+const machName=id=>{const m=machines.find(x=>x.id===id);return m?m.name:'?'};
+const truckName=id=>{const t=trucks.find(x=>x.id===id);return t?t.name:'?'};
+const cliName=id=>{const c=clients.find(x=>x.id===id);return c?c.name:'?'};
+const depotName=id=>{const d=depots.find(x=>x.id===id);return d?d.name:'?'};
+// Fenetres temporelles
+const past30=[];for(let i=30;i>=1;i--){const d=new Date();d.setDate(d.getDate()-i);past30.push(fmtDateISO(d))}
+const future30=[];for(let i=0;i<30;i++){const d=new Date();d.setDate(d.getDate()+i);future30.push(fmtDateISO(d))}
+const horizon60=[...past30,...future30];
+const monDate=(()=>{const d=new Date();const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);const m=new Date(d);m.setDate(diff);return fmtDateISO(m)})();
+const weekDates=[];for(let i=0;i<7;i++){const d=new Date(monDate);d.setDate(d.getDate()+i);weekDates.push(fmtDateISO(d))}
+const monthStart=todayISO.slice(0,8)+'01';
+const monthEnd=(()=>{const d=new Date();const e=new Date(d.getFullYear(),d.getMonth()+1,0);return fmtDateISO(e)})();
+const lastMonthStart=(()=>{const d=new Date();const lm=new Date(d.getFullYear(),d.getMonth()-1,1);return fmtDateISO(lm)})();
+const lastMonthEnd=(()=>{const d=new Date();const lme=new Date(d.getFullYear(),d.getMonth(),0);return fmtDateISO(lme)})();
+const yearStart=data.yearStart||(new Date().getFullYear()+'-01-01');
+// Jobs / TE filtres
+const jobsHorizon=allJobs.filter(j=>horizon60.includes(j.date));
+const jobsToday=jobsHorizon.filter(j=>j.date===todayISO&&j.type!=='depot');
 const tolMin=data.toleranceMinutes!=null?data.toleranceMinutes:TOLERANCE_MINUTES;
 const ot50=data.overtime50Threshold||43;
+const ot25=data.overtime25Threshold||35;
+
+let ctx=`Tu es l'assistant de RoadManager, logiciel de gestion de chantiers pour SONECO (rabotage routier).
+Date du jour: ${todayISO} (${fmtDate(todayISO)}). Semaine en cours: lundi ${monDate}.
+Tu as acces a TOUTES les donnees de l'app : referentiel, planning -30/+30j, pointages 30j passes, pannes, interventions, stock, messages, parametres, anomalies.\n`;
+
+// === PARAMETRES ===
+ctx+=`\n=== PARAMETRES ===\n`;
+ctx+=`Carburant defaut: ${data.fuelPrice||1.72}€/L | Majoration nuit: +${data.nightPct||30}%\n`;
+ctx+=`Tolerance pointage: ${tolMin}min | Temps en plus depart: ${data.tempsPlusDepart!=null?data.tempsPlusDepart:TEMPS_PLUS_DEPART}min | arrivee: ${data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE}min\n`;
+ctx+=`Heures: ${data.weeklyHoursNormal||35}h/sem normal, supp 25%>${ot25}h, supp 50%>${ot50}h, ref jour ${data.refHoursPerDay||1}h\n`;
+ctx+=`Repas: panier ${data.paniersPrice!=null?data.paniersPrice:12}€ | resto ${data.restoPrice!=null?data.restoPrice:15}€\n`;
+ctx+=`Couts mensuels: loyer depot ${data.monthlyRent||0}€ | admin ${data.monthlyAdmin||0}€ | RC pro ${data.monthlyInsuranceRC||0}€ | jours ouvres/mois ${data.workDaysPerMonth||22}\n`;
+ctx+=`Debut exercice fiscal: ${yearStart}\n`;
+
+// === EMPLOYES ===
+ctx+=`\n=== EMPLOYES (${employees.length}) — id | nom (utilise l'id pour envoyer des messages) ===\n`;
+employees.forEach(e=>{
+const sal=e.salaryType==='monthly'?`mens. ${e.monthlySalary||0}€`:`${e.hourlyRate||0}€/h`;
+const tk=e.truckId?` cam:${truckName(e.truckId)}`:'';
+const mc=e.machineId?` mach:${machName(e.machineId)}`:'';
+ctx+=`  - ${e.id} | ${e.name}${e.role?' ['+e.role+']':''} | ${sal}${tk}${mc}\n`;
+});
+
+// === MACHINES ===
+ctx+=`\n=== MACHINES (${machines.length}) ===\n`;
+machines.forEach(m=>{ctx+=`  - ${m.id} | ${m.name} | ${m.type}${m.width?' '+m.width+'mm':''}\n`});
+
+// === CAMIONS ===
+if(trucks.length>0){ctx+=`\n=== CAMIONS (${trucks.length}) ===\n`;trucks.forEach(t=>{ctx+=`  - ${t.id} | ${t.name}${t.imm?' ('+t.imm+')':''}\n`})}
+
+// === VOITURES ===
+if(cars.length>0){ctx+=`\n=== VOITURES (${cars.length}) ===\n`;cars.forEach(c=>{ctx+=`  - ${c.id} | ${c.name}${c.imm?' ('+c.imm+')':''}\n`})}
+
+// === DEPOTS ===
+if(depots.length>0){ctx+=`\n=== DEPOTS (${depots.length}) ===\n`;depots.forEach(d=>{ctx+=`  - ${d.id} | ${d.name}${d.gnrPrice?' GNR:'+d.gnrPrice+'€':''}${d.gazolePrice?' Gaz:'+d.gazolePrice+'€':''}\n`})}
+
+// === CLIENTS ===
+ctx+=`\n=== CLIENTS (${clients.length}) ===\n`;
+clients.forEach(c=>{const sm=(c.siteManagers||[]).length;ctx+=`  - ${c.id} | ${c.name}${c.forfaitType==='specific'?' [forfait specifique]':''}${sm>0?` | ${sm} chef(s) chantier`:''}\n`});
+
+// === FORFAITS ===
+const fkeys=Object.keys(forfaits);
+if(fkeys.length>0){
+ctx+=`\n=== FORFAITS (tarifs €) ===\n`;
+fkeys.forEach(k=>{const v=forfaits[k];const items=[];Object.entries(v||{}).forEach(([dur,pr])=>{if(pr>0)items.push(`${dur}:${pr}`)});if(items.length)ctx+=`  - ${k}: ${items.join(', ')}\n`});
+}
+
+// === PLANNING -30 / +30 jours (compact) ===
+ctx+=`\n=== PLANNING (chantiers, du ${past30[0]} au ${future30[future30.length-1]}) ===\n`;
+const fmtJobLine=(j)=>{
+const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
+const theo=calcTheoreticalTimes(j,data,0);
+const hStr=theo?` ${theo.theoStart}-${theo.theoEnd}`:(j.billingStart?' fact:'+j.billingStart:'');
+return `${empName(j.employeeId)} | ${machName(j.machineId)} | ${cliName(j.clientId)} | ${j.forfaitType||'?'} | ${ca.toFixed(0)}€${j.isNight?' nuit':''}${hStr}`;
+};
+horizon60.forEach(d=>{
+const djs=allJobs.filter(j=>j.date===d&&j.type!=='depot');
+if(djs.length===0)return;
+const lbl=d===todayISO?' [AUJ]':(d===future30[1]?' [DEMAIN]':'');
+ctx+=`${d}${lbl}: `;djs.forEach((j,i)=>{ctx+=(i>0?' || ':'')+fmtJobLine(j)});ctx+='\n';
+});
+
+// === CA AGREGE ===
+const caForJobs=js=>js.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);
+const jobsWeek=allJobs.filter(j=>weekDates.includes(j.date)&&j.type!=='depot');
+const jobsMonth=allJobs.filter(j=>j.date>=monthStart&&j.date<=monthEnd&&j.type!=='depot');
+const jobsLastMonth=allJobs.filter(j=>j.date>=lastMonthStart&&j.date<=lastMonthEnd&&j.type!=='depot');
+const jobsYear=allJobs.filter(j=>j.date>=yearStart&&j.date<=todayISO&&j.type!=='depot');
+ctx+=`\n=== CA ===\nAUJ: ${caForJobs(jobsToday).toFixed(0)}€ (${jobsToday.length} jobs) | SEM: ${caForJobs(jobsWeek).toFixed(0)}€ (${jobsWeek.length}) | MOIS: ${caForJobs(jobsMonth).toFixed(0)}€ (${jobsMonth.length}) | MOIS-1: ${caForJobs(jobsLastMonth).toFixed(0)}€ (${jobsLastMonth.length}) | EXERCICE: ${caForJobs(jobsYear).toFixed(0)}€ (${jobsYear.length})\n`;
+
+// Machines libres aujourd'hui
+const freeToday=machines.filter(m=>!jobsToday.find(j=>j.machineId===m.id));
+ctx+=`Machines libres aujourd'hui: ${freeToday.length>0?freeToday.map(m=>m.name).join(', '):'aucune'}\n`;
+
+// === POINTAGES 30 derniers jours ===
+const recentTE=allTE.filter(t=>past30.includes(t.date)||t.date===todayISO);
+if(recentTE.length>0){
+ctx+=`\n=== POINTAGES 30j (${recentTE.length} entrees) ===\n`;
+const teByDate={};recentTE.forEach(t=>{(teByDate[t.date]=teByDate[t.date]||[]).push(t)});
+Object.keys(teByDate).sort().reverse().slice(0,30).forEach(d=>{
+ctx+=`${d}: `;
+teByDate[d].forEach((t,i)=>{
+if(t.type==='absence'){ctx+=(i>0?' | ':'')+`${empName(t.empId)}:ABS(${t.absenceType||'?'})`;return}
+const hours=(t.startTime&&t.endTime)?(()=>{const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);return((eh*60+em)-(sh*60+sm)-(t.pauseMin||0))/60})():null;
+ctx+=(i>0?' | ':'')+`${empName(t.empId)}:${t.startTime||'--'}-${t.endTime||'--'}${t.pauseMin?' p'+t.pauseMin+'m':''}${hours!==null?' ='+hours.toFixed(1)+'h':''}${t.mealType&&t.mealType!=='PANIER'?' ['+t.mealType+']':''}${t.nightHours?' nuit'+t.nightHours+'h':''}`;
+});
+ctx+='\n';
+});
+}
+
+// === HEURES PAR SALARIE — semaine en cours ===
+const empWeekMin={};
+allTE.filter(t=>weekDates.includes(t.date)&&t.startTime&&t.endTime).forEach(t=>{
+const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
+const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);empWeekMin[t.empId]=(empWeekMin[t.empId]||0)+min;
+});
+if(Object.keys(empWeekMin).length>0){
+ctx+=`\n=== HEURES SEMAINE EN COURS (lundi ${monDate}) ===\n`;
+Object.entries(empWeekMin).sort((a,b)=>b[1]-a[1]).forEach(([eid,min])=>{const h=min/60;const flag=h>ot50?' [SUPP 50%]':h>ot25?' [SUPP 25%]':'';ctx+=`  - ${empName(eid)}: ${h.toFixed(1)}h${flag}\n`});
+}
+
+// === HEURES PAR SALARIE — mois en cours ===
+const empMonthMin={};
+allTE.filter(t=>t.date>=monthStart&&t.date<=monthEnd&&t.startTime&&t.endTime).forEach(t=>{
+const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
+const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);empMonthMin[t.empId]=(empMonthMin[t.empId]||0)+min;
+});
+if(Object.keys(empMonthMin).length>0){
+ctx+=`\n=== HEURES MOIS EN COURS ===\n`;
+Object.entries(empMonthMin).sort((a,b)=>b[1]-a[1]).forEach(([eid,min])=>{ctx+=`  - ${empName(eid)}: ${(min/60).toFixed(1)}h\n`});
+}
+
+// === PANNES OUVERTES ===
+const openPannes=pannes.filter(p=>p.status!=='resolved'&&p.status!=='done');
+if(openPannes.length>0){
+ctx+=`\n=== PANNES OUVERTES (${openPannes.length}) ===\n`;
+openPannes.slice(0,30).forEach(p=>{const eq=p.machineId?machName(p.machineId):p.truckId?truckName(p.truckId):p.carId?((cars.find(c=>c.id===p.carId)||{}).name||'?'):'?';ctx+=`  - ${p.date} | ${eq} | sev:${p.severity||'?'} | par:${empName(p.reportedBy)} | ${(p.description||'').slice(0,80)}\n`});
+}
+
+// === DEMANDES MAINTENANCE ===
+const openMaint=maintenanceReqs.filter(m=>m.status!=='done'&&m.status!=='resolved');
+if(openMaint.length>0){
+ctx+=`\n=== DEMANDES MAINTENANCE (${openMaint.length}) ===\n`;
+openMaint.slice(0,30).forEach(m=>{ctx+=`  - ${m.date} | ${machName(m.machineId)} | par:${empName(m.reportedBy)} | ${(m.description||'').slice(0,80)}\n`});
+}
+
+// === INTERVENTIONS 30j ===
+const recentInter=interventions.filter(i=>past30.includes(i.date)||i.date===todayISO);
+if(recentInter.length>0){
+const totalC=recentInter.reduce((s,i)=>s+(i.totalCost||0),0);
+ctx+=`\n=== INTERVENTIONS 30j (${recentInter.length}, cout total ${totalC.toFixed(0)}€) ===\n`;
+recentInter.slice(0,25).forEach(i=>{const eq=i.machineId?machName(i.machineId):i.truckId?truckName(i.truckId):i.carId?((cars.find(c=>c.id===i.carId)||{}).name||'?'):'?';ctx+=`  - ${i.date} | ${eq} | ${i.type||'?'} | ${(i.totalCost||0).toFixed(0)}€ | ${(i.description||'').slice(0,60)}\n`});
+if(recentInter.length>25)ctx+=`  ... et ${recentInter.length-25} autres\n`;
+}
+
+// === STOCK FAIBLE ===
+const lowStock=parts.filter(p=>(p.quantity||0)<=2);
+if(lowStock.length>0){
+ctx+=`\n=== STOCK FAIBLE (${lowStock.length} pieces avec ≤2 en stock) ===\n`;
+lowStock.slice(0,30).forEach(p=>{ctx+=`  - ${p.name||'?'}${p.category?' ['+p.category+']':''}: ${p.quantity||0} restant\n`});
+}
+
+// === MESSAGES RECENTS ENVOYES ===
+const recentMsgs=messagesArr.slice(-10);
+if(recentMsgs.length>0){
+ctx+=`\n=== DERNIERS MESSAGES ENVOYES (${recentMsgs.length} sur ${messagesArr.length} total) ===\n`;
+recentMsgs.forEach(m=>{ctx+=`  - ${m.date?m.date.slice(0,16):''} → ${empName(m.toEmpId)}: "${(m.content||'').slice(0,80)}"${m.read?' [lu]':' [non lu]'}\n`});
+}
+
+// === DETECTION D'ANOMALIES ===
 const last7=[];for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()-i);last7.push(fmtDateISO(d))}
 const past7=last7.filter(d=>d<todayISO);
 const anom=[];
@@ -2608,16 +2751,8 @@ if(!te)return;
 const[ash,asm]=te.startTime.split(':').map(Number);const actualMin=ash*60+asm;const dS=actualMin-theo.theoStartMin;
 if(dS>tolMin){const emp=employees.find(e=>e.id===j.employeeId);anom.push(`[Retard embauche] ${emp?emp.name:'?'} le ${j.date} : +${dS}min (theo ${theo.theoStart}, reel ${te.startTime})`)}
 });
-// 4. Depassement heures supp semaine en cours
-const monDate=(()=>{const d=new Date();const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);const m=new Date(d);m.setDate(diff);return fmtDateISO(m)})();
-const weekDates=[];for(let i=0;i<7;i++){const d=new Date(monDate);d.setDate(d.getDate()+i);weekDates.push(fmtDateISO(d))}
-const empWeek={};
-(data.timeEntries||[]).filter(t=>weekDates.includes(t.date)&&t.startTime&&t.endTime).forEach(t=>{
-const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
-const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);
-empWeek[t.empId]=(empWeek[t.empId]||0)+min;
-});
-Object.entries(empWeek).forEach(([eid,min])=>{const h=min/60;if(h>ot50){const emp=employees.find(e=>e.id===eid);anom.push(`[Heures supp 50%] ${emp?emp.name:'?'} = ${h.toFixed(1)}h cette semaine (seuil ${ot50}h)`)}});
+// 4. Depassement heures supp semaine en cours (reuse empWeekMin)
+Object.entries(empWeekMin).forEach(([eid,min])=>{const h=min/60;if(h>ot50){const emp=employees.find(e=>e.id===eid);anom.push(`[Heures supp 50%] ${emp?emp.name:'?'} = ${h.toFixed(1)}h cette semaine (seuil ${ot50}h)`)}});
 // 5. Chantiers a venir sans chauffeur / sans machine
 jobsHorizon.filter(j=>j.date>=todayISO&&j.type!=='depot').forEach(j=>{
 const cli=clients.find(c=>c.id===j.clientId);const cn=cli?cli.name:'?';
