@@ -2561,9 +2561,64 @@ if(employees.length>0){
 ctx+='\nListe des salaries (id | nom) — utilise ces IDs pour envoyer des messages:\n';
 employees.forEach(e=>{ctx+=`  - ${e.id} | ${e.name}\n`});
 }
+// === DETECTION D'ANOMALIES (sur les 7 derniers jours + planning a venir) ===
+const tolMin=data.toleranceMinutes!=null?data.toleranceMinutes:TOLERANCE_MINUTES;
+const ot50=data.overtime50Threshold||43;
+const last7=[];for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()-i);last7.push(fmtDateISO(d))}
+const past7=last7.filter(d=>d<todayISO);
+const anom=[];
+// 1. Pointages non termines (jours passes)
+(data.timeEntries||[]).filter(t=>past7.includes(t.date)&&t.startTime&&!t.endTime&&t.type!=='absence'&&t.type!=='pending').forEach(t=>{
+const emp=employees.find(e=>e.id===t.empId);
+anom.push(`[Pointage non termine] ${emp?emp.name:'?'} le ${t.date} : debut ${t.startTime}, pas de fin enregistree`);
+});
+// 2. Journees > 12h (oubli de pointer la fin probable)
+(data.timeEntries||[]).filter(t=>last7.includes(t.date)&&t.startTime&&t.endTime).forEach(t=>{
+const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
+const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);
+if(min>720){const emp=employees.find(e=>e.id===t.empId);anom.push(`[Journee tres longue] ${emp?emp.name:'?'} le ${t.date} = ${(min/60).toFixed(1)}h (oubli de pointer la fin ?)`)}
+});
+// 3. Retards d'embauche vs theorique (jours passes)
+(data.jobs||[]).filter(j=>past7.includes(j.date)&&j.employeeId).forEach(j=>{
+const theo=calcTheoreticalTimes(j,data,0);if(!theo)return;
+const te=(data.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&t.startTime);
+if(!te)return;
+const[ash,asm]=te.startTime.split(':').map(Number);const actualMin=ash*60+asm;const dS=actualMin-theo.theoStartMin;
+if(dS>tolMin){const emp=employees.find(e=>e.id===j.employeeId);anom.push(`[Retard embauche] ${emp?emp.name:'?'} le ${j.date} : +${dS}min (theo ${theo.theoStart}, reel ${te.startTime})`)}
+});
+// 4. Depassement heures supp semaine en cours
+const monDate=(()=>{const d=new Date();const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);const m=new Date(d);m.setDate(diff);return fmtDateISO(m)})();
+const weekDates=[];for(let i=0;i<7;i++){const d=new Date(monDate);d.setDate(d.getDate()+i);weekDates.push(fmtDateISO(d))}
+const empWeek={};
+(data.timeEntries||[]).filter(t=>weekDates.includes(t.date)&&t.startTime&&t.endTime).forEach(t=>{
+const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
+const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);
+empWeek[t.empId]=(empWeek[t.empId]||0)+min;
+});
+Object.entries(empWeek).forEach(([eid,min])=>{const h=min/60;if(h>ot50){const emp=employees.find(e=>e.id===eid);anom.push(`[Heures supp 50%] ${emp?emp.name:'?'} = ${h.toFixed(1)}h cette semaine (seuil ${ot50}h)`)}});
+// 5. Chantiers a venir sans chauffeur / sans machine
+jobsHorizon.filter(j=>j.date>=todayISO&&j.type!=='depot').forEach(j=>{
+const cli=clients.find(c=>c.id===j.clientId);const cn=cli?cli.name:'?';
+if(!j.employeeId)anom.push(`[Chantier sans chauffeur] ${j.date} chez ${cn}`);
+if(!j.machineId)anom.push(`[Chantier sans machine] ${j.date} chez ${cn}`);
+});
+// 6. Conflits planning (meme employe 2x ou plus meme date, futur)
+const seen={};
+jobsHorizon.filter(j=>j.date>=todayISO&&j.employeeId&&j.type!=='depot').forEach(j=>{const k=j.employeeId+'|'+j.date;if(seen[k])seen[k].push(j);else seen[k]=[j]});
+Object.entries(seen).forEach(([k,arr])=>{if(arr.length>1){const[eid,d]=k.split('|');const emp=employees.find(e=>e.id===eid);anom.push(`[Conflit chauffeur] ${emp?emp.name:'?'} a ${arr.length} chantiers le ${d}`)}});
+// 7. Conflits machine (meme machine 2x meme date)
+const seenM={};
+jobsHorizon.filter(j=>j.date>=todayISO&&j.machineId&&j.type!=='depot').forEach(j=>{const k=j.machineId+'|'+j.date;if(seenM[k])seenM[k].push(j);else seenM[k]=[j]});
+Object.entries(seenM).forEach(([k,arr])=>{if(arr.length>1){const[mid,d]=k.split('|');const m=machines.find(x=>x.id===mid);anom.push(`[Conflit machine] ${m?m.name:'?'} sur ${arr.length} chantiers le ${d}`)}});
+if(anom.length>0){
+ctx+=`\n=== ANOMALIES DETECTEES (${anom.length}) — a signaler quand l'admin demande "problemes/anomalies" ou quand c'est pertinent ===\n`;
+anom.slice(0,40).forEach(a=>{ctx+='  - '+a+'\n'});
+if(anom.length>40)ctx+=`  ... et ${anom.length-40} autres anomalies non listees\n`;
+}else{ctx+='\n=== ANOMALIES: aucune detectee sur les 7 derniers jours ni sur le planning a venir ===\n';}
 ctx+=`\n=== CE QUE TU PEUX FAIRE ===
-1. REPONDRE A DES QUESTIONS en lecture seule sur les donnees ci-dessus (planning du jour, CA, employes, machines, clients disponibles).
-2. PROPOSER L'ENVOI D'UN MESSAGE a un salarie (seule action que tu peux declencher).
+1. REPONDRE A DES QUESTIONS en lecture seule sur les donnees ci-dessus (planning, CA, employes, machines, anomalies).
+2. SIGNALER LES ANOMALIES (pointages oublies, retards, depassements horaires, conflits planning, chantiers incomplets) — proactivement si pertinent ou sur demande.
+3. PROPOSER L'ENVOI D'UN MESSAGE a un salarie (seule action que tu peux declencher).
 
 === CE QUE TU NE PEUX PAS FAIRE (IMPORTANT) ===
 Tu n'as PAS d'outils pour creer/modifier/supprimer quoi que ce soit dans l'app. En particulier :
