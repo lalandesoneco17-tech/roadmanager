@@ -881,43 +881,39 @@ return(<React.Fragment>
 const mIdx=grp.missions.findIndex(mc=>mc.j.id===j.id);
 const isFirst=mIdx===0;const isLast=mIdx===grp.missions.length-1;
 const site=(mr.sites||[])[mIdx];
+// Heures théoriques (calculées à partir du GPS chantier + dépôt sélectionné + heure début chantier)
+const toMinT=t=>{if(!t)return null;const[h,m2]=t.split(':').map(Number);return h*60+m2};
+const minToHHMMt=mn=>{const mm=((mn%1440)+1440)%1440;return String(Math.floor(mm/60)).padStart(2,'0')+':'+String(mm%60).padStart(2,'0')};
+const billStartMinT=toMinT(j.billingStart);
+const travelAllerT=Number(j.travelMinAller)||0;
+const travelRetourT=Number(j.travelMinRetour)||0;
+const theoDep=billStartMinT!=null&&travelAllerT>0?billStartMinT-travelAllerT:null;
+const theoArrCh=billStartMinT;
+const workEndMinT=site&&site.workEnd?toMinT(site.workEnd):null;
+const theoArrDep=workEndMinT!=null&&travelRetourT>0?workEndMinT+travelRetourT:null;
 const evts=[];
-if(isFirst&&mr.depotDepart)evts.push({icon:'🚛',lbl:'Dép. dépôt',t:mr.depotDepart,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
-if(site&&site.siteArrival)evts.push({icon:'📍',lbl:'Arr. chantier',t:site.siteArrival,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
+if(isFirst&&mr.depotDepart)evts.push({icon:'🚛',lbl:'Dép. dépôt',t:mr.depotDepart,theo:theoDep!=null?minToHHMMt(theoDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
+if(site&&site.siteArrival)evts.push({icon:'📍',lbl:'Arr. chantier',t:site.siteArrival,theo:theoArrCh!=null?minToHHMMt(theoArrCh):null,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
 if(site&&site.workStart)evts.push({icon:'⚙️',lbl:'Début fraisage',t:site.workStart,bg:'#f0fdf4',bd:'#22c55e',tx:'#15803d'});
 if(site&&site.workEnd)evts.push({icon:'🏁',lbl:'Fin fraisage',t:site.workEnd,bg:'#fff7ed',bd:'#f97316',tx:'#c2410c'});
 if(site&&site.siteDeparture)evts.push({icon:'🚛',lbl:'Dép. chantier',t:site.siteDeparture,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
-if(isLast&&mr.depotArrival)evts.push({icon:'🏠',lbl:'Arr. dépôt',t:mr.depotArrival,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
+if(isLast&&mr.depotArrival)evts.push({icon:'🏠',lbl:'Arr. dépôt',t:mr.depotArrival,theo:theoArrDep!=null?minToHHMMt(theoArrDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
 if(!evts.length)return null;
 const toM=t=>{if(!t)return 0;const[h,m2]=t.split(':').map(Number);return h*60+m2};
 const alerts=[];
 if(site&&site.workStart&&j.billingStart&&Math.abs(toM(j.billingStart)-toM(site.workStart))>30)alerts.push('⚠️ Ch. '+j.billingStart+' ≠ machine '+site.workStart);
 if(isFirst&&mainTE&&mainTE.startTime&&mr.depotDepart&&Math.abs(toM(mainTE.startTime)-toM(mr.depotDepart))>30)alerts.push('⚠️ Emb. '+mainTE.startTime+' ≠ '+mr.depotDepart);
 if(isLast&&mainTE&&mainTE.endTime&&mr.depotArrival&&Math.abs(toM(mainTE.endTime)-toM(mr.depotArrival))>30)alerts.push('⚠️ Déb. '+mainTE.endTime+' ≠ '+mr.depotArrival);
-// Comparaison temps de trajet réel (Wirtgen) vs théorique (km dépôt sélectionné → GPS chantier × 80 km/h)
-const travelInfos=[];
-if(isFirst&&mr.depotDepart&&site&&site.siteArrival&&Number(j.travelMinAller)>0){
-  const realMin=toM(site.siteArrival)-toM(mr.depotDepart);
-  const theoMin=Number(j.travelMinAller);
-  const delta=realMin-theoMin;
-  travelInfos.push({lbl:'🚛 Aller',realMin,theoMin,delta,km:j.kmAller});
-}
-if(isLast&&site&&site.siteDeparture&&mr.depotArrival&&Number(j.travelMinRetour)>0){
-  const realMin=toM(mr.depotArrival)-toM(site.siteDeparture);
-  const theoMin=Number(j.travelMinRetour);
-  const delta=realMin-theoMin;
-  travelInfos.push({lbl:'🏠 Retour',realMin,theoMin,delta,km:j.kmRetour});
-}
 return(<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:0,background:'#f8fafc',borderBottom:'1px solid #e2e8f0',flexWrap:'wrap',rowGap:4}}>
 {evts.map((ev,i)=><React.Fragment key={i}>
 {i>0&&<span style={{color:'#94a3b8',fontSize:18,margin:'0 4px',fontWeight:300,lineHeight:1,userSelect:'none'}}>→</span>}
 <div style={{display:'inline-flex',flexDirection:'column',alignItems:'center',gap:1}}>
 <span style={{background:ev.bg,border:'1px solid '+ev.bd,borderRadius:8,padding:'3px 10px',color:ev.tx,fontWeight:800,fontSize:13,whiteSpace:'nowrap',letterSpacing:'0.2px'}}>{ev.icon} {ev.t}</span>
 <span style={{fontSize:9,color:ev.tx,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.4px',opacity:0.8}}>{ev.lbl}</span>
+{ev.theo&&(()=>{const realMin=toM(ev.t);const theoMin=toM(ev.theo);const delta=realMin-theoMin;const ad=Math.abs(delta);const tcol=ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';const sign=delta>0?'+':'';return<span title={'Théorique : '+ev.theo+' (réel '+(delta===0?'pile à l\'heure':sign+delta+' min)')} style={{fontSize:9,color:tcol,fontWeight:700,whiteSpace:'nowrap',cursor:'help'}}>théo {ev.theo} ({sign}{delta}m)</span>})()}
 </div>
 </React.Fragment>)}
 {alerts.map((a,ai)=><span key={ai} style={{marginLeft:10,background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 8px',color:'#991b1b',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>{a}</span>)}
-{travelInfos.map((ti,i)=>{const ad=Math.abs(ti.delta);const bg=ad<=5?'#dcfce7':ad<=15?'#fef3c7':'#fee2e2';const bd=ad<=5?'#16a34a':ad<=15?'#d97706':'#ef4444';const tx=ad<=5?'#14532d':ad<=15?'#92400e':'#991b1b';const sign=ti.delta>0?'+':'';const tip='Réel '+ti.realMin+' min vs théorique '+ti.theoMin+' min ('+(ti.km||'?')+' km @ 80km/h)';return<span key={i} title={tip} style={{marginLeft:10,background:bg,border:'1px solid '+bd,borderRadius:6,padding:'2px 8px',color:tx,fontWeight:700,fontSize:11,whiteSpace:'nowrap',cursor:'help'}}>{ti.lbl} {ti.realMin}min ({sign}{ti.delta} vs théo)</span>})}
 </div>);})()}
 {/* Details panel */}
 {openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
