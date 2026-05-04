@@ -883,17 +883,19 @@ const isFirst=mIdx===0;const isLast=mIdx===grp.missions.length-1;
 const site=(mr.sites||[])[mIdx];
 // Heures théoriques (calculées à partir du GPS chantier + dépôt sélectionné + heure début chantier)
 // Inclut les temps préparation matin (tpDepart) et mise en sécurité soir (tpArrivee) configurés dans les réglages.
+// Marge de 15 min avant le début de facturation pour préparer la machine sur le chantier.
 const toMinT=t=>{if(!t)return null;const[h,m2]=t.split(':').map(Number);return h*60+m2};
 const minToHHMMt=mn=>{const mm=((mn%1440)+1440)%1440;return String(Math.floor(mm/60)).padStart(2,'0')+':'+String(mm%60).padStart(2,'0')};
 const tpDepT=(data.tempsPlusDepart!=null?data.tempsPlusDepart:TEMPS_PLUS_DEPART);
 const tpArrT=(data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE);
+const MARGE_ARRIVEE_CHANTIER=15;
 const billStartMinT=toMinT(j.billingStart);
 const travelAllerT=Number(j.travelMinAller)||0;
 const travelRetourT=Number(j.travelMinRetour)||0;
-// Dép. dépôt théo = heure début chantier - trajet aller - temps préparation matin
-const theoDep=billStartMinT!=null&&travelAllerT>0?billStartMinT-travelAllerT-tpDepT:null;
-// Arr. chantier théo = heure début chantier (ce que l'utilisateur a saisi)
-const theoArrCh=billStartMinT;
+// Arr. chantier théo = heure début facturation - 15 min (préparation sur place)
+const theoArrCh=billStartMinT!=null?billStartMinT-MARGE_ARRIVEE_CHANTIER:null;
+// Dép. dépôt théo = heure d'arrivée chantier théo - trajet aller - temps préparation matin
+const theoDep=theoArrCh!=null&&travelAllerT>0?theoArrCh-travelAllerT-tpDepT:null;
 // Arr. dépôt théo = fin de chantier RÉELLE + trajet retour + temps mise en sécurité
 const workEndMinT=site&&site.workEnd?toMinT(site.workEnd):null;
 const theoArrDep=workEndMinT!=null&&travelRetourT>0?workEndMinT+travelRetourT+tpArrT:null;
