@@ -2529,12 +2529,23 @@ return(
 
 // ======== CHATBOT IA ========
 // Extrait un JSON de proposition d'action d'une reponse Claude.
-// Claude est instruit de repondre avec un bloc ```json { "action":"send_message", ... } ``` quand il propose une action.
+// Claude doit envelopper l'action dans un bloc ```json {...} ``` avec un champ "action" parmi : send_message, create_job, update_job, delete_job, fix_time_entry.
+const PROPOSAL_ACTIONS=['send_message','create_job','update_job','delete_job','fix_time_entry'];
 const parseProposal=(text)=>{
 if(!text)return null;
 const m=text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
 if(!m)return null;
-try{const obj=JSON.parse(m[1]);if(obj&&obj.action==='send_message'&&obj.toEmpId&&obj.content){const intro=text.slice(0,m.index).trim();return{intro,proposal:obj}}}catch(e){}
+try{
+const obj=JSON.parse(m[1]);
+if(!obj||!obj.action||!PROPOSAL_ACTIONS.includes(obj.action))return null;
+if(obj.action==='send_message'&&(!obj.toEmpId||!obj.content))return null;
+if(obj.action==='create_job'&&(!obj.data||typeof obj.data!=='object'))return null;
+if(obj.action==='update_job'&&(!obj.jobId||!obj.changes||typeof obj.changes!=='object'))return null;
+if(obj.action==='delete_job'&&!obj.jobId)return null;
+if(obj.action==='fix_time_entry'&&(!obj.entryId||!obj.changes||typeof obj.changes!=='object'))return null;
+const intro=text.slice(0,m.index).trim();
+return{intro,proposal:obj};
+}catch(e){}
 return null;
 };
 const AdminChatbot=({data,save})=>{
@@ -2636,7 +2647,7 @@ const fmtJobLine=(j)=>{
 const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
 const theo=calcTheoreticalTimes(j,data,0);
 const hStr=theo?` ${theo.theoStart}-${theo.theoEnd}`:(j.billingStart?' fact:'+j.billingStart:'');
-return `${empName(j.employeeId)} | ${machName(j.machineId)} | ${cliName(j.clientId)} | ${j.forfaitType||'?'} | ${ca.toFixed(0)}€${j.isNight?' nuit':''}${hStr}`;
+return `[${j.id}] ${empName(j.employeeId)} | ${machName(j.machineId)} | ${cliName(j.clientId)} | ${j.forfaitType||'?'} | ${ca.toFixed(0)}€${j.isNight?' nuit':''}${hStr}`;
 };
 horizon60.forEach(d=>{
 const djs=allJobs.filter(j=>j.date===d&&j.type!=='depot');
@@ -2665,9 +2676,9 @@ const teByDate={};recentTE.forEach(t=>{(teByDate[t.date]=teByDate[t.date]||[]).p
 Object.keys(teByDate).sort().reverse().slice(0,30).forEach(d=>{
 ctx+=`${d}: `;
 teByDate[d].forEach((t,i)=>{
-if(t.type==='absence'){ctx+=(i>0?' | ':'')+`${empName(t.empId)}:ABS(${t.absenceType||'?'})`;return}
+if(t.type==='absence'){ctx+=(i>0?' | ':'')+`[${t.id}] ${empName(t.empId)}:ABS(${t.absenceType||'?'})`;return}
 const hours=(t.startTime&&t.endTime)?(()=>{const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);return((eh*60+em)-(sh*60+sm)-(t.pauseMin||0))/60})():null;
-ctx+=(i>0?' | ':'')+`${empName(t.empId)}:${t.startTime||'--'}-${t.endTime||'--'}${t.pauseMin?' p'+t.pauseMin+'m':''}${hours!==null?' ='+hours.toFixed(1)+'h':''}${t.mealType&&t.mealType!=='PANIER'?' ['+t.mealType+']':''}${t.nightHours?' nuit'+t.nightHours+'h':''}`;
+ctx+=(i>0?' | ':'')+`[${t.id}] ${empName(t.empId)}:${t.startTime||'--'}-${t.endTime||'--'}${t.pauseMin?' p'+t.pauseMin+'m':''}${hours!==null?' ='+hours.toFixed(1)+'h':''}${t.mealType&&t.mealType!=='PANIER'?' ['+t.mealType+']':''}${t.nightHours?' nuit'+t.nightHours+'h':''}`;
 });
 ctx+='\n';
 });
@@ -2777,45 +2788,120 @@ anom.slice(0,40).forEach(a=>{ctx+='  - '+a+'\n'});
 if(anom.length>40)ctx+=`  ... et ${anom.length-40} autres anomalies non listees\n`;
 }else{ctx+='\n=== ANOMALIES: aucune detectee sur les 7 derniers jours ni sur le planning a venir ===\n';}
 ctx+=`\n=== CE QUE TU PEUX FAIRE ===
-1. REPONDRE A DES QUESTIONS en lecture seule sur les donnees ci-dessus (planning, CA, employes, machines, anomalies).
-2. SIGNALER LES ANOMALIES (pointages oublies, retards, depassements horaires, conflits planning, chantiers incomplets) — proactivement si pertinent ou sur demande.
-3. PROPOSER L'ENVOI D'UN MESSAGE a un salarie (seule action que tu peux declencher).
+1. REPONDRE A DES QUESTIONS en lecture seule sur les donnees (planning, CA, employes, machines, pointages, anomalies, etc.)
+2. SIGNALER LES ANOMALIES proactivement ou sur demande
+3. PROPOSER UNE ACTION via un bloc JSON. Actions disponibles : send_message, create_job, update_job, delete_job, fix_time_entry.
 
-=== CE QUE TU NE PEUX PAS FAIRE (IMPORTANT) ===
-Tu n'as PAS d'outils pour creer/modifier/supprimer quoi que ce soit dans l'app. En particulier :
-- Tu ne peux PAS creer de chantier / mission / job
-- Tu ne peux PAS modifier ou supprimer un chantier existant
-- Tu ne peux PAS modifier les pointages, heures, salaires
-- Tu ne peux PAS modifier les machines, clients, employes, depots, forfaits
-- Tu ne peux PAS ajouter/modifier du stock ou des pieces
+=== REGLE D'OR ===
+Tu ne fais JAMAIS d'action toi-meme. Tu PROPOSES uniquement, sous forme d'un bloc JSON. L'admin clique sur "Valider" pour declencher l'action. Si tu ne peux pas formuler une proposition propre (donnee manquante, ambiguite), demande une clarification au lieu de generer un JSON incomplet ou hasardeux. Ne JAMAIS dire "c'est fait" ou "je l'ai cree" — dis "je te propose...".
 
-Si l'admin te demande une de ces actions, reponds HONNETEMENT : "Je ne peux pas encore creer/modifier X directement. Pour l'instant je peux seulement proposer d'envoyer des messages aux salaries. Pour creer un chantier, va dans l'onglet Planning et clique +." NE JAMAIS pretendre avoir fait quelque chose que tu n'as pas fait.
-
-=== COMMENT PROPOSER UN MESSAGE (seule action disponible) ===
-Si l'admin demande d'envoyer/transmettre un message a un salarie (ex: "dis a Franck que...", "previens Paul de...", "envoie un message a Marie..."):
-1. Ecris une courte phrase d'intro ("Voici le message que je propose d'envoyer a X :")
-2. Ajoute UN bloc JSON avec ce format exact :
+=== FORMAT GENERAL D'UNE PROPOSITION ===
+Reponds avec une courte phrase d'intro + UN bloc JSON. Format :
 \`\`\`json
-{"action":"send_message","toEmpId":"<id_du_salarie>","content":"<texte clair et concis, commence par une majuscule>"}
+{"action":"<nom>", ...}
 \`\`\`
-Regles :
-- Utilise l'ID EXACT tire de la liste des salaries ci-dessus (matching tolerant sur prenom/nom)
-- Si le destinataire est ambigu ou introuvable, ne genere PAS de JSON — demande une clarification
-- Un seul bloc JSON par reponse
-- Redige le message comme s'il etait lu par le salarie (pas "dit a Franck de...", plutot "Franck, merci de...")
-- C'est une PROPOSITION : l'admin valide ou annule. Ne dis jamais "c'est envoye", dis "je te propose d'envoyer..."
+Tu peux aussi proposer plusieurs actions en sequence (ex: 2 chantiers a creer) en envoyant plusieurs reponses successives, mais UN SEUL bloc JSON par message.
 
-Repond toujours en francais. Concis, direct, professionnel. Ne JAMAIS inventer une action que tu n'as pas reellement faite.`;
+=== ACTION 1 : send_message ===
+Pour envoyer un message a un salarie.
+\`\`\`json
+{"action":"send_message","toEmpId":"<id>","content":"<texte au salarie, comme s'il le lisait>"}
+\`\`\`
+
+=== ACTION 2 : create_job ===
+Pour creer un nouveau chantier. Champ "data" contient les attributs du chantier.
+\`\`\`json
+{"action":"create_job","data":{"date":"YYYY-MM-DD","employeeId":"<id>","machineId":"<id>","clientId":"<id>","billingStart":"HH:MM","forfaitType":"<2h|4h|6h|8h|Demi-journee|Journee|Transfert>","isNight":false}}
+\`\`\`
+Champs OBLIGATOIRES : date, employeeId, machineId, clientId, billingStart, forfaitType.
+Champs optionnels : isNight (def false), siteManager, siteManagerPhone, travelMinAller, travelMinRetour, startFrom, endAt, hasTransfer, transferPrice, citOpt (pour citerne).
+Le prix priceForfait sera calcule automatiquement par l'app a partir du forfait, machine, client.
+Si une info manque (ex: pas de billingStart precise), utilise des defauts raisonnables (08:00) ET mentionne-le dans ton intro.
+
+=== ACTION 3 : update_job ===
+Pour modifier un chantier existant. Tu dois utiliser l'ID exact tire du PLANNING (format [job_xxx] visible avant chaque ligne).
+\`\`\`json
+{"action":"update_job","jobId":"<id_existant>","changes":{"<champ>":"<nouvelle_valeur>", ...}}
+\`\`\`
+Inclus uniquement les champs a modifier dans "changes". Ex: {"date":"2026-05-10"} pour decaler.
+Avant de proposer, verifie que jobId existe dans le planning ci-dessus.
+
+=== ACTION 4 : delete_job ===
+Pour supprimer un chantier.
+\`\`\`json
+{"action":"delete_job","jobId":"<id_existant>"}
+\`\`\`
+Avant de proposer, verifie que jobId existe.
+
+=== ACTION 5 : fix_time_entry ===
+Pour corriger un pointage. ID visible avant chaque pointage dans la section POINTAGES (format [te_xxx] ou [autre_id]).
+\`\`\`json
+{"action":"fix_time_entry","entryId":"<id_existant>","changes":{"startTime":"HH:MM","endTime":"HH:MM","pauseMin":60, ...}}
+\`\`\`
+Champs modifiables : startTime, endTime, pauseMin, breakStart, breakEnd, mealType, absenceType, nightHours, requestedEndTime.
+
+=== REGLES COMMUNES ===
+- IDs : copie-colle EXACT depuis les sections de donnees ci-dessus. Pas d'inventions.
+- Ambiguite : si plusieurs employes/jobs/pointages correspondent, demande une clarification au lieu de deviner.
+- Donnees manquantes : utilise un defaut raisonnable ET signale-le, ou demande l'info.
+- Un SEUL bloc JSON par reponse.
+- Repond toujours en francais, concis, direct, professionnel.
+- Ne JAMAIS inventer une action accomplie. Tu PROPOSES, l'admin VALIDE.`;
 return ctx;
 };
 const validateProposal=(msgIdx)=>{
 const m=msgs[msgIdx];if(!m||!m.proposal)return;
 const p=m.proposal;
 const nd=JSON.parse(JSON.stringify(data));
+let resultText='';
+try{
+if(p.action==='send_message'){
 if(!nd.messages)nd.messages=[];
 nd.messages.push({id:'msg_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),toEmpId:p.toEmpId,content:p.content,date:new Date().toISOString(),read:false,from:'admin'});
+resultText=`Message envoye a ${(nd.employees||[]).find(e=>e.id===p.toEmpId)?.name||p.toEmpId}`;
+}
+else if(p.action==='create_job'){
+if(!nd.jobs)nd.jobs=[];
+const d=p.data||{};
+const newJob={id:'job_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...d};
+// Calcul automatique du prix forfait si absent
+if(newJob.priceForfait==null||newJob.priceForfait===0){
+const mach=(nd.machines||[]).find(x=>x.id===newJob.machineId);
+if(mach&&newJob.clientId&&newJob.forfaitType){
+try{newJob.priceForfait=getForfaitPrice(nd,newJob.clientId,mach,newJob.forfaitType,newJob.citOpt,newJob.isNight)}catch(e){newJob.priceForfait=0}
+}
+}
+// Calcul prix transfert si demande
+if(newJob.hasTransfer&&(newJob.transferPrice==null||newJob.transferPrice===0)){
+const mach=(nd.machines||[]).find(x=>x.id===newJob.machineId);
+if(mach&&newJob.clientId){try{newJob.transferPrice=getTransferPrice(nd,newJob.clientId,mach,newJob.citOpt,newJob.isNight)}catch(e){newJob.transferPrice=0}}
+}
+nd.jobs.push(newJob);
+const empN=(nd.employees||[]).find(e=>e.id===newJob.employeeId)?.name||'?';
+const machN=(nd.machines||[]).find(mc=>mc.id===newJob.machineId)?.name||'?';
+resultText=`Chantier cree: ${empN} | ${machN} | ${newJob.date}`;
+}
+else if(p.action==='update_job'){
+const jIdx=(nd.jobs||[]).findIndex(j=>j.id===p.jobId);
+if(jIdx<0){alert('Chantier introuvable: '+p.jobId);return}
+nd.jobs[jIdx]={...nd.jobs[jIdx],...p.changes};
+resultText=`Chantier modifie (${Object.keys(p.changes).length} champ(s))`;
+}
+else if(p.action==='delete_job'){
+const dIdx=(nd.jobs||[]).findIndex(j=>j.id===p.jobId);
+if(dIdx<0){alert('Chantier introuvable: '+p.jobId);return}
+nd.jobs.splice(dIdx,1);
+resultText='Chantier supprime';
+}
+else if(p.action==='fix_time_entry'){
+const tIdx=(nd.timeEntries||[]).findIndex(t=>t.id===p.entryId);
+if(tIdx<0){alert('Pointage introuvable: '+p.entryId);return}
+nd.timeEntries[tIdx]={...nd.timeEntries[tIdx],...p.changes};
+resultText=`Pointage corrige (${Object.keys(p.changes).length} champ(s))`;
+}
+}catch(e){alert('Erreur: '+e.message);return}
 save(nd);
-setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposalStatus:'sent'}:x));
+setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposalStatus:'sent',resultText}:x));
 };
 const cancelProposal=(msgIdx)=>{setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposalStatus:'cancelled'}:x))};
 const editProposal=(msgIdx,newContent)=>{setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposal:{...x.proposal,content:newContent}}:x))};
@@ -2878,20 +2964,60 @@ return(
 <div style={{maxWidth:'85%',padding:'7px 11px',borderRadius:10,background:m.role==='user'?C.accent:'#f1f5f9',color:m.role==='user'?'#fff':C.text,fontSize:12,lineHeight:1.5,whiteSpace:'pre-wrap'}}>
 {m.content}
 </div>
-{m.proposal&&(
-<div style={{width:'95%',border:'1.5px solid '+C.accent,borderRadius:10,background:'#fff',padding:10,fontSize:12}}>
-<div style={{fontWeight:700,color:C.accent,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>📨 Message a {getEmpName(m.proposal.toEmpId)}</div>
-{m.proposalStatus==='pending'&&(<>
-<textarea value={m.proposal.content} onChange={e=>editProposal(i,e.target.value)} rows={3} style={{width:'100%',padding:6,borderRadius:6,border:'1px solid '+C.border,fontSize:12,fontFamily:'inherit',resize:'vertical',marginBottom:6,outline:'none'}}/>
+{m.proposal&&(()=>{
+const p=m.proposal;
+const accent=p.action==='delete_job'?(C.red||'#ef4444'):C.accent;
+const headers={send_message:'📨 Message a '+getEmpName(p.toEmpId),create_job:'🆕 Creation chantier',update_job:'✏️ Modification chantier',delete_job:'🗑️ Suppression chantier',fix_time_entry:'⏱️ Correction pointage'};
+const verbs={send_message:'Envoyer',create_job:'Creer',update_job:'Modifier',delete_job:'Supprimer',fix_time_entry:'Corriger'};
+const findJob=jid=>(data.jobs||[]).find(j=>j.id===jid);
+const findTE=tid=>(data.timeEntries||[]).find(t=>t.id===tid);
+const fmtJobSummary=(j)=>j?`${getEmpName(j.employeeId)} | ${(data.machines||[]).find(m=>m.id===j.machineId)?.name||'?'} | ${(data.clients||[]).find(c=>c.id===j.clientId)?.name||'?'} | ${j.date} ${j.billingStart||''} | ${j.forfaitType||'?'}`:'(introuvable)';
+return(
+<div style={{width:'95%',border:'1.5px solid '+accent,borderRadius:10,background:'#fff',padding:10,fontSize:12}}>
+<div style={{fontWeight:700,color:accent,marginBottom:6}}>{headers[p.action]||p.action}</div>
+{p.action==='send_message'&&m.proposalStatus==='pending'&&(
+<textarea value={p.content} onChange={e=>editProposal(i,e.target.value)} rows={3} style={{width:'100%',padding:6,borderRadius:6,border:'1px solid '+C.border,fontSize:12,fontFamily:'inherit',resize:'vertical',marginBottom:6,outline:'none'}}/>
+)}
+{p.action==='create_job'&&(()=>{const d=p.data||{};const empN=getEmpName(d.employeeId);const machN=(data.machines||[]).find(mc=>mc.id===d.machineId)?.name||d.machineId;const cliN=(data.clients||[]).find(cl=>cl.id===d.clientId)?.name||d.clientId;return(
+<div style={{fontSize:12,lineHeight:1.6,marginBottom:6}}>
+<div><b>Date :</b> {d.date||'?'}{d.isNight?' (nuit)':''}</div>
+<div><b>Chauffeur :</b> {empN}</div>
+<div><b>Machine :</b> {machN}</div>
+<div><b>Client :</b> {cliN}</div>
+<div><b>Heure facturation :</b> {d.billingStart||'?'}</div>
+<div><b>Forfait :</b> {d.forfaitType||'?'}</div>
+{d.siteManager&&<div><b>Chef chantier :</b> {d.siteManager}{d.siteManagerPhone?' ('+d.siteManagerPhone+')':''}</div>}
+{d.hasTransfer&&<div><b>Transfert :</b> oui{d.transferPrice?' ('+d.transferPrice+'€)':''}</div>}
+</div>
+)})()}
+{p.action==='update_job'&&(()=>{const j=findJob(p.jobId);return(
+<div style={{fontSize:12,lineHeight:1.6,marginBottom:6}}>
+<div style={{color:C.muted,marginBottom:4}}>{fmtJobSummary(j)}</div>
+{j&&Object.entries(p.changes||{}).map(([k,v])=>(<div key={k}><b>{k} :</b> <span style={{color:C.red||'#ef4444',textDecoration:'line-through'}}>{String(j[k]??'(vide)')}</span> → <span style={{color:C.green||'#16a34a',fontWeight:600}}>{String(v)}</span></div>))}
+{!j&&<div style={{color:C.red}}>⚠ Chantier introuvable (id: {p.jobId})</div>}
+</div>
+)})()}
+{p.action==='delete_job'&&(()=>{const j=findJob(p.jobId);return(
+<div style={{fontSize:12,lineHeight:1.6,marginBottom:6}}>
+{j?<div>{fmtJobSummary(j)}<div style={{color:C.red,marginTop:4,fontWeight:600}}>⚠ Cette suppression est definitive (mais Annuler dans le menu admin reste possible).</div></div>:<div style={{color:C.red}}>⚠ Chantier introuvable (id: {p.jobId})</div>}
+</div>
+)})()}
+{p.action==='fix_time_entry'&&(()=>{const t=findTE(p.entryId);return(
+<div style={{fontSize:12,lineHeight:1.6,marginBottom:6}}>
+{t?<div style={{color:C.muted,marginBottom:4}}>{getEmpName(t.empId)} — {t.date} — actuel : {t.startTime||'--'}-{t.endTime||'--'} pause {t.pauseMin||0}min</div>:<div style={{color:C.red}}>⚠ Pointage introuvable (id: {p.entryId})</div>}
+{t&&Object.entries(p.changes||{}).map(([k,v])=>(<div key={k}><b>{k} :</b> <span style={{color:C.red||'#ef4444',textDecoration:'line-through'}}>{String(t[k]??'(vide)')}</span> → <span style={{color:C.green||'#16a34a',fontWeight:600}}>{String(v)}</span></div>))}
+</div>
+)})()}
+{m.proposalStatus==='pending'&&(
 <div style={{display:'flex',gap:6}}>
-<button onClick={()=>validateProposal(i)} style={{flex:1,background:C.green||'#16a34a',color:'#fff',border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontWeight:700,fontSize:12}}>✓ Envoyer</button>
+<button onClick={()=>validateProposal(i)} style={{flex:1,background:p.action==='delete_job'?(C.red||'#ef4444'):(C.green||'#16a34a'),color:'#fff',border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontWeight:700,fontSize:12}}>✓ {verbs[p.action]||'Valider'}</button>
 <button onClick={()=>cancelProposal(i)} style={{flex:1,background:'#f1f5f9',color:C.text,border:'1px solid '+C.border,borderRadius:6,padding:'6px 10px',cursor:'pointer',fontWeight:600,fontSize:12}}>✕ Annuler</button>
 </div>
-</>)}
-{m.proposalStatus==='sent'&&(<div style={{color:C.green||'#16a34a',fontWeight:600,fontSize:12}}>✓ Message envoye a {getEmpName(m.proposal.toEmpId)}</div>)}
+)}
+{m.proposalStatus==='sent'&&(<div style={{color:C.green||'#16a34a',fontWeight:600,fontSize:12}}>✓ {m.resultText||'Action validee'}</div>)}
 {m.proposalStatus==='cancelled'&&(<div style={{color:C.muted,fontStyle:'italic',fontSize:12}}>✕ Annule</div>)}
 </div>
-)}
+)})()}
 </div>
 ))}
 {loading&&<div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:'#f1f5f9',borderRadius:10,padding:'7px 14px',fontSize:20,color:C.muted}}>...</div></div>}
