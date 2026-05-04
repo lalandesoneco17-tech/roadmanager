@@ -48,6 +48,9 @@ const fmtDate=d=>{const dt=new Date(d);const j=['Dim','Lun','Mar','Mer','Jeu','V
 const fmtDateISO=d=>{const dt=new Date(d);return dt.getFullYear()+'-'+pad2(dt.getMonth()+1)+'-'+pad2(dt.getDate())};
 const fmtMoney=n=>Number(n||0).toFixed(2).replace('.',',')+' EUR';
 const fmtDuration=min=>{const h=Math.floor(min/60);const m=Math.round(min%60);return h+'h'+pad2(m)};
+// Calcul d'heures travaillees pour un pointage. Gere le passage minuit (ex: 20h->5h = 9h).
+const calcWorkedMin=t=>{if(!t||!t.startTime||!t.endTime)return 0;const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);let mins=(eh*60+em)-(sh*60+sm);if(mins<0)mins+=24*60;return Math.max(0,mins-(t.pauseMin||0))};
+const calcDiffMin=(start,end)=>{if(!start||!end)return 0;const[sh,sm]=start.split(':').map(Number);const[eh,em]=end.split(':').map(Number);let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=24*60;return m};
 const parseCoords=s=>{if(!s)return null;const p=String(s).split(',').map(Number);return p.length===2&&!isNaN(p[0])&&!isNaN(p[1])?p:null};
 const haversine=(a,b)=>{const R=6371,toR=n=>n*Math.PI/180;const dLat=toR(b[0]-a[0]),dLon=toR(b[1]-a[1]);const x=Math.sin(dLat/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))};
 const osmRoute=async(from,to)=>{const urls=[`https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=false`,`https://routing.openstreetmap.de/routed-car/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=false`];for(const url of urls){try{const r=await fetch(url);const j=await r.json();if(j.routes&&j.routes[0])return{km:+(j.routes[0].distance/1000).toFixed(1),min:+(j.routes[0].duration/60).toFixed(0)}}catch(e){}}const km=+(haversine(from,to)*1.3).toFixed(1);return{km,min:+((km/80)*60).toFixed(0)}};
@@ -891,6 +894,20 @@ const alerts=[];
 if(site&&site.workStart&&j.billingStart&&Math.abs(toM(j.billingStart)-toM(site.workStart))>30)alerts.push('⚠️ Ch. '+j.billingStart+' ≠ machine '+site.workStart);
 if(isFirst&&mainTE&&mainTE.startTime&&mr.depotDepart&&Math.abs(toM(mainTE.startTime)-toM(mr.depotDepart))>30)alerts.push('⚠️ Emb. '+mainTE.startTime+' ≠ '+mr.depotDepart);
 if(isLast&&mainTE&&mainTE.endTime&&mr.depotArrival&&Math.abs(toM(mainTE.endTime)-toM(mr.depotArrival))>30)alerts.push('⚠️ Déb. '+mainTE.endTime+' ≠ '+mr.depotArrival);
+// Comparaison temps de trajet réel (Wirtgen) vs théorique (km dépôt sélectionné → GPS chantier × 80 km/h)
+const travelInfos=[];
+if(isFirst&&mr.depotDepart&&site&&site.siteArrival&&Number(j.travelMinAller)>0){
+  const realMin=toM(site.siteArrival)-toM(mr.depotDepart);
+  const theoMin=Number(j.travelMinAller);
+  const delta=realMin-theoMin;
+  travelInfos.push({lbl:'🚛 Aller',realMin,theoMin,delta,km:j.kmAller});
+}
+if(isLast&&site&&site.siteDeparture&&mr.depotArrival&&Number(j.travelMinRetour)>0){
+  const realMin=toM(mr.depotArrival)-toM(site.siteDeparture);
+  const theoMin=Number(j.travelMinRetour);
+  const delta=realMin-theoMin;
+  travelInfos.push({lbl:'🏠 Retour',realMin,theoMin,delta,km:j.kmRetour});
+}
 return(<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:0,background:'#f8fafc',borderBottom:'1px solid #e2e8f0',flexWrap:'wrap',rowGap:4}}>
 {evts.map((ev,i)=><React.Fragment key={i}>
 {i>0&&<span style={{color:'#94a3b8',fontSize:18,margin:'0 4px',fontWeight:300,lineHeight:1,userSelect:'none'}}>→</span>}
@@ -900,6 +917,7 @@ return(<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:0,
 </div>
 </React.Fragment>)}
 {alerts.map((a,ai)=><span key={ai} style={{marginLeft:10,background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 8px',color:'#991b1b',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>{a}</span>)}
+{travelInfos.map((ti,i)=>{const ad=Math.abs(ti.delta);const bg=ad<=5?'#dcfce7':ad<=15?'#fef3c7':'#fee2e2';const bd=ad<=5?'#16a34a':ad<=15?'#d97706':'#ef4444';const tx=ad<=5?'#14532d':ad<=15?'#92400e':'#991b1b';const sign=ti.delta>0?'+':'';const tip='Réel '+ti.realMin+' min vs théorique '+ti.theoMin+' min ('+(ti.km||'?')+' km @ 80km/h)';return<span key={i} title={tip} style={{marginLeft:10,background:bg,border:'1px solid '+bd,borderRadius:6,padding:'2px 8px',color:tx,fontWeight:700,fontSize:11,whiteSpace:'nowrap',cursor:'help'}}>{ti.lbl} {ti.realMin}min ({sign}{ti.delta} vs théo)</span>})}
 </div>);})()}
 {/* Details panel */}
 {openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
@@ -1635,22 +1653,26 @@ const availPartsForEmp=useMemo(()=>(data.parts||[]).filter(p=>p.quantity>0&&(!ta
 const submitTakePart=()=>{if(!takePartId){alert('Choisir une piece');return}const nd=JSON.parse(JSON.stringify(data));const part=(nd.parts||[]).find(p=>p.id===takePartId);if(!part){alert('Piece non trouvee');return}if(part.quantity<takePartQte){alert('Stock insuffisant (dispo: '+part.quantity+')');return}part.quantity-=takePartQte;if(!part.history)part.history=[];part.history.unshift({type:'out',quantity:takePartQte,date:fmtDateISO(new Date()),reason:takePartReason||'Prise par chauffeur',by:empId});part.history=part.history.slice(0,50);if(!nd.interventions)nd.interventions=[];const eq=takePartEquip?allEquipEmp.find(x=>x.id===takePartEquip):null;const inter={id:uid(),date:fmtDateISO(new Date()),type:'changement_piece',description:'Piece prise par '+(emp?emp.name:'chauffeur')+': '+part.name+(takePartReason?' - '+takePartReason:''),employeeId:empId,partsUsed:[{partId:part.id,partName:part.name,quantity:takePartQte,unitPrice:part.unitPrice,totalPrice:takePartQte*part.unitPrice}],laborHours:0,laborCost:0,totalCost:takePartQte*part.unitPrice,status:'done',notes:'Auto-cree depuis espace chauffeur'};if(eq){if(eq.t==='machine')inter.machineId=eq.id;else if(eq.t==='camion')inter.truckId=eq.id;else inter.carId=eq.id}nd.interventions.push(inter);save(nd);setShowTakePart(false);setTakePartId('');setTakePartQte(1);setTakePartReason('');setTakePartEquip('');setTakePartType('');alert('Piece prise du stock !')};
 const today=fmtDateISO(new Date());
 const dayEntries=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date===today);
-const lastEntry=dayEntries[dayEntries.length-1];
+// Detection d'un shift de nuit en cours (ouvert hier, qu'il faut pouvoir fermer ce matin)
+const openShift=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.startTime&&!t.endTime&&t.type!=='absence'&&t.type!=='pending').sort((a,b)=>(b.date+(b.startTime||'')).localeCompare(a.date+(a.startTime||'')))[0];
+// lastEntry = shift en cours (peut etre d'un jour anterieur si shift de nuit), sinon dernier de la journee
+const lastEntry=openShift||dayEntries[dayEntries.length-1];
 const status=!lastEntry||lastEntry.type==='done'?'off':lastEntry.type==='pause_start'?'pause':'on';
+const isNightShift=lastEntry&&lastEntry.date!==today&&lastEntry.type!=='done';
 const doTime=(type)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.timeEntries)nd.timeEntries=[];const now=new Date();const time=pad2(now.getHours())+':'+pad2(now.getMinutes());
 if(type==='start'){nd.timeEntries.push({id:uid(),empId,date:today,type:'start',startTime:time,endTime:null,pauseStart:null,pauseEnd:null,pauseMin:0,createdAt:new Date().toISOString(),breakStart:'',breakEnd:'',mealType:'PANIER',absenceType:'',nightHours:0})}
 else if(type==='pause_start'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='pause_start';e.pauseStart=time;e.breakStart=time}}
-else if(type==='resume'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='start';if(e.pauseStart){const[ph,pm]=e.pauseStart.split(':').map(Number);const[nh,nm]=time.split(':').map(Number);e.pauseMin=(e.pauseMin||0)+(nh*60+nm)-(ph*60+pm)}e.pauseEnd=time;e.breakEnd=time;e.pauseStart=null}}
-else if(type==='done'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='done';e.endTime=time;if(e.pauseStart){const[ph,pm]=e.pauseStart.split(':').map(Number);const[nh,nm]=time.split(':').map(Number);e.pauseMin=(e.pauseMin||0)+(nh*60+nm)-(ph*60+pm);e.pauseStart=null}}}
+else if(type==='resume'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='start';if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time)}e.pauseEnd=time;e.breakEnd=time;e.pauseStart=null}}
+else if(type==='done'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='done';e.endTime=time;if(lastEntry.date!==today)e.endDate=today;if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time);e.pauseStart=null}}}
 save(nd)};
-const saveManual=()=>{if(!manAbsence&&(!manStart||!manEnd))return;let calcPause=Number(manPause)||0;if(manBreakStart&&manBreakEnd){const[bsh,bsm]=(manBreakStart||'12:00').split(':').map(Number);const[beh,bem]=(manBreakEnd||'13:00').split(':').map(Number);const bp=(beh*60+bem)-(bsh*60+bsm);if(bp>0)calcPause=bp}if(manStart&&manEnd){const[sh,sm]=manStart.split(':').map(Number);const[eh,em]=manEnd.split(':').map(Number);const startMin=sh*60+sm;const endMin=eh*60+em;if(startMin>=endMin){alert('Embauche doit etre avant debauche');return}const totalMin=endMin-startMin;if(calcPause>=totalMin){alert('Pause trop longue');return}}const nd=JSON.parse(JSON.stringify(data));if(!nd.timeEntries)nd.timeEntries=[];const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===manDate);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:manDate,type:manAbsence?'absence':'done',startTime:manStart||'',endTime:manEnd||'',pauseStart:null,pauseEnd:null,pauseMin:calcPause,createdAt:new Date().toISOString(),breakStart:manBreakStart,breakEnd:manBreakEnd,mealType:manMeal,absenceType:manAbsence,nightHours:Number(manNight)||0,requestedEndTime:manRequestEnd||''};if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);save(nd);setShowManual(false);setManStart('');setManEnd('');setManPause(0);setManBreakStart('12:00');setManBreakEnd('13:00');setManMeal('PANIER');setManAbsence('');setManNight(0);setManRequestEnd('')};
+const saveManual=()=>{if(!manAbsence&&(!manStart||!manEnd))return;let calcPause=Number(manPause)||0;if(manBreakStart&&manBreakEnd){const bp=calcDiffMin(manBreakStart,manBreakEnd);if(bp>0)calcPause=bp}let crossesMidnight=false;if(manStart&&manEnd){const totalMin=calcDiffMin(manStart,manEnd);const[sh,sm]=manStart.split(':').map(Number);const[eh,em]=manEnd.split(':').map(Number);crossesMidnight=(eh*60+em)<(sh*60+sm);if(totalMin===0){alert('Embauche et debauche identiques');return}if(calcPause>=totalMin){alert('Pause trop longue');return}}const nd=JSON.parse(JSON.stringify(data));if(!nd.timeEntries)nd.timeEntries=[];const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===manDate&&!t.endTime);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:manDate,type:manAbsence?'absence':'done',startTime:manStart||'',endTime:manEnd||'',pauseStart:null,pauseEnd:null,pauseMin:calcPause,createdAt:new Date().toISOString(),breakStart:manBreakStart,breakEnd:manBreakEnd,mealType:manMeal,absenceType:manAbsence,nightHours:Number(manNight)||0,requestedEndTime:manRequestEnd||''};if(crossesMidnight){const nextDay=new Date(manDate);nextDay.setDate(nextDay.getDate()+1);entry.endDate=fmtDateISO(nextDay)}if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);save(nd);setShowManual(false);setManStart('');setManEnd('');setManPause(0);setManBreakStart('12:00');setManBreakEnd('13:00');setManMeal('PANIER');setManAbsence('');setManNight(0);setManRequestEnd('')};
 const hist30=useMemo(()=>{const now=new Date();const d30=new Date(now);d30.setDate(d30.getDate()-30);const start30=fmtDateISO(d30);const end30=fmtDateISO(now);return(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=start30&&t.date<=end30).sort((a,b)=>b.date.localeCompare(a.date))},[data.timeEntries,empId]);
 const range=useMemo(()=>{const now=new Date();if(view==='Jour'){const d=new Date(now);d.setDate(d.getDate()+offset);return{start:fmtDateISO(d),end:fmtDateISO(d),label:fmtDate(d)}}const d=new Date(now);d.setDate(d.getDate()+offset*7);const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);const mon=new Date(d);mon.setDate(diff);const sun=new Date(mon);sun.setDate(mon.getDate()+6);return{start:fmtDateISO(mon),end:fmtDateISO(sun),label:fmtDate(mon)+' - '+fmtDate(sun)}},[view,offset]);
 const periodTE=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=range.start&&t.date<=range.end);
 const periodJobs=(data.jobs||[]).filter(j=>j.employeeId===empId&&j.date>=range.start&&j.date<=range.end);
-let totalWork=0,totalPause=0;periodTE.forEach(t=>{if(t.startTime&&t.endTime){const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);totalWork+=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);totalPause+=(t.pauseMin||0)}});
-const weeklyTotal=useMemo(()=>{const now=new Date();const day=now.getDay();const diff=now.getDate()-day+(day===0?-6:1);const mon=new Date(now);mon.setDate(diff);const sun=new Date(mon);sun.setDate(mon.getDate()+6);const ws=fmtDateISO(mon);const we=fmtDateISO(sun);let wt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ws&&t.date<=we).forEach(t=>{if(t.startTime&&t.endTime){const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);wt+=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0)}});return wt},[data.timeEntries,empId]);
-const monthlyTotal=useMemo(()=>{const now=new Date();const ms=now.getFullYear()+'-'+pad2(now.getMonth()+1)+'-01';const last=new Date(now.getFullYear(),now.getMonth()+1,0);const me=fmtDateISO(last);let mt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ms&&t.date<=me).forEach(t=>{if(t.startTime&&t.endTime){const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);mt+=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0)}});return mt},[data.timeEntries,empId]);
+let totalWork=0,totalPause=0;periodTE.forEach(t=>{if(t.startTime&&t.endTime){totalWork+=calcWorkedMin(t);totalPause+=(t.pauseMin||0)}});
+const weeklyTotal=useMemo(()=>{const now=new Date();const day=now.getDay();const diff=now.getDate()-day+(day===0?-6:1);const mon=new Date(now);mon.setDate(diff);const sun=new Date(mon);sun.setDate(mon.getDate()+6);const ws=fmtDateISO(mon);const we=fmtDateISO(sun);let wt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ws&&t.date<=we).forEach(t=>{wt+=calcWorkedMin(t)});return wt},[data.timeEntries,empId]);
+const monthlyTotal=useMemo(()=>{const now=new Date();const ms=now.getFullYear()+'-'+pad2(now.getMonth()+1)+'-01';const last=new Date(now.getFullYear(),now.getMonth()+1,0);const me=fmtDateISO(last);let mt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ms&&t.date<=me).forEach(t=>{mt+=calcWorkedMin(t)});return mt},[data.timeEntries,empId]);
 const dates=[...new Set([...periodTE.map(t=>t.date),...periodJobs.map(j=>j.date)])].sort().reverse();
 const saveEdit=()=>{if(!editTE)return;const nd=JSON.parse(JSON.stringify(data));const idx=nd.timeEntries.findIndex(t=>t.id===editTE.id);if(idx>=0)nd.timeEntries[idx]=editTE;save(nd);setEditTE(null)};
 const delTE=(tid)=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(data));nd.timeEntries=nd.timeEntries.filter(t=>t.id!==tid);save(nd)};
@@ -1822,15 +1844,15 @@ return(
 <button onClick={()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}} style={{...btnStyle(C.accent),fontSize:14}}>Saisir mes heures</button>
 <button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{...btnStyle(C.orange),fontSize:14}}>RDV / Absence</button>
 </div>
-{dayEntries.map(t=>(
+{isNightShift&&<div style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:8,padding:'8px 12px',marginBottom:8,fontSize:13,color:'#92400e',fontWeight:600}}>🌙 Shift de nuit en cours depuis {fmtDate(new Date(lastEntry.date))} — pensez a cliquer "Fin de journee" pour le terminer</div>}
+{(isNightShift?[lastEntry,...dayEntries]:dayEntries).map(t=>{const wm=calcWorkedMin(t);const crossedMidnight=t.endDate&&t.endDate!==t.date;return(
 <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
-<span style={{fontWeight:700,fontSize:16}}>{t.startTime||'--:--'} — {t.endTime||'...'}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}</span>
+<span style={{fontWeight:700,fontSize:16}}>{t.date!==today&&<span style={{fontSize:12,color:C.dim,fontWeight:400,marginRight:4}}>{fmtDate(new Date(t.date))} </span>}{t.startTime||'--:--'} — {t.endTime||'...'}{crossedMidnight&&<span style={{fontSize:11,color:C.purple,marginLeft:4}}>(lendemain)</span>}{t.pauseMin>0&&<span style={{marginLeft:6,fontSize:12,fontWeight:400,color:C.orange}}>pause {t.pauseMin}min</span>}{wm>0&&<span style={{marginLeft:6,fontSize:13,fontWeight:600,color:C.accent}}>{fmtDuration(wm)}</span>}</span>
 <div style={{display:'flex',gap:4}}>
 <button onClick={()=>setEditTE({...t})} style={{background:C.accent+'15',border:'1px solid '+C.accent,color:C.accent,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>✎ Modifier</button>
 <button onClick={()=>delTE(t.id)} style={{background:C.red+'15',border:'1px solid '+C.red,color:C.red,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>🗑 Suppr</button>
 </div>
-</div>
-))}
+</div>)})}
 </div>
 <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap'}}>
 {['Jour','Semaine'].map(v=><button key={v} onClick={()=>{setView(v);setOffset(0)}} style={{...btnStyle(C.accent,view===v),fontSize:14}}>{v}</button>)}
@@ -1843,9 +1865,9 @@ return(
 {dates.filter(d=>periodTE.some(t=>t.date===d)).map(date=>{const tes=periodTE.filter(t=>t.date===date);return(
 <div key={date} style={{background:C.card,borderRadius:10,padding:12,marginBottom:10,border:'1px solid '+C.border}}>
 <div style={{fontWeight:700,fontSize:16,marginBottom:6,color:C.accent}}>{fmtDate(new Date(date))}</div>
-{tes.map(t=>{let wm=0;if(t.startTime&&t.endTime){const[sh3,sm3]=t.startTime.split(':').map(Number);const[eh3,em3]=t.endTime.split(':').map(Number);wm=(eh3*60+em3)-(sh3*60+sm3)-(t.pauseMin||0)}return(
+{tes.map(t=>{const wm=calcWorkedMin(t);const crossed=t.endDate&&t.endDate!==t.date;return(
 <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:14,marginBottom:4,padding:'4px 0',borderBottom:'1px solid #f1f5f9'}}>
-<div><span style={{fontWeight:700,fontSize:16}}>{t.startTime} - {t.endTime||'...'}</span>{t.pauseMin>0&&<span style={{marginLeft:6}}><Bg text={'pause '+t.pauseMin+'min'} color={C.orange}/></span>}{wm>0&&<span style={{marginLeft:6,fontWeight:600,color:C.accent}}>{fmtDuration(wm)}</span>}</div>
+<div><span style={{fontWeight:700,fontSize:16}}>{t.startTime} - {t.endTime||'...'}</span>{crossed&&<span style={{fontSize:11,color:C.purple,marginLeft:4}}>(lendemain)</span>}{t.pauseMin>0&&<span style={{marginLeft:6}}><Bg text={'pause '+t.pauseMin+'min'} color={C.orange}/></span>}{wm>0&&<span style={{marginLeft:6,fontWeight:600,color:C.accent}}>{fmtDuration(wm)}</span>}</div>
 <div style={{display:'flex',gap:4}}>
 <button onClick={()=>setEditTE({...t})} style={{background:C.accent+'15',border:'1px solid '+C.accent,color:C.accent,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>✎ Modifier</button>
 <button onClick={()=>delTE(t.id)} style={{background:C.red+'15',border:'1px solid '+C.red,color:C.red,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>🗑 Suppr</button>
@@ -1855,11 +1877,11 @@ return(
 <div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginTop:16}}>
 <h3 style={{margin:'0 0 12px',fontSize:18}}>Historique 30 jours</h3>
 {hist30.length===0&&<div style={{fontSize:14,color:C.dim}}>Aucun pointage</div>}
-{hist30.map(t=>{let wm2=0;if(t.startTime&&t.endTime){const[sh4,sm4]=t.startTime.split(':').map(Number);const[eh4,em4]=t.endTime.split(':').map(Number);wm2=(eh4*60+em4)-(sh4*60+sm4)-(t.pauseMin||0)}return(
+{hist30.map(t=>{const wm2=calcWorkedMin(t);const crossed2=t.endDate&&t.endDate!==t.date;return(
 <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:14,borderBottom:'1px solid #f1f5f9'}}>
 <div><span style={{fontWeight:600,fontSize:14}}>{fmtDate(new Date(t.date))}</span></div>
 <div style={{display:'flex',gap:8,alignItems:'center'}}>
-<span style={{fontWeight:700,fontSize:16}}>{t.startTime||'--'} - {t.endTime||'--'}</span>
+<span style={{fontWeight:700,fontSize:16}}>{t.startTime||'--'} - {t.endTime||'--'}{crossed2&&<span style={{fontSize:11,color:C.purple,marginLeft:4}}>(lendemain)</span>}</span>
 {t.pauseMin>0&&<Bg text={t.pauseMin+'min pause'} color={C.orange}/>}
 {wm2>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(wm2)}</span>}
 <button onClick={()=>setEditTE({...t})} style={{background:C.accent+'15',border:'1px solid '+C.accent,color:C.accent,borderRadius:6,padding:'3px 10px',cursor:'pointer',fontSize:13,fontWeight:700}}>✎ Modifier</button>
@@ -2166,7 +2188,7 @@ return(
 // ======== HEURES PAGE ========
 const getISOWeek=(d)=>{const dt=new Date(d);dt.setHours(0,0,0,0);dt.setDate(dt.getDate()+3-(dt.getDay()+6)%7);const w1=new Date(dt.getFullYear(),0,4);return 1+Math.round(((dt-w1)/86400000-3+(w1.getDay()+6)%7)/7)};
 const frDay=(d)=>{const dt=new Date(d);const jours=['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];const mois=['janv.','fevr.','mars','avr.','mai','juin','juil.','aout','sept.','oct.','nov.','dec.'];return jours[dt.getDay()]+' '+dt.getDate()+' '+mois[dt.getMonth()]};
-const toDecHours=(startTime,endTime,pauseMin)=>{if(!startTime||!endTime)return 0;const[sh,sm]=(startTime||'0:0').split(':').map(Number);const[eh,em]=(endTime||'0:0').split(':').map(Number);const mins=(eh*60+em)-(sh*60+sm)-(pauseMin||0);return Math.round(Math.max(0,mins/60)*100)/100};
+const toDecHours=(startTime,endTime,pauseMin)=>{if(!startTime||!endTime)return 0;const[sh,sm]=(startTime||'0:0').split(':').map(Number);const[eh,em]=(endTime||'0:0').split(':').map(Number);let mins=(eh*60+em)-(sh*60+sm);if(mins<0)mins+=24*60;mins-=(pauseMin||0);return Math.round(Math.max(0,mins/60)*100)/100};
 const calcSupp=(totalSemaine,seuil25,seuil50)=>{const h25=Math.max(0,Math.min(totalSemaine,seuil50)-seuil25);const h50=Math.max(0,totalSemaine-seuil50);return{h25,h50}};
 const fmtDec=(n)=>n.toFixed(2).replace('.',',');
 const HeuresPage=({data,save})=>{
