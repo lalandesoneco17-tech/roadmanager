@@ -882,15 +882,21 @@ const mIdx=grp.missions.findIndex(mc=>mc.j.id===j.id);
 const isFirst=mIdx===0;const isLast=mIdx===grp.missions.length-1;
 const site=(mr.sites||[])[mIdx];
 // Heures théoriques (calculées à partir du GPS chantier + dépôt sélectionné + heure début chantier)
+// Inclut les temps préparation matin (tpDepart) et mise en sécurité soir (tpArrivee) configurés dans les réglages.
 const toMinT=t=>{if(!t)return null;const[h,m2]=t.split(':').map(Number);return h*60+m2};
 const minToHHMMt=mn=>{const mm=((mn%1440)+1440)%1440;return String(Math.floor(mm/60)).padStart(2,'0')+':'+String(mm%60).padStart(2,'0')};
+const tpDepT=(data.tempsPlusDepart!=null?data.tempsPlusDepart:TEMPS_PLUS_DEPART);
+const tpArrT=(data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE);
 const billStartMinT=toMinT(j.billingStart);
 const travelAllerT=Number(j.travelMinAller)||0;
 const travelRetourT=Number(j.travelMinRetour)||0;
-const theoDep=billStartMinT!=null&&travelAllerT>0?billStartMinT-travelAllerT:null;
+// Dép. dépôt théo = heure début chantier - trajet aller - temps préparation matin
+const theoDep=billStartMinT!=null&&travelAllerT>0?billStartMinT-travelAllerT-tpDepT:null;
+// Arr. chantier théo = heure début chantier (ce que l'utilisateur a saisi)
 const theoArrCh=billStartMinT;
+// Arr. dépôt théo = fin de chantier RÉELLE + trajet retour + temps mise en sécurité
 const workEndMinT=site&&site.workEnd?toMinT(site.workEnd):null;
-const theoArrDep=workEndMinT!=null&&travelRetourT>0?workEndMinT+travelRetourT:null;
+const theoArrDep=workEndMinT!=null&&travelRetourT>0?workEndMinT+travelRetourT+tpArrT:null;
 const evts=[];
 if(isFirst&&mr.depotDepart)evts.push({icon:'🚛',lbl:'Dép. dépôt',t:mr.depotDepart,theo:theoDep!=null?minToHHMMt(theoDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
 if(site&&site.siteArrival)evts.push({icon:'📍',lbl:'Arr. chantier',t:site.siteArrival,theo:theoArrCh!=null?minToHHMMt(theoArrCh):null,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
