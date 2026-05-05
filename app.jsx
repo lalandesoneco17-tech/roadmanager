@@ -2732,8 +2732,14 @@ fkeys.forEach(k=>{const v=forfaits[k];const items=[];Object.entries(v||{}).forEa
 ctx+=`\n=== PLANNING (chantiers, du ${past30[0]} au ${future30[future30.length-1]}) ===\n`;
 const fmtJobLine=(j)=>{
 const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
-const theo=calcTheoreticalTimes(j,data,0);
-const hStr=theo?` ${theo.theoStart}-${theo.theoEnd}`:(j.billingStart?' fact:'+j.billingStart:'');
+// Recupere la pause reelle depuis le pointage correspondant (meme employe + meme date)
+// Si le pointage n'existe pas (chantier futur), fallback : 60min pour forfait >= 6h, sinon 0.
+const te=allTE.find(t=>t.empId===j.employeeId&&t.date===j.date&&t.startTime);
+const fh=forfaitHours(j.forfaitType);
+const pauseM=te?(te.pauseMin||0):(fh>=6?60:0);
+const theo=calcTheoreticalTimes(j,data,pauseM);
+const pauseInfo=te&&te.pauseMin?` (pause reelle ${te.pauseMin}min)`:(!te&&fh>=6?' (pause estimee 60min)':'');
+const hStr=theo?` ${theo.theoStart}-${theo.theoEnd}${pauseInfo}`:(j.billingStart?' fact:'+j.billingStart:'');
 return `[${j.id}] ${empName(j.employeeId)} | ${machName(j.machineId)} | ${cliName(j.clientId)} | ${j.forfaitType||'?'} | ${ca.toFixed(0)}€${j.isNight?' nuit':''}${hStr}`;
 };
 horizon60.forEach(d=>{
@@ -2944,7 +2950,8 @@ Avant de signaler une anomalie, COMPRENDS bien ces concepts metier :
    Les heures pointees (startTime/endTime moins pause) incluent : trajet aller, preparation, mise en place, le forfait lui-meme, repli, trajet retour, marges (tempsPlusDepart 25min + tempsPlusArrivee 30min par defaut). C'est normal et attendu que les heures pointees > duree forfait. Ne JAMAIS calculer "heures pointees - duree forfait = heures non facturees", c'est une comparaison qui n'a aucun sens metier.
 
 3. EMBAUCHE/DEBAUCHE THEORIQUES = BASE DE COMPARAISON CORRECTE
-   Pour chaque chantier, le planning te donne "embauche theo" et "debauche theo" (ex: "06:48-12:21"). Ces heures INCLUENT DEJA toutes les marges (trajet + tempsPlusDepart + forfait + pause + trajet retour + tempsPlusArrivee). C'est CES heures qu'il faut comparer au pointage reel pour detecter une anomalie.
+   Pour chaque chantier, le planning te donne "embauche theo" et "debauche theo" (ex: "06:48-14:16"). Ces heures INCLUENT DEJA toutes les marges (trajet + tempsPlusDepart + forfait + pause + trajet retour + tempsPlusArrivee). C'est CES heures qu'il faut comparer au pointage reel pour detecter une anomalie.
+   IMPORTANT : la debauche theorique est calculee avec la PAUSE REELLE prise par le salarie (lue depuis son pointage du jour). Pour les chantiers futurs sans pointage, une pause estimee de 60min est utilisee pour les forfaits >= 6h, sinon 0min — ce sera indique entre parentheses (ex: "06:48-14:16 (pause estimee 60min)"). Quand tu compares pointage vs theorique, ces heures sont DEJA ajustees a la pause reelle.
 
 4. COMMENT REPERER UNE VRAIE ANOMALIE :
    - Pointage embauche vs embauche theo : ecart > tolerance (def 5min) = retard ou avance suspecte.
