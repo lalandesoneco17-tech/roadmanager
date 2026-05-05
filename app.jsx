@@ -389,37 +389,37 @@ const hopInterpInZone=h=>{
   else return false;
   return hopPos.some(hp=>haversine([ipLat,ipLon],[hp.lat,hp.lon])<=ZONE_KM);
 };
-let workStart;
+// On track les valeurs en minutes absolues (peuvent dépasser 1440 pour chantier de nuit)
+let workStart,workStartAbsMin;
 if(siteArrival){
-  const siteArrMin=toMin(siteArrival);
+  const siteArrMin=pts[firstInZoneIdx].min;
   const hopAfterArr=inZoneHops.find(h=>h.min>=siteArrMin);
-  // Cherche aussi un hop juste avant siteArrival (tolérance 10 min)
-  // SI : OpTime confirme + position interpolée à l'instant du hop est dans la zone (= machine quasi arrivée)
-  // Évite d'utiliser un "On" pendant transit lointain (porte-char) à tort.
   const hopJustBefore=inZoneHops.slice().reverse().find(h=>
     h.min<siteArrMin&&
     siteArrMin-h.min<=10&&
     hopHasOpTime(h)===true&&
     hopInterpInZone(h)
   );
-  if(hopJustBefore)workStart=hopJustBefore.hhmm;
-  else if(hopAfterArr&&hopAfterArr.min-siteArrMin<=240)workStart=hopAfterArr.hhmm;
-  else workStart=minToHHMM(siteArrMin+5);
+  if(hopJustBefore){workStart=hopJustBefore.hhmm;workStartAbsMin=hopJustBefore.min}
+  else if(hopAfterArr&&hopAfterArr.min-siteArrMin<=240){workStart=hopAfterArr.hhmm;workStartAbsMin=hopAfterArr.min}
+  else{workStartAbsMin=siteArrMin+5;workStart=minToHHMM(workStartAbsMin)}
 }else{
-  workStart=inZoneHops.length?inZoneHops[0].hhmm:pts[firstInZoneIdx].hhmm;
+  if(inZoneHops.length){workStart=inZoneHops[0].hhmm;workStartAbsMin=inZoneHops[0].min}
+  else{workStart=pts[firstInZoneIdx].hhmm;workStartAbsMin=pts[firstInZoneIdx].min}
 }
 // 5. workEnd = dernier pt GPS dans la zone, raffiné par OpTime si disponible
-let workEnd=pts[lastInZoneIdx].hhmm;
+let workEndAbsMin=pts[lastInZoneIdx].min;
 if(opTimeBuckets&&opTimeBuckets.length){
-  // Dernière tranche avec fraisage significatif → estime fin = startMin + opH*60 minutes
   const sigBuckets=opTimeBuckets.filter(b=>b.opH>=MIN_OP_H);
   if(sigBuckets.length){
     const lastSig=sigBuckets[sigBuckets.length-1];
     const millingEndEst=lastSig.startMin+Math.round(lastSig.opH*60);
-    if(millingEndEst<toMin(workEnd))workEnd=minToHHMM(millingEndEst);
+    if(millingEndEst<workEndAbsMin)workEndAbsMin=millingEndEst;
   }
 }
-if(toMin(workEnd)<toMin(workStart))workEnd=workStart;
+const workEndPt=pts.find(p=>p.min===workEndAbsMin);
+let workEnd=workEndPt?workEndPt.hhmm:minToHHMM(workEndAbsMin);
+if(workEndAbsMin<workStartAbsMin)workEnd=workStart;
 return{depotDepart,depotArrival,sites:[{siteArrival,workStart,workEnd,siteDeparture}]};
 };
 // Re-applique la détection sur un rapport stocké si données brutes présentes (migre les anciens formats)
@@ -457,13 +457,40 @@ for(const[,entry]of Object.entries(zip.files)){if(entry.dir)continue;const n=ent
 if(!locText)return null;
 const locRows=parseCSV(locText);if(!locRows.length)return null;
 const machineName=locRows[0].Nickname||'';const serial=locRows[0]['Machine Serial Number']||'';
-// Filtrer UNIQUEMENT les points du jour cible (le ZIP peut couvrir plusieurs jours)
-const allPts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}});
-const pts=(targetDate?allPts.filter(p=>p.iso===targetDate):allPts).sort((a,b)=>a.min-b.min);
+const allPts=locRows.map(r=>{const dt=parseWT(r.Date,r.Time);return{...dt,lat:parseFloat(r.Latitude),lon:parseFloat(r.Longitude)}}).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:a.min-b.min);
+const allHops=hopText?parseCSV(hopText).filter(r=>r.Status==='On').map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:a.min-b.min):[];
+let pts,hopEvts;
+if(targetDate){
+  pts=allPts.filter(p=>p.iso===targetDate);
+  hopEvts=allHops.filter(h=>h.iso===targetDate);
+  // EXTENSION CHANTIER DE NUIT : si le dernier pt du jour est loin du 1er pt (machine n'est pas rentrée),
+  // on inclut les pts du JOUR SUIVANT jusqu'à ce que la machine revienne au dépôt (vicinité du 1er pt).
+  if(pts.length){
+    const firstPt=pts[0],lastPt=pts[pts.length-1];
+    if(haversine([lastPt.lat,lastPt.lon],[firstPt.lat,firstPt.lon])>1.0){
+      // Calcule jour suivant en ISO
+      const d=new Date(targetDate+'T00:00:00');d.setDate(d.getDate()+1);
+      const nextDay=d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
+      const nextDayPts=allPts.filter(p=>p.iso===nextDay);
+      // Inclure jusqu'à 2 pts consécutifs dans la vicinité du dépôt (= retour effectif)
+      let cutoffIdx=0,consecAtDepot=0;
+      for(let i=0;i<nextDayPts.length;i++){
+        const dist=haversine([nextDayPts[i].lat,nextDayPts[i].lon],[firstPt.lat,firstPt.lon]);
+        if(dist<=1.0){consecAtDepot++;if(consecAtDepot>=2){cutoffIdx=i+1;break}}
+        else consecAtDepot=0;
+      }
+      if(cutoffIdx>0){
+        // Décale les min de +24h pour que les heures soient continues (pas de wrap à minuit)
+        const ext=nextDayPts.slice(0,cutoffIdx).map(p=>({...p,min:p.min+1440}));
+        pts=[...pts,...ext];
+        const maxMin=pts[pts.length-1].min;
+        const extHops=allHops.filter(h=>h.iso===nextDay).map(h=>({...h,min:h.min+1440})).filter(h=>h.min<=maxMin);
+        hopEvts=[...hopEvts,...extHops];
+      }
+    }
+  }
+}else{pts=allPts;hopEvts=allHops}
 if(!pts.length)return null;
-// HoursOfOperation → filtrer sur le jour cible, "On" = vrai début fraisage
-let hopEvts=[];
-if(hopText){const hr=parseCSV(hopText);hopEvts=hr.filter(r=>r.Status==='On'&&(!targetDate||parseWT(r.Date,r.Time).iso===targetDate)).map(r=>parseWT(r.Date,r.Time)).sort((a,b)=>a.min-b.min)}
 let fuelL=0,waterMin=999,opH=0;
 let opTimeBuckets=[]; // [{startMin, endMin, opH, powerPct?, fuelL?, speedKmh?, fuelRateLh?, pressureBar?}] tranches horaires LOCAL
 const powerByHour={};const fuelByHour={};const speedByHour={};const fuelRateByHour={};const pressureByHour={};
