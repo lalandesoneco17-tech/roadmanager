@@ -2730,17 +2730,43 @@ fkeys.forEach(k=>{const v=forfaits[k];const items=[];Object.entries(v||{}).forEa
 
 // === PLANNING -30 / +30 jours (compact) ===
 ctx+=`\n=== PLANNING (chantiers, du ${past30[0]} au ${future30[future30.length-1]}) ===\n`;
+// Helper: retrouve le rapport machine GPS pour un job (par nom de machine + date)
+const machineReports=data.machineReports||[];
+const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');
+const findMachineReport=(j)=>{
+const mach=machines.find(m=>m.id===j.machineId);if(!mach)return null;
+return machineReports.find(r=>mNorm(r.machineName)===mNorm(mach.name)&&r.date===j.date)||null;
+};
 const fmtJobLine=(j)=>{
 const ca=(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0);
-// Recupere la pause reelle depuis le pointage correspondant (meme employe + meme date)
-// Si le pointage n'existe pas (chantier futur), fallback : 60min pour forfait >= 6h, sinon 0.
 const te=allTE.find(t=>t.empId===j.employeeId&&t.date===j.date&&t.startTime);
 const fh=forfaitHours(j.forfaitType);
 const pauseM=te?(te.pauseMin||0):(fh>=6?60:0);
 const theo=calcTheoreticalTimes(j,data,pauseM);
-const pauseInfo=te&&te.pauseMin?` (pause reelle ${te.pauseMin}min)`:(!te&&fh>=6?' (pause estimee 60min)':'');
-const hStr=theo?` ${theo.theoStart}-${theo.theoEnd}${pauseInfo}`:(j.billingStart?' fact:'+j.billingStart:'');
-return `[${j.id}] ${empName(j.employeeId)} | ${machName(j.machineId)} | ${cliName(j.clientId)} | ${j.forfaitType||'?'} | ${ca.toFixed(0)}€${j.isNight?' nuit':''}${hStr}`;
+const pauseInfo=te&&te.pauseMin?` (pause ${te.pauseMin}min${te.breakStart&&te.breakEnd?' '+te.breakStart+'-'+te.breakEnd:''})`:(!te&&fh>=6?' (pause estimee 60min)':'');
+const hStr=theo?` theo:${theo.theoStart}-${theo.theoEnd}${pauseInfo}`:(j.billingStart?' fact:'+j.billingStart:'');
+let timeline='';
+// Pour les jobs passes : ajoute la timeline GPS detaillee si disponible
+if(j.date<=todayISO){
+const mr=findMachineReport(j);
+if(mr){
+const evts=[];
+if(mr.depotDepart)evts.push('dep_dep '+mr.depotDepart);
+const site=(mr.sites&&mr.sites[0])||{};
+if(site.siteArrival)evts.push('arr_chantier '+site.siteArrival);
+if(site.workStart)evts.push('debut_fraisage '+site.workStart);
+if(site.workEnd)evts.push('fin_fraisage '+site.workEnd);
+if(site.siteDeparture)evts.push('dep_chantier '+site.siteDeparture);
+if(mr.depotArrival)evts.push('arr_depot '+mr.depotArrival);
+if(evts.length>0)timeline=' | TIMELINE: '+evts.join(' → ');
+}
+// Ajout du pointage du salarie (embauche/debauche reelles)
+if(te&&te.startTime){
+const realInfo=` reel:${te.startTime}-${te.endTime||'??'}`;
+timeline=realInfo+timeline;
+}
+}
+return `[${j.id}] ${empName(j.employeeId)} | ${machName(j.machineId)} | ${cliName(j.clientId)} | ${j.forfaitType||'?'} | ${ca.toFixed(0)}€${j.isNight?' nuit':''}${hStr}${timeline}`;
 };
 horizon60.forEach(d=>{
 const djs=allJobs.filter(j=>j.date===d&&j.type!=='depot');
@@ -2953,14 +2979,25 @@ Avant de signaler une anomalie, COMPRENDS bien ces concepts metier :
    Pour chaque chantier, le planning te donne "embauche theo" et "debauche theo" (ex: "06:48-14:16"). Ces heures INCLUENT DEJA toutes les marges (trajet + tempsPlusDepart + forfait + pause + trajet retour + tempsPlusArrivee). C'est CES heures qu'il faut comparer au pointage reel pour detecter une anomalie.
    IMPORTANT : la debauche theorique est calculee avec la PAUSE REELLE prise par le salarie (lue depuis son pointage du jour). Pour les chantiers futurs sans pointage, une pause estimee de 60min est utilisee pour les forfaits >= 6h, sinon 0min — ce sera indique entre parentheses (ex: "06:48-14:16 (pause estimee 60min)"). Quand tu compares pointage vs theorique, ces heures sont DEJA ajustees a la pause reelle.
 
-4. COMMENT REPERER UNE VRAIE ANOMALIE :
-   - Pointage embauche vs embauche theo : ecart > tolerance (def 5min) = retard ou avance suspecte.
-   - Pointage debauche vs debauche theo : ecart > tolerance = depassement (heures supp non prevues, oubli de pointer la fin, ou autre chantier non planifie).
-   - Si pointage > theorique de plus de 30min, c'est probablement un autre chantier non planifie OU un oubli de pointer la fin.
-   - Pointage absent alors qu'il y a un chantier = absence sans justificatif.
+4. TIMELINE GPS DETAILLEE — UTILISE-LA QUAND DISPONIBLE
+   Pour les jobs passes, si tu vois un champ "TIMELINE" sur la ligne du job, il contient les jalons GPS reels :
+   - dep_dep = depart du depot (heure)
+   - arr_chantier = arrivee sur le chantier
+   - debut_fraisage = mise en route de la machine
+   - fin_fraisage = arret de la machine (chantier termine)
+   - dep_chantier = depart du chantier
+   - arr_depot = retour au depot
+   Et "reel:HH:MM-HH:MM" = embauche-debauche pointees par le salarie.
+   La VRAIE analyse compare ces jalons. Exemple : si "arr_depot 11:17" mais "reel:...-15:27", il y a 4h10 entre retour depot et debauche pointee — dont la pause justifie 1h55, le reste (~2h15) est du temps non explique au depot (entretien? attente? autre tache?).
 
-5. EXEMPLE CORRECT : "Franck pointe 06:35-15:27 vs theorique 06:48-12:21 (chantier arev 4h). Embauche OK (avance 13min). Debauche tardive de 3h06 — soit oubli de pointer, soit autre chantier non planifie."
-   EXEMPLE FAUX (a ne pas faire) : "Forfait 4h mais 7h pointees, donc 3h non facturees" — c'est faux, les heures pointees incluent trajet et marges.
+5. COMMENT REPERER UNE VRAIE ANOMALIE :
+   - Compare reel vs theo (debauche surtout) en utilisant la timeline GPS si dispo.
+   - Si arr_depot tres en avance vs debauche reelle = temps mort au depot a expliquer.
+   - Si reel embauche differe de theo > tolerance = retard/avance suspecte.
+   - Si pointage absent alors qu'il y a un chantier = absence non justifiee.
+
+6. EXEMPLE CORRECT : "Franck a fini son chantier arev tot (retour depot 11:17 vs prevu 14:16) mais a clocke out a 15:27, soit ~2h15 au depot apres pause — entretien machine ou autre activite ?"
+   EXEMPLE FAUX : "Forfait 4h mais 7h pointees, donc 3h non facturees" — comparaison qui n'a aucun sens metier.
 
 === TON & STYLE — TRES IMPORTANT ===
 Tu parles a un patron de PME qui veut une reponse de COLLEGUE, pas un rapport de consultant.
