@@ -2571,8 +2571,36 @@ const[open,setOpen]=useState(false);
 const[msgs,setMsgs]=useState([]);
 const[input,setInput]=useState('');
 const[loading,setLoading]=useState(false);
+const[listening,setListening]=useState(false);
 const bottomRef=useRef(null);
+const recRef=useRef(null);
 useEffect(()=>{if(bottomRef.current)bottomRef.current.scrollIntoView({behavior:'smooth'})},[msgs,loading]);
+const speechSupported=typeof window!=='undefined'&&(window.SpeechRecognition||window.webkitSpeechRecognition);
+const toggleMic=()=>{
+if(listening){if(recRef.current){try{recRef.current.stop()}catch(e){}}setListening(false);return}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){alert('Reconnaissance vocale non supportee. Utilise Chrome ou Edge.');return}
+try{
+const rec=new SR();
+rec.lang='fr-FR';
+rec.continuous=false;
+rec.interimResults=true;
+let finalText='';
+rec.onresult=(e)=>{
+let interim='';
+for(let i=e.resultIndex;i<e.results.length;i++){
+const t=e.results[i][0].transcript;
+if(e.results[i].isFinal)finalText+=t;else interim+=t;
+}
+setInput((finalText+interim).trim());
+};
+rec.onend=()=>{setListening(false);recRef.current=null};
+rec.onerror=(e)=>{setListening(false);recRef.current=null;if(e.error==='not-allowed')alert('Microphone refuse. Autorise l\'acces au micro dans le navigateur.');else if(e.error!=='aborted'&&e.error!=='no-speech')console.warn('Erreur micro:',e.error)};
+rec.start();
+recRef.current=rec;
+setListening(true);
+}catch(e){alert('Erreur micro: '+e.message);setListening(false)}
+};
 const todayISO=fmtDateISO(new Date());
 const buildCtx=()=>{
 const employees=data.employees||[];
@@ -3041,8 +3069,11 @@ return(
 {loading&&<div style={{display:'flex',justifyContent:'flex-start'}}><div style={{background:'#f1f5f9',borderRadius:10,padding:'7px 14px',fontSize:20,color:C.muted}}>...</div></div>}
 <div ref={bottomRef}/>
 </div>
-<div style={{padding:'8px',borderTop:'1px solid '+C.border,display:'flex',gap:6,flexShrink:0}}>
-<input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} placeholder="Votre question..." style={{flex:1,padding:'7px 10px',borderRadius:8,border:'1px solid '+C.border,fontSize:12,outline:'none'}}/>
+<div style={{padding:'8px',borderTop:'1px solid '+C.border,display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
+<input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} placeholder={listening?'🎤 Parle...':'Votre question...'} style={{flex:1,padding:'7px 10px',borderRadius:8,border:'1px solid '+(listening?'#ef4444':C.border),fontSize:12,outline:'none',background:listening?'#fef2f2':'#fff'}}/>
+{speechSupported&&(
+<button onClick={toggleMic} title={listening?'Stop':'Dicter'} style={{background:listening?'#ef4444':'#f1f5f9',color:listening?'#fff':C.text,border:'1px solid '+(listening?'#ef4444':C.border),borderRadius:8,padding:'7px 10px',cursor:'pointer',fontSize:14,transition:'all .2s'}}>{listening?'⏹':'🎤'}</button>
+)}
 <button onClick={send} disabled={loading||!input.trim()} style={{background:C.accent,color:'#fff',border:'none',borderRadius:8,padding:'7px 12px',cursor:'pointer',fontWeight:700,fontSize:14,opacity:loading||!input.trim()?0.45:1,transition:'opacity .2s'}}>➤</button>
 </div>
 </div>
