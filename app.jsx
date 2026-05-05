@@ -956,7 +956,7 @@ return(<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:0,
 <div style={{display:'inline-flex',flexDirection:'column',alignItems:'center',gap:1}}>
 <span style={{background:ev.bg,border:'1px solid '+ev.bd,borderRadius:8,padding:'3px 10px',color:ev.tx,fontWeight:800,fontSize:13,whiteSpace:'nowrap',letterSpacing:'0.2px'}}>{ev.icon} {ev.t}</span>
 <span style={{fontSize:9,color:ev.tx,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.4px',opacity:0.8}}>{ev.lbl}</span>
-{ev.theo&&(()=>{const realMin=toM(ev.t);const theoMin=toM(ev.theo);const delta=realMin-theoMin;const ad=Math.abs(delta);const tcol=ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';const sign=delta>0?'+':'';return<span title={'Théorique : '+ev.theo+' (réel '+(delta===0?'pile à l\'heure':sign+delta+' min)')} style={{fontSize:9,color:tcol,fontWeight:700,whiteSpace:'nowrap',cursor:'help'}}>théo {ev.theo} ({sign}{delta}m)</span>})()}
+{ev.theo&&(()=>{const realMin=toM(ev.t);const theoMin=toM(ev.theo);let delta=realMin-theoMin;if(delta<-720)delta+=1440;else if(delta>720)delta-=1440;const ad=Math.abs(delta);const tcol=ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';const sign=delta>0?'+':'';return<span title={'Théorique : '+ev.theo+' (réel '+(delta===0?'pile à l\'heure':sign+delta+' min)')} style={{fontSize:9,color:tcol,fontWeight:700,whiteSpace:'nowrap',cursor:'help'}}>théo {ev.theo} ({sign}{delta}m)</span>})()}
 </div>
 </React.Fragment>)}
 {alerts.map((a,ai)=><span key={ai} style={{marginLeft:10,background:'#fee2e2',border:'1px solid #ef4444',borderRadius:6,padding:'2px 8px',color:'#991b1b',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>{a}</span>)}
@@ -1010,6 +1010,16 @@ aD:mrD?toMinD(mrD.depotArrival):null,
 db:mainTE?toMinD(mainTE.endTime):null
 };
 const KEYS=['e','dD','aC','fS','fE','dC','aD','db'];
+// Propage l'ajout +1440 min pour les events qui sont le LENDEMAIN (chantier de nuit qui dépasse minuit).
+// Heuristique : si un event est < event précédent (= ordre temporel cassé), il est le lendemain.
+let dayShift=0,prevR=null;
+for(const k of KEYS){
+  if(R[k]!=null){
+    if(prevR!=null&&R[k]+dayShift<prevR)dayShift+=1440;
+    R[k]+=dayShift;
+    prevR=R[k];
+  }
+}
 const LABELS=['Embauche','Départ','Arr. ch.','Début','Fin','Dép. ch.','Arr. dép.','Débauche'];
 const SOURCES=['P','R','R','R','R','R','R','P'];
 // 7 segments entre événements consécutifs
@@ -1061,7 +1071,7 @@ return(<div style={{display:'flex',flexDirection:'column',gap:6,fontSize:11}}>
 </div>}
 {/* Ligne 1 : 8 pastilles événements (T + R + delta) */}
 <div style={{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:3}}>
-{KEYS.map((k,i)=>{const tTv=T[k],tRv=R[k];const dlt=(tTv!=null&&tRv!=null)?tRv-tTv:null;const ad=dlt!=null?Math.abs(dlt):0;const dCol=dlt==null?'#94a3b8':ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';return(<div key={k} style={{display:'flex',flexDirection:'column',alignItems:'center',background:'#fff',border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px'}}>
+{KEYS.map((k,i)=>{const tTv=T[k],tRv=R[k];let dlt=(tTv!=null&&tRv!=null)?tRv-tTv:null;if(dlt!=null){if(dlt<-720)dlt+=1440;else if(dlt>720)dlt-=1440}const ad=dlt!=null?Math.abs(dlt):0;const dCol=dlt==null?'#94a3b8':ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';return(<div key={k} style={{display:'flex',flexDirection:'column',alignItems:'center',background:'#fff',border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px'}}>
 <div style={{fontSize:9,fontWeight:700,color:C.dim,textTransform:'uppercase',whiteSpace:'nowrap'}}>{LABELS[i]}</div>
 <div style={{fontSize:8,color:'#94a3b8',marginBottom:2}} title={SOURCES[i]==='P'?'Source : Pointage employé':'Source : Rapport Wirtgen'}>{SOURCES[i]}</div>
 <div style={{fontSize:11,fontWeight:700,color:'#1d4ed8'}}>T {minToHHMMd(tTv)}</div>
