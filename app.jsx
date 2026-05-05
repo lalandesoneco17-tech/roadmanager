@@ -999,7 +999,28 @@ const coutR=totalSalR+totalConsR;
 const ca=(j.priceForfait||0)+(j.hasTransfer?(j.transferPrice||0):0);
 const benefT=ca-coutT;
 const benefR=ca-coutR;
+// GPS chantier RÉEL = centroïde des points GPS pendant le fraisage
+let chantierGpsR=null,distFromUser=null;
+if(mrD&&mrD.rawPts&&siteD){
+  const sArr=toMinD(siteD.siteArrival)||0;
+  const sDep=siteD.siteDeparture?toMinD(siteD.siteDeparture):(toMinD(siteD.workEnd)||0);
+  const ptsIn=mrD.rawPts.filter(p=>p.min>=sArr&&p.min<=sDep);
+  if(ptsIn.length){
+    const lat=ptsIn.reduce((s,p)=>s+p.lat,0)/ptsIn.length;
+    const lon=ptsIn.reduce((s,p)=>s+p.lon,0)/ptsIn.length;
+    chantierGpsR={lat,lon};
+    if(j.gps){const uc=parseCoords(j.gps);if(uc)distFromUser=haversine([uc[0],uc[1]],[lat,lon])*1000}
+  }
+}
 return(<div style={{display:'flex',flexDirection:'column',gap:6,fontSize:11}}>
+{/* Ligne 0 : GPS chantier réel (depuis rapport Wirtgen) */}
+{chantierGpsR&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'4px 8px',background:'#fff',border:'1px solid '+C.border,borderRadius:6,fontSize:11,flexWrap:'wrap'}}>
+<span style={{fontWeight:700,color:C.dim}}>📍 GPS chantier (rapport) :</span>
+<a href={'https://www.google.com/maps?q='+chantierGpsR.lat+','+chantierGpsR.lon} target="_blank" rel="noopener" style={{color:'#1d4ed8',fontWeight:700,textDecoration:'none'}} title="Ouvrir dans Google Maps">{chantierGpsR.lat.toFixed(6)}, {chantierGpsR.lon.toFixed(6)}</a>
+<button onClick={()=>{if(navigator.clipboard)navigator.clipboard.writeText(chantierGpsR.lat.toFixed(6)+','+chantierGpsR.lon.toFixed(6))}} style={{background:'#f1f5f9',border:'1px solid '+C.border,borderRadius:4,padding:'1px 6px',cursor:'pointer',fontSize:10,color:C.dim}} title="Copier les coordonnées">📋</button>
+{j.gps&&distFromUser!=null&&(()=>{const col=distFromUser<=100?C.green:distFromUser<=500?C.orange:C.red;const ic=distFromUser<=100?'✓':distFromUser<=500?'⚠':'❌';return<span style={{color:col,fontWeight:700,fontSize:10}} title={'GPS saisi : '+j.gps}>{ic} {distFromUser<1000?Math.round(distFromUser)+'m':(distFromUser/1000).toFixed(1)+'km'} vs saisi</span>})()}
+{!j.gps&&<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.gps=chantierGpsR.lat.toFixed(6)+','+chantierGpsR.lon.toFixed(6);save(nd)}}} style={{background:'#dcfce7',border:'1px solid #16a34a',borderRadius:4,padding:'1px 8px',cursor:'pointer',fontSize:10,color:'#14532d',fontWeight:700}}>↵ Enregistrer comme GPS chantier</button>}
+</div>}
 {/* Ligne 1 : 8 pastilles événements (T + R + delta) */}
 <div style={{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:3}}>
 {KEYS.map((k,i)=>{const tTv=T[k],tRv=R[k];const dlt=(tTv!=null&&tRv!=null)?tRv-tTv:null;const ad=dlt!=null?Math.abs(dlt):0;const dCol=dlt==null?'#94a3b8':ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';return(<div key={k} style={{display:'flex',flexDirection:'column',alignItems:'center',background:'#fff',border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px'}}>
@@ -2575,6 +2596,26 @@ const[listening,setListening]=useState(false);
 const bottomRef=useRef(null);
 const recRef=useRef(null);
 useEffect(()=>{if(bottomRef.current)bottomRef.current.scrollIntoView({behavior:'smooth'})},[msgs,loading]);
+const[voiceOut,setVoiceOut]=useState(()=>{try{return localStorage.getItem('rm-chat-voice')==='1'}catch(e){return false}});
+useEffect(()=>{try{localStorage.setItem('rm-chat-voice',voiceOut?'1':'0')}catch(e){}},[voiceOut]);
+const ttsSupported=typeof window!=='undefined'&&'speechSynthesis'in window;
+const speak=(text)=>{
+if(!ttsSupported||!text)return;
+try{
+window.speechSynthesis.cancel();
+// Nettoie le texte : retire les blocs JSON, emojis pour une meilleure lecture
+const clean=text.replace(/```[\s\S]*?```/g,'').replace(/[*_`#]/g,'').replace(/\s+/g,' ').trim();
+if(!clean)return;
+const u=new SpeechSynthesisUtterance(clean);
+u.lang='fr-FR';u.rate=1.05;u.pitch=1;u.volume=1;
+const voices=window.speechSynthesis.getVoices();
+const fr=voices.find(v=>v.lang&&v.lang.startsWith('fr'));
+if(fr)u.voice=fr;
+window.speechSynthesis.speak(u);
+}catch(e){console.warn('TTS error',e)}
+};
+const stopSpeaking=()=>{if(ttsSupported){try{window.speechSynthesis.cancel()}catch(e){}}};
+useEffect(()=>{return()=>stopSpeaking()},[]);
 const speechSupported=typeof window!=='undefined'&&(window.SpeechRecognition||window.webkitSpeechRecognition);
 const toggleMic=()=>{
 if(listening){if(recRef.current){try{recRef.current.stop()}catch(e){}}setListening(false);return}
@@ -2971,9 +3012,12 @@ if(d.content&&d.content[0]&&d.content[0].text){
 const txt=d.content[0].text;
 const prop=parseProposal(txt);
 if(prop){
-setMsgs([...newMsgs,{role:'assistant',content:prop.intro||'Voici le message a envoyer :',proposal:prop.proposal,proposalStatus:'pending'}]);
+const introTxt=prop.intro||'Voici le message a envoyer :';
+setMsgs([...newMsgs,{role:'assistant',content:introTxt,proposal:prop.proposal,proposalStatus:'pending'}]);
+if(voiceOut)speak(introTxt);
 }else{
 setMsgs([...newMsgs,{role:'assistant',content:txt}]);
+if(voiceOut)speak(txt);
 }
 }else{
 setMsgs([...newMsgs,{role:'assistant',content:'Erreur: '+(d.error?.message||JSON.stringify(d))}]);
@@ -2991,7 +3035,10 @@ return(
 <div style={{position:'absolute',bottom:64,right:0,width:360,height:500,background:'#fff',borderRadius:16,boxShadow:'0 8px 40px rgba(0,0,0,0.18)',border:'1px solid '+C.border,display:'flex',flexDirection:'column',overflow:'hidden'}}>
 <div style={{background:C.accent,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
 <div style={{color:'#fff',fontWeight:700,fontSize:14}}>🤖 Assistant RoadManager</div>
-<button onClick={()=>{setOpen(false);setMsgs([])}} style={{background:'none',border:'none',color:'#fff',fontSize:22,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>×</button>
+<div style={{display:'flex',gap:6,alignItems:'center'}}>
+{ttsSupported&&(<button onClick={()=>{if(voiceOut)stopSpeaking();setVoiceOut(v=>!v)}} title={voiceOut?'Couper la voix':'Activer la voix'} style={{background:voiceOut?'#fff3':'transparent',border:'none',color:'#fff',fontSize:16,cursor:'pointer',padding:'2px 6px',borderRadius:6}}>{voiceOut?'🔊':'🔇'}</button>)}
+<button onClick={()=>{stopSpeaking();setOpen(false);setMsgs([])}} style={{background:'none',border:'none',color:'#fff',fontSize:22,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>×</button>
+</div>
 </div>
 <div style={{flex:1,overflowY:'auto',padding:10,display:'flex',flexDirection:'column',gap:8}}>
 {msgs.length===0&&(
