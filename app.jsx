@@ -926,101 +926,119 @@ return(<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:0,
 {/* Details panel */}
 {openDetails[j.id]&&<div style={{padding:'8px 12px',borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
 {(()=>{
-const jdR=m?jdReports.find(r=>r.jd_id===normJd(m.name)||(m.jdId&&r.jd_id===normJd(m.jdId))):null;
-const c2=jobCalcs.find(cx=>cx.j.id===j.id)||jobCalcs[0];
-const workH=jdR?Number(jdR.working_h)||0:0;
-const idleH=jdR?Number(jdR.idle_h)||0:0;
-const salMach=jdR?(workH+idleH)*hourly:salChantier;
-const fuelL=jdR?Number(jdR.total_fuel_l)||0:Number(j.machineFuelL)||0;
-const fuelPrM=getFuelPrice(data,c2?c2.fuelType:'diesel',j.machineFuelDepot);
-const fuelCostM=fuelL*fuelPrM;
-const fixesMach=c2?c2.fixesMach:0;
-const totalChantier=salMach+fuelCostM+fixesMach;
-const caChantier=j.priceForfait||0;
-const travelMinTotal=(Number(j.travelMinAller)||0)+(Number(j.travelMinRetour)||0);
-const travelH=travelMinTotal/60;
-const salRoute=c2?c2.salRoute:totalSalRouteDay;
-const trajL=c2?c2.trajL:0;
-const trajCost=c2?c2.trajCost:0;
-const fuelPrC=c2?getFuelPrice(data,c2.fuelType,null):getFuelPrice(data,'diesel',null);
-const fixesCam=c2?c2.fixesCam:0;
-const totalTransfert=salRoute+trajCost+fixesCam;
-const caTransfert=j.hasTransfer?j.transferPrice||0:0;
-const isEndHome=!j.endAt||j.endAt===''||j.endAt==='home';
-const costEmb=surcoutEmb;
-const costDeb=isEndHome?surcoutDeb:0;
-let depotMin=0,coutDepotCalc=coutDepot;
-if(jdR&&j.billingStart&&mainTE&&mainTE.endTime){
-const[bh,bm]=j.billingStart.split(':').map(Number);
+// ========= NOUVEAU PANNEAU DÉTAIL : 8 événements théo/réel + 7 segments + bénéfice =========
+const toMinD=t=>{if(!t)return null;const[h,m2]=t.split(':').map(Number);return h*60+m2};
+const minToHHMMd=mn=>{if(mn==null||isNaN(mn))return '—';const mm=((mn%1440)+1440)%1440;return String(Math.floor(mm/60)).padStart(2,'0')+':'+String(mm%60).padStart(2,'0')};
+const fmtMinD=mn=>{if(mn==null||isNaN(mn)||mn<0)return '—';if(mn<60)return mn+'min';return Math.floor(mn/60)+'h'+String(mn%60).padStart(2,'0')};
+const tpDep=data.tempsPlusDepart!=null?data.tempsPlusDepart:TEMPS_PLUS_DEPART;
 const tpArr=data.tempsPlusArrivee!=null?data.tempsPlusArrivee:TEMPS_PLUS_ARRIVEE;
-const trajR=Number(j.travelMinRetour)||0;
-const fcMin=(bh*60+bm)+Math.round((workH+idleH)*60);
-const adMin=fcMin+trajR+tpArr;
-const[eh,em]=mainTE.endTime.split(':').map(Number);
-depotMin=Math.max(0,(eh*60+em)-adMin);
-coutDepotCalc=(depotMin/60)*hourly;
-}
-const totalCA=caChantier+caTransfert;
-const totalCoutsCalc=totalChantier+totalTransfert+costEmb+costDeb+coutDepotCalc+mealPrice;
-const benefMach=caChantier-totalChantier;
-const benefTransf=caTransfert-totalTransfert;
-const benefTotal=totalCA-totalCoutsCalc;
-const benefAvecEntretien=benefTotal-Math.max(0,resteMach)-Math.max(0,resteCam);
-const Lr=(label,val,col,suffix)=><div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{color:'#64748b'}}>{label}</span><span style={{fontWeight:600,color:col||'#1e293b'}}>{typeof val==='number'?(suffix?val.toFixed(suffix==='h'?2:0)+' '+suffix:fmtMoney(val)):val}</span></div>;
-return(<React.Fragment>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:5,fontSize:10,marginBottom:6}}>
-<div style={{background:'#f0fdf4',borderRadius:6,padding:6,border:'1px solid #86efac'}}>
-<div style={{fontWeight:800,color:'#15803d',marginBottom:4,fontSize:11}}>1. CHANTIER</div>
-{jdR?<React.Fragment>{Lr('a Travail',workH,'#15803d','h')}{Lr('b Ralenti',idleH,'#15803d','h')}</React.Fragment>:<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>Pas de donnees JD</div>}
-{Lr('c Salaire',salMach)}
-{Lr('d Conso',fuelL,'#1e293b','L')}
-<div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{color:'#64748b'}}>e Carburant</span><span style={{fontWeight:600}}>{fmtMoney(fuelCostM)} <span style={{color:'#94a3b8',fontWeight:400,fontSize:9}}>({fuelPrM.toFixed(2)}€/L)</span></span></div>
-{fixesMach>0&&Lr('f Créd+Ass',fixesMach)}
-<div style={{borderTop:'1px solid #86efac',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>i Total</span><span style={{color:'#15803d'}}>{fmtMoney(totalChantier)}</span></div>
+const MARGE=15;
+const billMin=toMinD(j.billingStart);
+const travelAller=Number(j.travelMinAller)||0;
+const travelRetour=Number(j.travelMinRetour)||0;
+const kmAller=Number(j.kmAller)||0;
+const kmRetour=Number(j.kmRetour)||0;
+const fhJob=forfaitHours(j.forfaitType);
+const pMin=mainTE?(mainTE.pauseMin||0):0;
+const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');
+const mrRaw=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(m?m.name:'')&&r.date===selDate);
+const mrD=mrRaw?recomputeWirtgenReport(mrRaw):null;
+const siteD=mrD?(mrD.sites||[])[0]:null;
+const truck=(data.trucks||[]).find(t=>emp&&t.id===emp.truckId);
+const truckCons=truck?Number(truck.fuelPer100)||25:25;
+const prixGazole=getFuelPrice(data,'gazole',j.startFrom!=='home'?j.startFrom:null);
+const machineFuelType=m?getMachineFuelType(data,m.id):'gnr';
+const prixMachineFuel=getFuelPrice(data,machineFuelType,j.machineFuelDepot);
+// 8 heures théoriques
+const T={
+e:billMin!=null?billMin-MARGE-travelAller-tpDep:null,
+dD:billMin!=null?billMin-MARGE-travelAller:null,
+aC:billMin!=null?billMin-MARGE:null,
+fS:billMin,
+fE:billMin!=null?billMin+fhJob*60+pMin:null,
+dC:billMin!=null?billMin+fhJob*60+pMin:null,
+aD:billMin!=null?billMin+fhJob*60+pMin+travelRetour:null,
+db:billMin!=null?billMin+fhJob*60+pMin+travelRetour+tpArr:null
+};
+// 8 heures réelles
+const R={
+e:mainTE?toMinD(mainTE.startTime):null,
+dD:mrD?toMinD(mrD.depotDepart):null,
+aC:siteD?toMinD(siteD.siteArrival):null,
+fS:siteD?toMinD(siteD.workStart):null,
+fE:siteD?toMinD(siteD.workEnd):null,
+dC:siteD?toMinD(siteD.siteDeparture):null,
+aD:mrD?toMinD(mrD.depotArrival):null,
+db:mainTE?toMinD(mainTE.endTime):null
+};
+const KEYS=['e','dD','aC','fS','fE','dC','aD','db'];
+const LABELS=['Embauche','Départ','Arr. ch.','Début','Fin','Dép. ch.','Arr. dép.','Débauche'];
+const SOURCES=['P','R','R','R','R','R','R','P'];
+// 7 segments entre événements consécutifs
+const segLabels=['Préparation','Trajet aller','Installation','Fraisage','Rangement','Trajet retour','Mise séc.'];
+const segs=segLabels.map((lbl,i)=>{
+const k1=KEYS[i],k2=KEYS[i+1];
+const tT=T[k1]!=null&&T[k2]!=null?T[k2]-T[k1]:null;
+const tR=R[k1]!=null&&R[k2]!=null?R[k2]-R[k1]:null;
+const sT=tT!=null&&tT>=0?(tT/60)*hourly:null;
+const sR=tR!=null&&tR>=0?(tR/60)*hourly:null;
+let cT=null,cR=null,cPrice=prixGazole;
+if(i===1){cT=(kmAller/100)*truckCons;cR=cT}
+else if(i===5){cT=(kmRetour/100)*truckCons;cR=cT}
+else if(i===3){cR=mrD?Number(mrD.fuelL)||0:null;cPrice=prixMachineFuel}
+const ccT=cT!=null?cT*cPrice:null;
+const ccR=cR!=null?cR*cPrice:null;
+return{lbl,tT,tR,sT,sR,cT,cR,ccT,ccR};
+});
+const totalSalT=segs.reduce((s,sg)=>s+(sg.sT||0),0);
+const totalSalR=segs.reduce((s,sg)=>s+(sg.sR||0),0);
+const totalConsT=segs.reduce((s,sg)=>s+(sg.ccT||0),0);
+const totalConsR=segs.reduce((s,sg)=>s+(sg.ccR||0),0);
+const coutT=totalSalT+totalConsT;
+const coutR=totalSalR+totalConsR;
+const ca=(j.priceForfait||0)+(j.hasTransfer?(j.transferPrice||0):0);
+const benefT=ca-coutT;
+const benefR=ca-coutR;
+return(<div style={{display:'flex',flexDirection:'column',gap:6,fontSize:11}}>
+{/* Ligne 1 : 8 pastilles événements (T + R + delta) */}
+<div style={{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:3}}>
+{KEYS.map((k,i)=>{const tTv=T[k],tRv=R[k];const dlt=(tTv!=null&&tRv!=null)?tRv-tTv:null;const ad=dlt!=null?Math.abs(dlt):0;const dCol=dlt==null?'#94a3b8':ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';return(<div key={k} style={{display:'flex',flexDirection:'column',alignItems:'center',background:'#fff',border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px'}}>
+<div style={{fontSize:9,fontWeight:700,color:C.dim,textTransform:'uppercase',whiteSpace:'nowrap'}}>{LABELS[i]}</div>
+<div style={{fontSize:8,color:'#94a3b8',marginBottom:2}} title={SOURCES[i]==='P'?'Source : Pointage employé':'Source : Rapport Wirtgen'}>{SOURCES[i]}</div>
+<div style={{fontSize:11,fontWeight:700,color:'#1d4ed8'}}>T {minToHHMMd(tTv)}</div>
+<div style={{fontSize:11,fontWeight:700,color:'#15803d'}}>R {minToHHMMd(tRv)}</div>
+{dlt!=null&&<div style={{fontSize:9,color:dCol,fontWeight:700}}>{dlt>0?'+':''}{dlt}m</div>}
+</div>)})}
 </div>
-<div style={{background:'#eff6ff',borderRadius:6,padding:6,border:'1px solid #93c5fd'}}>
-<div style={{fontWeight:800,color:'#1d4ed8',marginBottom:4,fontSize:11}}>2. TRANSFERT</div>
-{Lr('a Route',travelH,'#1d4ed8','h')}
-{Lr('b Salaire',salRoute)}
-{trajL>0&&Lr('c Conso camion',trajL,'#1e293b','L')}
-{trajCost>0&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{color:'#64748b',paddingLeft:8}}>Carburant</span><span style={{fontWeight:600}}>{fmtMoney(trajCost)} <span style={{color:'#94a3b8',fontWeight:400,fontSize:9}}>({fuelPrC.toFixed(2)}€/L)</span></span></div>}
-{fixesCam>0&&Lr('d Créd+Ass cam',fixesCam)}
-<div style={{borderTop:'1px solid #93c5fd',marginTop:3,paddingTop:3,fontWeight:700,display:'flex',justifyContent:'space-between'}}><span>e Total</span><span style={{color:'#1d4ed8'}}>{fmtMoney(totalTransfert)}</span></div>
+{/* Ligne 2 : 7 boxes segments (entre les pastilles) */}
+<div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,marginLeft:'6.25%',marginRight:'6.25%'}}>
+{segs.map((sg,i)=>(<div key={i} style={{background:'#fff',border:'1px solid '+C.border,borderRadius:6,padding:'4px 5px',fontSize:10}}>
+<div style={{fontWeight:700,color:C.text,marginBottom:3,textAlign:'center',fontSize:10}}>{sg.lbl}</div>
+{sg.tT!=null&&sg.tT>=0&&<div style={{color:'#1d4ed8'}}>TpT <b>{fmtMinD(sg.tT)}</b></div>}
+{sg.tR!=null&&sg.tR>=0&&<div style={{color:'#15803d'}}>TpR <b>{fmtMinD(sg.tR)}</b></div>}
+{sg.sT!=null&&sg.sT>0&&<div style={{color:'#1d4ed8'}}>SalT <b>{fmtMoney(sg.sT)}</b></div>}
+{sg.sR!=null&&sg.sR>0&&<div style={{color:'#15803d'}}>SalR <b>{fmtMoney(sg.sR)}</b></div>}
+{sg.cT!=null&&<div style={{color:'#1d4ed8'}}>ConsT <b>{sg.cT.toFixed(1)}L</b> <span style={{color:'#94a3b8'}}>{fmtMoney(sg.ccT)}</span></div>}
+{sg.cR!=null&&<div style={{color:'#15803d'}}>ConsR <b>{sg.cR.toFixed(1)}L</b> <span style={{color:'#94a3b8'}}>{fmtMoney(sg.ccR)}</span></div>}
+</div>))}
 </div>
-<div style={{background:'#fff1f2',borderRadius:6,padding:6,border:'1px solid #fca5a5'}}>
-<div style={{fontWeight:800,color:'#dc2626',marginBottom:4,fontSize:11}}>3. COUT A EVITER</div>
-{costEmb>0?Lr('a Emb. tôt',costEmb,C.red):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>a Emb. OK</div>}
-{isEndHome?(costDeb>0?Lr('b Emb. tard',costDeb,C.red):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>b Deb. OK</div>):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>b N/A (pas dom.)</div>}
-{depotMin>0?Lr('c Dépôt ('+Math.round(depotMin)+'min)',coutDepotCalc,C.red):<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>c Dépôt 0min</div>}
-{mealPrice>0&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:2,borderTop:'1px solid #fca5a5',marginTop:3,paddingTop:3}}><span style={{color:'#64748b'}}>{mainTE&&mainTE.mealType==='RESTO'?'Resto':'Panier'}</span><span style={{fontWeight:600}}>{fmtMoney(mealPrice)}</span></div>}
+{/* Ligne 3 : Totaux CA / Coût-Bénéf Théo / Coût-Bénéf Réel */}
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
+<div style={{background:'#eff6ff',border:'1px solid #93c5fd',borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
+<div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase'}}>CA Total</div>
+<div style={{fontSize:18,fontWeight:800,color:'#1d4ed8'}}>{fmtMoney(ca)}</div>
 </div>
-<div style={{background:'#fefce8',borderRadius:6,padding:6,border:'1px solid #fde047'}}>
-<div style={{fontWeight:800,color:'#854d0e',marginBottom:4,fontSize:11}}>4. ENTRETIEN</div>
-{dTotalEntretienMach>0?<React.Fragment>{Lr('a Machine',dTotalEntretienMach,'#854d0e')}<div style={{height:3,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginBottom:2}}><div style={{height:'100%',width:pctMach.toFixed(0)+'%',background:machRembourse?C.green:C.red,borderRadius:2}}/></div>{Lr('d Remb. mach',Math.max(0,dTotalEntretienMach-resteMach),C.green)}</React.Fragment>:<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>a Machine: 0</div>}
-{dTotalEntretienCam>0?<React.Fragment>{Lr('b Camion',dTotalEntretienCam,'#854d0e')}<div style={{height:3,background:'#e2e8f0',borderRadius:2,overflow:'hidden',marginBottom:2}}><div style={{height:'100%',width:pctCam.toFixed(0)+'%',background:camRembourse?C.green:C.red,borderRadius:2}}/></div>{Lr('c Remb. cam',Math.max(0,dTotalEntretienCam-resteCam),C.green)}</React.Fragment>:<div style={{color:'#94a3b8',fontSize:9,marginBottom:2}}>b Camion: 0</div>}
+<div style={{background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
+<div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase'}}>Théo · Coût {fmtMoney(coutT)}</div>
+<div style={{fontSize:18,fontWeight:800,color:benefT>=0?C.green:C.red}}>Bénéf {benefT>=0?'+':''}{fmtMoney(benefT)}</div>
+</div>
+<div style={{background:benefR>=0?'#f0fdf4':'#fff1f2',border:'1px solid '+(benefR>=0?'#86efac':'#fca5a5'),borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
+<div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase'}}>Réel · Coût {fmtMoney(coutR)}</div>
+<div style={{fontSize:18,fontWeight:800,color:benefR>=0?C.green:C.red}}>Bénéf {benefR>=0?'+':''}{fmtMoney(benefR)}</div>
+{Math.abs(benefR-benefT)>=1&&<div style={{fontSize:10,color:benefR>benefT?C.green:C.red,fontWeight:700,marginTop:2}}>{benefR>benefT?'✓ +':'⚠️ '}{fmtMoney(benefR-benefT)} vs théo</div>}
 </div>
 </div>
-<div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:4,fontSize:10,marginBottom:4}}>
-{[['6 CA mach',caChantier,true],['7 CA transf',caTransfert,true],['13 Trop tôt',costEmb,false],['14 Dépôt',coutDepotCalc,false],['15 Deb. tard',costDeb,false],['16 Total CA',totalCA,true]].map(([lbl,val,isRev])=>(
-<div key={lbl} style={{background:'#f8fafc',borderRadius:6,padding:'4px 5px',textAlign:'center',border:'1px solid #e2e8f0'}}>
-<div style={{color:'#64748b',marginBottom:1,fontSize:9}}>{lbl}</div>
-<div style={{fontWeight:700,color:isRev?C.green:val>0?C.red:'#64748b'}}>{fmtMoney(val)}</div>
-</div>
-))}
-</div>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:4,fontSize:10,marginBottom:4}}>
-{[['8 Bénéf mach',benefMach],['9 Bénéf transf',benefTransf],['11 Total coûts',totalCoutsCalc],['10 Bénéf total',benefTotal]].map(([lbl,val])=>(
-<div key={lbl} style={{background:val>=0?'#f0fdf4':'#fff1f2',borderRadius:6,padding:'4px 6px',textAlign:'center',border:'1px solid '+(val>=0?'#86efac':'#fca5a5')}}>
-<div style={{color:'#64748b',marginBottom:1,fontSize:9}}>{lbl}</div>
-<div style={{fontWeight:700,color:val>=0?C.green:C.red}}>{val>=0?'+':''}{fmtMoney(val)}</div>
-</div>
-))}
-</div>
-<div style={{background:benefAvecEntretien>=0?'#f0fdf4':'#fff1f2',borderRadius:6,padding:'5px 10px',fontSize:10,display:'flex',justifyContent:'space-between',border:'1px solid '+(benefAvecEntretien>=0?'#86efac':'#fca5a5')}}>
-<span style={{color:'#64748b',fontWeight:600}}>12 Bénéf total avec entretien</span>
-<span style={{fontWeight:800,color:benefAvecEntretien>=0?C.green:C.red}}>{benefAvecEntretien>=0?'+':''}{fmtMoney(benefAvecEntretien)}</span>
-</div>
-</React.Fragment>);
+</div>);
 })()}
 </div>}
 </div>)})}
