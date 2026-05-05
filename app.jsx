@@ -317,7 +317,9 @@ for(const h of hopPosClean){
   const c=clusters.find(cl=>cl.hops.some(ch=>haversine([ch.lat,ch.lon],[h.lat,h.lon])<=CLUSTER_KM));
   if(c)c.hops.push(h);else clusters.push({hops:[h]});
 }
-clusters.sort((a,b)=>b.hops.length-a.hops.length);
+// Sélection : nb hops puis nb pts GPS dans vicinité (= temps présence chantier vs simple passage au dépôt)
+clusters.forEach(c=>{c.gpsDwell=pts.filter(p=>c.hops.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM)).length});
+clusters.sort((a,b)=>(b.hops.length-a.hops.length)||(b.gpsDwell-a.gpsDwell));
 const hopPos=clusters[0].hops;
 const inZone=p=>hopPos.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM);
 // 2. 1er et dernier pt GPS dans la zone chantier
@@ -329,7 +331,16 @@ if(firstInZoneIdx===-1){
 const startedInZone=firstInZoneIdx===0;
 const endedInZone=lastInZoneIdx===pts.length-1;
 // 3. depotDepart, siteArrival, siteDeparture
-const depotDepart=startedInZone?null:pts[0].hhmm;
+// depotDepart = dernier pt GPS dans la vicinité de pts[0] AVANT entrée en zone chantier
+// (gère le cas chantier de nuit où la machine reste plusieurs heures au dépôt avant de partir)
+let depotDepart=null;
+if(!startedInZone){
+  let lastDepotIdx=0;
+  for(let i=1;i<firstInZoneIdx;i++){
+    if(haversine([pts[i].lat,pts[i].lon],[pts[0].lat,pts[0].lon])<=1.0)lastDepotIdx=i;
+  }
+  depotDepart=pts[lastDepotIdx].hhmm;
+}
 const siteArrival=startedInZone?null:pts[firstInZoneIdx].hhmm;
 let siteDeparture=endedInZone?null:pts[lastInZoneIdx+1].hhmm;
 // depotArrival = début de la dernière phase stationnaire (si la machine sort de la zone)
