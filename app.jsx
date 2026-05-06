@@ -317,111 +317,107 @@ for(const h of hopPosClean){
   const c=clusters.find(cl=>cl.hops.some(ch=>haversine([ch.lat,ch.lon],[h.lat,h.lon])<=CLUSTER_KM));
   if(c)c.hops.push(h);else clusters.push({hops:[h]});
 }
-// Sélection : nb hops puis nb pts GPS dans vicinité (= temps présence chantier vs simple passage au dépôt)
+// Sélection : garde TOUS les clusters significatifs (>= 2 pts GPS dans vicinité).
+// Permet la détection multi-chantiers le même jour (ex: chantier matin + chantier nuit).
 clusters.forEach(c=>{c.gpsDwell=pts.filter(p=>c.hops.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM)).length});
-clusters.sort((a,b)=>(b.hops.length-a.hops.length)||(b.gpsDwell-a.gpsDwell));
-const hopPos=clusters[0].hops;
-const inZone=p=>hopPos.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM);
-// 2. 1er et dernier pt GPS dans la zone chantier
-let firstInZoneIdx=-1,lastInZoneIdx=-1;
-for(let i=0;i<pts.length;i++){if(inZone(pts[i])){if(firstInZoneIdx===-1)firstInZoneIdx=i;lastInZoneIdx=i}}
-if(firstInZoneIdx===-1){
-  return{depotDepart:pts[0].hhmm,depotArrival:lastPt.hhmm,sites:[]};
-}
-const startedInZone=firstInZoneIdx===0;
-const endedInZone=lastInZoneIdx===pts.length-1;
-// 3. depotDepart, siteArrival, siteDeparture
-// depotDepart = dernier pt GPS dans la vicinité de pts[0] AVANT entrée en zone chantier
-// (gère le cas chantier de nuit où la machine reste plusieurs heures au dépôt avant de partir)
-let depotDepart=null;
-if(!startedInZone){
-  let lastDepotIdx=0;
-  for(let i=1;i<firstInZoneIdx;i++){
-    if(haversine([pts[i].lat,pts[i].lon],[pts[0].lat,pts[0].lon])<=1.0)lastDepotIdx=i;
-  }
-  depotDepart=pts[lastDepotIdx].hhmm;
-}
-const siteArrival=startedInZone?null:pts[firstInZoneIdx].hhmm;
-let siteDeparture=endedInZone?null:pts[lastInZoneIdx+1].hhmm;
-// depotArrival = début de la dernière phase stationnaire (si la machine sort de la zone)
-let depotArrival=null;
-if(!endedInZone){
-  let stationaryStartIdx=pts.length-1;
-  for(let i=pts.length-2;i>=0;i--){
-    if(haversine([pts[i].lat,pts[i].lon],[lastPt.lat,lastPt.lon])<STATIONARY_KM)stationaryStartIdx=i;
-    else break;
-  }
-  depotArrival=pts[stationaryStartIdx].hhmm;
-}
-// Si GPS trop espacé : le 1er pt hors zone est déjà le dépôt → siteDeparture = depotArrival.
-// On répartit : Dép. Chantier à mi-chemin entre dernier pt en zone et 1er pt hors zone.
-const minToHHMM_=mn=>String(Math.floor(mn/60)).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
-if(siteDeparture&&depotArrival&&siteDeparture===depotArrival){
-  const midMin=Math.round((pts[lastInZoneIdx].min+pts[lastInZoneIdx+1].min)/2);
-  siteDeparture=minToHHMM_(midMin);
-}
-// 4. workStart : 1er "On" en zone après siteArrival, fallback +5min si écart > 4h (lunch break)
-const inZoneHops=hopPos.filter(h=>inZone(h));
+let sigClusters=clusters.filter(c=>c.gpsDwell>=2);
+if(!sigClusters.length){clusters.sort((a,b)=>(b.hops.length-a.hops.length)||(b.gpsDwell-a.gpsDwell));sigClusters=[clusters[0]]}
+sigClusters.sort((a,b)=>a.hops[0].min-b.hops[0].min); // chronologique
+// Helpers communs
 const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
-const minToHHMM=mn=>String(Math.floor(mn/60)).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
-// Helper : un "On" est confirmé "vrai fraisage" si sa tranche horaire OpTime a >= 3min de fraisage actif
-const MIN_OP_H=0.05; // 3 min
-const hopHasOpTime=h=>{
-  if(!opTimeBuckets||!opTimeBuckets.length)return null; // pas de données → indéterminé
-  const bucket=opTimeBuckets.find(b=>h.min>=b.startMin&&h.min<b.endMin);
-  return bucket?bucket.opH>=MIN_OP_H:false;
-};
-// Helper : position GPS interpolée à l'instant exact du hop (au lieu du GPS le + proche en temps).
-// Plus précis pour savoir où était la machine au moment de l'évt moteur.
-const hopInterpInZone=h=>{
-  let before=null,after=null;
-  for(const p of pts){
-    if(p.min<=h.min&&(!before||p.min>before.min))before=p;
-    if(p.min>=h.min&&(!after||p.min<after.min))after=p;
+const minToHHMM=mn=>{const mm=((mn%1440)+1440)%1440;return String(Math.floor(mm/60)).padStart(2,'0')+':'+String(mm%60).padStart(2,'0')};
+const MIN_OP_H=0.05;
+const hopHasOpTime=h=>{if(!opTimeBuckets||!opTimeBuckets.length)return null;const b=opTimeBuckets.find(b=>h.min>=b.startMin&&h.min<b.endMin);return b?b.opH>=MIN_OP_H:false};
+// Pour chaque cluster : compute ses 6 événements (incluant depotDepart/depotArrival per-site)
+const sites=sigClusters.map((cluster,cIdx)=>{
+  const inClZone=p=>cluster.hops.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM);
+  let firstIdx=-1,lastIdx=-1;
+  for(let i=0;i<pts.length;i++){if(inClZone(pts[i])){if(firstIdx===-1)firstIdx=i;lastIdx=i}}
+  if(firstIdx===-1)return null;
+  // Borne basse pour recherche dépôt = sortie du cluster précédent (évite de chevaucher 2 sites)
+  const prevCluster=cIdx>0?sigClusters[cIdx-1]:null;
+  let prevExitIdx=-1;
+  if(prevCluster){
+    const prevInZone=p=>prevCluster.hops.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM);
+    for(let i=0;i<firstIdx;i++)if(prevInZone(pts[i]))prevExitIdx=i;
   }
-  let ipLat,ipLon;
-  if(before&&after&&before.min!==after.min){
-    const t=(h.min-before.min)/(after.min-before.min);
-    ipLat=before.lat+t*(after.lat-before.lat);
-    ipLon=before.lon+t*(after.lon-before.lon);
-  }else if(before){ipLat=before.lat;ipLon=before.lon}
-  else if(after){ipLat=after.lat;ipLon=after.lon}
-  else return false;
-  return hopPos.some(hp=>haversine([ipLat,ipLon],[hp.lat,hp.lon])<=ZONE_KM);
-};
-// On track les valeurs en minutes absolues (peuvent dépasser 1440 pour chantier de nuit)
-let workStart,workStartAbsMin;
-if(siteArrival){
-  const siteArrMin=pts[firstInZoneIdx].min;
-  const hopAfterArr=inZoneHops.find(h=>h.min>=siteArrMin);
-  const hopJustBefore=inZoneHops.slice().reverse().find(h=>
-    h.min<siteArrMin&&
-    siteArrMin-h.min<=10&&
-    hopHasOpTime(h)===true&&
-    hopInterpInZone(h)
-  );
-  if(hopJustBefore){workStart=hopJustBefore.hhmm;workStartAbsMin=hopJustBefore.min}
-  else if(hopAfterArr&&hopAfterArr.min-siteArrMin<=240){workStart=hopAfterArr.hhmm;workStartAbsMin=hopAfterArr.min}
-  else{workStartAbsMin=siteArrMin+5;workStart=minToHHMM(workStartAbsMin)}
-}else{
-  if(inZoneHops.length){workStart=inZoneHops[0].hhmm;workStartAbsMin=inZoneHops[0].min}
-  else{workStart=pts[firstInZoneIdx].hhmm;workStartAbsMin=pts[firstInZoneIdx].min}
-}
-// 5. workEnd = dernier pt GPS dans la zone, raffiné par OpTime si dispo en tranches HORAIRES
-// (certaines machines exportent OpTime en bucket journalier de 24h, inutilisable pour estimer la fin)
-let workEndAbsMin=pts[lastInZoneIdx].min;
-if(opTimeBuckets&&opTimeBuckets.length){
-  const sigBuckets=opTimeBuckets.filter(b=>b.opH>=MIN_OP_H&&(b.endMin-b.startMin)<=90);
-  if(sigBuckets.length){
-    const lastSig=sigBuckets[sigBuckets.length-1];
-    const millingEndEst=lastSig.startMin+Math.round(lastSig.opH*60);
-    if(millingEndEst<workEndAbsMin&&millingEndEst>=workStartAbsMin)workEndAbsMin=millingEndEst;
+  // Borne haute = entrée du cluster suivant (idem)
+  const nextCluster=cIdx<sigClusters.length-1?sigClusters[cIdx+1]:null;
+  let nextEntryIdx=pts.length;
+  if(nextCluster){
+    const nextInZone=p=>nextCluster.hops.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM);
+    for(let i=lastIdx+1;i<pts.length;i++)if(nextInZone(pts[i])){nextEntryIdx=i;break}
   }
-}
-const workEndPt=pts.find(p=>p.min===workEndAbsMin);
-let workEnd=workEndPt?workEndPt.hhmm:minToHHMM(workEndAbsMin);
-if(workEndAbsMin<workStartAbsMin)workEnd=workStart;
-return{depotDepart,depotArrival,sites:[{siteArrival,workStart,workEnd,siteDeparture}]};
+  const startedInZone=firstIdx===0;
+  const endedInZone=lastIdx===pts.length-1;
+  // depotDepart = dernier pt à proximité de pts[0] entre prevExitIdx et firstIdx (inclus)
+  let depotDepart=null;
+  if(!startedInZone){
+    let lastDepotIdx=Math.max(0,prevExitIdx+1);
+    for(let i=Math.max(1,prevExitIdx+1);i<firstIdx;i++){
+      if(haversine([pts[i].lat,pts[i].lon],[pts[0].lat,pts[0].lon])<=1.0)lastDepotIdx=i;
+    }
+    depotDepart=pts[lastDepotIdx].hhmm;
+  }
+  const siteArrival=startedInZone?null:pts[firstIdx].hhmm;
+  let siteDeparture=endedInZone?null:pts[lastIdx+1].hhmm;
+  // depotArrival = 1er pt à proximité de pts[0] APRÈS lastIdx (et avant nextEntryIdx)
+  // OU début phase stationnaire en fin de fenêtre si pas de retour dépôt strict
+  let depotArrival=null;
+  if(!endedInZone&&nextEntryIdx>lastIdx+1){
+    for(let i=lastIdx+1;i<nextEntryIdx;i++){
+      if(haversine([pts[i].lat,pts[i].lon],[pts[0].lat,pts[0].lon])<=1.0){depotArrival=pts[i].hhmm;break}
+    }
+    if(!depotArrival&&cIdx===sigClusters.length-1){
+      // Dernier site : fallback sur dernière phase stationnaire
+      let stationaryStartIdx=pts.length-1;
+      for(let i=pts.length-2;i>lastIdx;i--){
+        if(haversine([pts[i].lat,pts[i].lon],[lastPt.lat,lastPt.lon])<STATIONARY_KM)stationaryStartIdx=i;
+        else break;
+      }
+      depotArrival=pts[stationaryStartIdx].hhmm;
+    }
+  }
+  // Si GPS trop espacé : siteDeparture = depotArrival → interpole à mi-chemin
+  if(siteDeparture&&depotArrival&&siteDeparture===depotArrival){
+    const midMin=Math.round((pts[lastIdx].min+pts[lastIdx+1].min)/2);
+    siteDeparture=minToHHMM(midMin);
+  }
+  // workStart pour CE cluster
+  const clHops=cluster.hops;
+  let workStart,workStartAbsMin;
+  if(siteArrival){
+    const siteArrMin=pts[firstIdx].min;
+    const hopAfterArr=clHops.find(h=>h.min>=siteArrMin);
+    const hopJustBefore=clHops.slice().reverse().find(h=>h.min<siteArrMin&&siteArrMin-h.min<=10&&hopHasOpTime(h)===true);
+    if(hopJustBefore){workStart=hopJustBefore.hhmm;workStartAbsMin=hopJustBefore.min}
+    else if(hopAfterArr&&hopAfterArr.min-siteArrMin<=240){workStart=hopAfterArr.hhmm;workStartAbsMin=hopAfterArr.min}
+    else{workStartAbsMin=siteArrMin+5;workStart=minToHHMM(workStartAbsMin)}
+  }else{
+    if(clHops.length){workStart=clHops[0].hhmm;workStartAbsMin=clHops[0].min}
+    else{workStart=pts[firstIdx].hhmm;workStartAbsMin=pts[firstIdx].min}
+  }
+  // workEnd, raffiné par OpTime horaire de CE cluster uniquement
+  let workEndAbsMin=pts[lastIdx].min;
+  if(opTimeBuckets&&opTimeBuckets.length){
+    const sigBuckets=opTimeBuckets.filter(b=>b.opH>=MIN_OP_H&&(b.endMin-b.startMin)<=90);
+    const clStart=pts[firstIdx].min,clEnd=pts[lastIdx].min;
+    const relevant=sigBuckets.filter(b=>b.startMin>=clStart-60&&b.endMin<=clEnd+60);
+    if(relevant.length){
+      const lastSig=relevant[relevant.length-1];
+      const millingEndEst=lastSig.startMin+Math.round(lastSig.opH*60);
+      if(millingEndEst<workEndAbsMin&&millingEndEst>=workStartAbsMin)workEndAbsMin=millingEndEst;
+    }
+  }
+  const workEndPt=pts.find(p=>p.min===workEndAbsMin);
+  let workEnd=workEndPt?workEndPt.hhmm:minToHHMM(workEndAbsMin);
+  if(workEndAbsMin<workStartAbsMin)workEnd=workStart;
+  return{siteArrival,workStart,workEnd,siteDeparture,depotDepart,depotArrival};
+}).filter(s=>s!==null);
+// Global depotDepart/depotArrival = 1er site / dernier site (pour rétrocompat affichage)
+const globalDepotDepart=sites.length?sites[0].depotDepart:null;
+const globalDepotArrival=sites.length?sites[sites.length-1].depotArrival:null;
+return{depotDepart:globalDepotDepart,depotArrival:globalDepotArrival,sites};
 };
 // Re-applique la détection sur un rapport stocké si données brutes présentes (migre les anciens formats)
 // Si pas de rawPts, applique au moins la contrainte workStart > siteArrival (filet de sécurité legacy)
@@ -939,12 +935,16 @@ const theoDep=theoArrCh!=null&&travelAllerT>0?theoArrCh-travelAllerT-tpDepT:null
 const workEndMinT=site&&site.workEnd?toMinT(site.workEnd):null;
 const theoArrDep=workEndMinT!=null&&travelRetourT>0?workEndMinT+travelRetourT+tpArrT:null;
 const evts=[];
-if(isFirst&&mr.depotDepart)evts.push({icon:'🚛',lbl:'Dép. dépôt',t:mr.depotDepart,theo:theoDep!=null?minToHHMMt(theoDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
+// Multi-chantiers : chaque mission map à son site (sites[mIdx]). Les depotDepart/Arrival sont per-site.
+// Fallback sur mr.depotDepart/Arrival pour rapports legacy stockés sans depotDepart per-site.
+const dDep=(site&&site.depotDepart)||(isFirst?mr.depotDepart:null);
+const dArr=(site&&site.depotArrival)||(isLast?mr.depotArrival:null);
+if(dDep)evts.push({icon:'🚛',lbl:'Dép. dépôt',t:dDep,theo:theoDep!=null?minToHHMMt(theoDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
 if(site&&site.siteArrival)evts.push({icon:'📍',lbl:'Arr. chantier',t:site.siteArrival,theo:theoArrCh!=null?minToHHMMt(theoArrCh):null,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
 if(site&&site.workStart)evts.push({icon:'⚙️',lbl:'Début fraisage',t:site.workStart,bg:'#f0fdf4',bd:'#22c55e',tx:'#15803d'});
 if(site&&site.workEnd)evts.push({icon:'🏁',lbl:'Fin fraisage',t:site.workEnd,bg:'#fff7ed',bd:'#f97316',tx:'#c2410c'});
 if(site&&site.siteDeparture)evts.push({icon:'🚛',lbl:'Dép. chantier',t:site.siteDeparture,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
-if(isLast&&mr.depotArrival)evts.push({icon:'🏠',lbl:'Arr. dépôt',t:mr.depotArrival,theo:theoArrDep!=null?minToHHMMt(theoArrDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
+if(dArr)evts.push({icon:'🏠',lbl:'Arr. dépôt',t:dArr,theo:theoArrDep!=null?minToHHMMt(theoArrDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
 if(!evts.length)return null;
 const toM=t=>{if(!t)return 0;const[h,m2]=t.split(':').map(Number);return h*60+m2};
 const alerts=[];
@@ -1000,14 +1000,17 @@ aD:billMin!=null?billMin+fhJob*60+pMin+travelRetour:null,
 db:billMin!=null?billMin+fhJob*60+pMin+travelRetour+tpArr:null
 };
 // 8 heures réelles
+// Multi-chantiers : chaque mission utilise son site dédié, depotDepart/Arrival per-site
+const dDepStr=siteD&&siteD.depotDepart?siteD.depotDepart:(mrD?mrD.depotDepart:null);
+const dArrStr=siteD&&siteD.depotArrival?siteD.depotArrival:(mrD?mrD.depotArrival:null);
 const R={
 e:mainTE?toMinD(mainTE.startTime):null,
-dD:mrD?toMinD(mrD.depotDepart):null,
+dD:dDepStr?toMinD(dDepStr):null,
 aC:siteD?toMinD(siteD.siteArrival):null,
 fS:siteD?toMinD(siteD.workStart):null,
 fE:siteD?toMinD(siteD.workEnd):null,
 dC:siteD?toMinD(siteD.siteDeparture):null,
-aD:mrD?toMinD(mrD.depotArrival):null,
+aD:dArrStr?toMinD(dArrStr):null,
 db:mainTE?toMinD(mainTE.endTime):null
 };
 const KEYS=['e','dD','aC','fS','fE','dC','aD','db'];
