@@ -969,9 +969,9 @@ const travelRetourT=Number(j.travelMinRetour)||0;
 const theoArrCh=billStartMinT!=null?billStartMinT-MARGE_ARRIVEE_CHANTIER:null;
 // Dép. dépôt théo = heure d'arrivée chantier théo - trajet aller - temps préparation matin
 const theoDep=theoArrCh!=null&&travelAllerT>0?theoArrCh-travelAllerT-tpDepT:null;
-// Arr. dépôt théo = fin de chantier RÉELLE + trajet retour + temps mise en sécurité
-const workEndMinT=site&&site.workEnd?toMinT(site.workEnd):null;
-const theoArrDep=workEndMinT!=null&&travelRetourT>0?workEndMinT+travelRetourT+tpArrT:null;
+// Arr. dépôt théo = heure de DÉPART CHANTIER RÉELLE + trajet retour théo + marge (tpArrivee, réglable)
+const siteDepMinT=site&&site.siteDeparture?toMinT(site.siteDeparture):null;
+const theoArrDep=siteDepMinT!=null&&travelRetourT>0?siteDepMinT+travelRetourT+tpArrT:null;
 const evts=[];
 // Multi-chantiers : chaque mission map à son site (sites[mIdx]). Les depotDepart/Arrival sont per-site.
 // Fallback sur mr.depotDepart/Arrival pour rapports legacy stockés sans depotDepart per-site.
@@ -1040,8 +1040,11 @@ aC:billMin!=null?billMin-MARGE:null,
 fS:billMin,
 fE:billMin!=null?billMin+fhJob*60+pMin:null,
 dC:billMin!=null?billMin+fhJob*60+pMin:null,
-aD:billMin!=null?billMin+fhJob*60+pMin+travelRetour:null,
-db:billMin!=null?billMin+fhJob*60+pMin+travelRetour+tpArr:null
+// Arr. Dépôt théo = heure de DÉPART CHANTIER RÉELLE + trajet retour théo (mieux que theo pur car
+// reflète le vrai départ chantier, surtout si le chantier finit plus tot/tard que prévu)
+aD:(()=>{const sd=siteD&&siteD.siteDeparture?toMinD(siteD.siteDeparture):null;return sd!=null&&travelRetour>0?sd+travelRetour:(billMin!=null?billMin+fhJob*60+pMin+travelRetour:null)})(),
+// Débauche théo = Arr. Dépôt théo + tpArrivee (marge mise en sécurité, réglable dans les paramètres)
+db:(()=>{const sd=siteD&&siteD.siteDeparture?toMinD(siteD.siteDeparture):null;return sd!=null&&travelRetour>0?sd+travelRetour+tpArr:(billMin!=null?billMin+fhJob*60+pMin+travelRetour+tpArr:null)})()
 };
 // 8 heures réelles
 // Multi-chantiers : chaque mission utilise son site dédié, depotDepart/Arrival per-site
