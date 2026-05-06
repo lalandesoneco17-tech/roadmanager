@@ -412,7 +412,10 @@ const sites=sigClusters.map((cluster,cIdx)=>{
   const workEndPt=pts.find(p=>p.min===workEndAbsMin);
   let workEnd=workEndPt?workEndPt.hhmm:minToHHMM(workEndAbsMin);
   if(workEndAbsMin<workStartAbsMin)workEnd=workStart;
-  return{siteArrival,workStart,workEnd,siteDeparture,depotDepart,depotArrival};
+  // Centroïde du chantier = moyenne des positions des "On" moteur du cluster
+  const centroidLat=cluster.hops.reduce((s,h)=>s+h.lat,0)/cluster.hops.length;
+  const centroidLon=cluster.hops.reduce((s,h)=>s+h.lon,0)/cluster.hops.length;
+  return{siteArrival,workStart,workEnd,siteDeparture,depotDepart,depotArrival,centroid:{lat:centroidLat,lon:centroidLon}};
 }).filter(s=>s!==null);
 // Global depotDepart/depotArrival = 1er site / dernier site (pour rétrocompat affichage)
 const globalDepotDepart=sites.length?sites[0].depotDepart:null;
@@ -1051,9 +1054,14 @@ const coutR=totalSalR+totalConsR;
 const ca=(j.priceForfait||0)+(j.hasTransfer?(j.transferPrice||0):0);
 const benefT=ca-coutT;
 const benefR=ca-coutR;
-// GPS chantier RÉEL = centroïde des points GPS pendant le fraisage
+// GPS chantier RÉEL = centroïde stocké directement dans le site (= moyenne des "On" moteur du cluster).
+// Permet d'avoir un centroïde DIFFÉRENT par site pour les jours multi-chantiers.
 let chantierGpsR=null,distFromUser=null;
-if(mrD&&mrD.rawPts&&siteD){
+if(siteD&&siteD.centroid){
+  chantierGpsR={lat:siteD.centroid.lat,lon:siteD.centroid.lon};
+  if(j.gps){const uc=parseCoords(j.gps);if(uc)distFromUser=haversine([uc[0],uc[1]],[chantierGpsR.lat,chantierGpsR.lon])*1000}
+}else if(mrD&&mrD.rawPts&&siteD){
+  // Fallback rapports legacy sans centroid stocké
   const sArr=toMinD(siteD.siteArrival)||0;
   const sDep=siteD.siteDeparture?toMinD(siteD.siteDeparture):(toMinD(siteD.workEnd)||0);
   const ptsIn=mrD.rawPts.filter(p=>p.min>=sArr&&p.min<=sDep);
