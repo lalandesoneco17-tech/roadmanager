@@ -723,7 +723,7 @@ const te=(data.timeEntries||[]).filter(t=>t.empId===eId&&t.date===selDate);
 const hasJ=ejAll.length>0;
 const hasMissions=ej.length>0;
 let workMin=0,pauseMin=0,totalMinDay=0;
-te.forEach(t=>{if(t.startTime&&t.endTime){const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);const total=(eh*60+em)-(sh*60+sm);workMin+=total-(t.pauseMin||0);pauseMin+=(t.pauseMin||0);totalMinDay+=total}});
+te.forEach(t=>{if(t.startTime&&t.endTime){const total=calcDiffMin(t.startTime,t.endTime);workMin+=Math.max(0,total-(t.pauseMin||0));pauseMin+=(t.pauseMin||0);totalMinDay+=total}});
 const isMonthly=emp.salaryType==='monthly';
 const hourly=isMonthly?0:Number(emp.hourlySalary)||0;
 const dailySalary=isMonthly?(Number(emp.monthlySalary)||0)/wdpm:0;
@@ -868,7 +868,7 @@ const G=t=><span style={{background:'#dcfce7',border:'1px solid #16a34a',borderR
 const B=t=><span style={{background:'#dbeafe',border:'1px solid #3b82f6',borderRadius:6,padding:'2px 7px',color:'#1e3a8a',fontWeight:700}}>{t}</span>;
 const O=t=><span style={{background:'#fed7aa',border:'1px solid #f97316',borderRadius:6,padding:'2px 7px',color:'#9a3412',fontWeight:700}}>{t}</span>;
 // Jour : calculé depuis mainTE uniquement (évite double-comptage)
-const jourMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?(()=>{const[sh,sm]=mainTE.startTime.split(':').map(Number);const[eh,em]=mainTE.endTime.split(':').map(Number);return Math.max(0,(eh*60+em)-(sh*60+sm)-(mainTE.pauseMin||0))})():workMin;
+const jourMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;
 // Semaine depuis lundi (corrigé : empId)
 const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);
 const wkTEs=(data.timeEntries||[]).filter(te=>te.empId===eId&&te.date>=monISO&&te.date<=selDate);
@@ -1246,7 +1246,7 @@ const clientCA={};jobs.forEach(j=>{const cn=(data.clients||[]).find(c=>c.id===j.
 const topCl=Object.entries(clientCA).sort((a,b)=>b[1].ca-a[1].ca);
 const alerts=useMemo(()=>{const a=[];const d30=fmtDateISO(new Date(Date.now()+30*86400000));(data.panneReports||[]).filter(p=>p.status==='new'&&p.severity==='urgent').forEach(p=>{const eq=[...(data.machines||[]),...(data.trucks||[]),...(data.cars||[])].find(x=>x.id===(p.machineId||p.truckId||p.carId));a.push({t:'Panne urgente: '+(eq?eq.name:'?')+' - '+(p.description||'').substring(0,40),c:C.red,type:'panne'})});(data.parts||[]).filter(p=>(p.quantity||0)<=(p.minStock||2)).forEach(p=>{a.push({t:'Stock bas: '+p.name+' ('+p.quantity+')',c:C.orange,type:'stock'})});(data.trucks||[]).concat(data.cars||[]).forEach(v=>{if(v.ctDate&&v.ctDate<=d30)a.push({t:'CT '+v.name+' : '+v.ctDate,c:C.orange,type:'ct'});if(v.vidangeDate&&v.vidangeDate<=d30)a.push({t:'Vidange '+v.name+' : '+v.vidangeDate,c:C.orange,type:'vidange'})});(data.panneReports||[]).filter(p=>p.status!=='resolved'&&p.severity!=='urgent').forEach(p=>{a.push({t:'Panne: '+(p.description||'').substring(0,40),c:C.orange,type:'panne'})});return a},[data]);
 const machStats=useMemo(()=>(data.machines||[]).map(mach=>{const mJobs=jobs.filter(j=>j.machineId===mach.id);const ca=mJobs.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);const fuelCost=mJobs.reduce((s,j)=>{const ft=getMachineFuelType(data,mach.id);const fp=getFuelPrice(data,ft,j.machineFuelDepot);return s+(j.machineFuelL||0)*fp},0);const assJour=(mach.insuranceMonthly||0)/wdpm;const credJour=(Number(mach.creditMonthly)||0)/wdpm;const ctJour=((mach.ctCost||0)/12)/wdpm;const daysUsed=[...new Set(mJobs.map(j=>j.date))].length;const fixedCost=(assJour+credJour+ctJour)*daysUsed;const interCost=(data.interventions||[]).filter(i=>i.machineId===mach.id&&i.date>=range.start&&i.date<=range.end).reduce((s,i)=>s+(i.totalCost||0),0);const cost=fuelCost+fixedCost+interCost;const benef=ca-cost;const margePct2=ca>0?((benef/ca)*100):0;const months2=[];const d=new Date(yearStart);for(let i2=0;i2<12;i2++){const mo=new Date(d.getFullYear(),d.getMonth()+i2,1);const last=new Date(mo.getFullYear(),mo.getMonth()+1,0);if(mo>new Date())break;const ms=fmtDateISO(mo);const me=fmtDateISO(last);const moJobs=(data.jobs||[]).filter(j2=>j2.machineId===mach.id&&j2.date>=ms&&j2.date<=me&&j2.type!=='depot');const moCa=moJobs.reduce((s2,j2)=>s2+(j2.priceForfait||0)+(j2.hasTransfer?j2.transferPrice||0:0),0);const moInter=(data.interventions||[]).filter(ii=>ii.machineId===mach.id&&ii.date>=ms&&ii.date<=me).reduce((s2,ii)=>s2+(ii.totalCost||0),0);const moFuel=moJobs.reduce((s2,j2)=>{const ft2=getMachineFuelType(data,mach.id);const fp2=getFuelPrice(data,ft2,j2.machineFuelDepot);return s2+(j2.machineFuelL||0)*fp2},0);months2.push({label:mo.toLocaleString('fr-FR',{month:'short'}),ca:moCa,cost:moFuel+moInter+(assJour+credJour+ctJour)*([...new Set(moJobs.map(j2=>j2.date))].length)})}let cumBenef=0;let pmLabel=null;months2.forEach(mo2=>{cumBenef+=mo2.ca-mo2.cost;if(cumBenef>0&&!pmLabel)pmLabel=mo2.label});return{name:mach.name,type:mach.type,ca,cost,benef,margePct:margePct2,pmLabel}}),[data,jobs,range,yearStart,wdpm]);
-const driverStats=useMemo(()=>{const empIds=[...new Set(jobs.map(j=>j.employeeId))];return empIds.map(eId=>{const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;const eJobs=jobs.filter(j=>j.employeeId===eId);const ca=eJobs.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);const hourly=Number(emp.hourlySalary)||0;const chargesRate=Number(emp.chargesRate)||45;const salBrut=hourly;const workDays=[...new Set(eJobs.map(j=>j.date))].length;const te=(data.timeEntries||[]).filter(t=>t.empId===eId&&t.date>=range.start&&t.date<=range.end);let totalWorkMin=0;te.forEach(t=>{if(t.startTime&&t.endTime){const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);totalWorkMin+=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0)}});const salTotal=(totalWorkMin/60)*hourly;const salCharges=salTotal*(1+chargesRate/100);const ratio=salCharges>0?(ca/salCharges):0;return{name:emp.name,ca,salCharges,missions:eJobs.length,days:workDays,ratio,initial:(emp.name||'?')[0].toUpperCase()}}).filter(Boolean).sort((a,b)=>b.ca-a.ca)},[data,jobs,range]);
+const driverStats=useMemo(()=>{const empIds=[...new Set(jobs.map(j=>j.employeeId))];return empIds.map(eId=>{const emp=(data.employees||[]).find(e=>e.id===eId);if(!emp)return null;const eJobs=jobs.filter(j=>j.employeeId===eId);const ca=eJobs.reduce((s,j)=>s+(j.priceForfait||0)+(j.hasTransfer?j.transferPrice||0:0),0);const hourly=Number(emp.hourlySalary)||0;const chargesRate=Number(emp.chargesRate)||45;const salBrut=hourly;const workDays=[...new Set(eJobs.map(j=>j.date))].length;const te=(data.timeEntries||[]).filter(t=>t.empId===eId&&t.date>=range.start&&t.date<=range.end);let totalWorkMin=0;te.forEach(t=>{totalWorkMin+=calcWorkedMin(t)});const salTotal=(totalWorkMin/60)*hourly;const salCharges=salTotal*(1+chargesRate/100);const ratio=salCharges>0?(ca/salCharges):0;return{name:emp.name,ca,salCharges,missions:eJobs.length,days:workDays,ratio,initial:(emp.name||'?')[0].toUpperCase()}}).filter(Boolean).sort((a,b)=>b.ca-a.ca)},[data,jobs,range]);
 const totalStockVal=(data.parts||[]).reduce((s,p)=>s+(p.quantity||0)*(p.unitPrice||0),0);
 const lowStockParts=(data.parts||[]).filter(p=>(p.quantity||0)<=(p.minStock||2));
 const unresolvedPannes=(data.panneReports||[]).filter(p=>p.status!=='resolved');
@@ -1927,9 +1927,13 @@ return(
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitRdv} style={btnStyle(rdvType==='rdv'?C.orange:C.red,true)}>Envoyer</button><button onClick={()=>setShowRdv(false)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
 {editTE&&<Mod title="Modifier pointage" onClose={()=>setEditTE(null)}>
-<Fl label="Debut"><input type="time" style={inputStyle} value={editTE.startTime||''} onChange={e=>setEditTE({...editTE,startTime:e.target.value})}/></Fl>
-<Fl label="Fin"><input type="time" style={inputStyle} value={editTE.endTime||''} onChange={e=>setEditTE({...editTE,endTime:e.target.value})}/></Fl>
-<Fl label="Pause (min)"><input type="number" style={inputStyle} value={editTE.pauseMin||0} onChange={e=>setEditTE({...editTE,pauseMin:Number(e.target.value)})}/></Fl>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+<Fl label="Embauche"><input type="time" style={inputStyle} value={editTE.startTime||''} onChange={e=>setEditTE({...editTE,startTime:e.target.value})}/></Fl>
+<Fl label="Debauche"><input type="time" style={inputStyle} value={editTE.endTime||''} onChange={e=>setEditTE({...editTE,endTime:e.target.value})}/></Fl>
+<Fl label="Coupure (debut)"><input type="time" style={inputStyle} value={editTE.breakStart||''} onChange={e=>{const v=e.target.value;setEditTE(prev=>{const n={...prev,breakStart:v};if(v&&n.breakEnd){const m=calcDiffMin(v,n.breakEnd);if(m>0)n.pauseMin=m}return n})}}/></Fl>
+<Fl label="Reprise"><input type="time" style={inputStyle} value={editTE.breakEnd||''} onChange={e=>{const v=e.target.value;setEditTE(prev=>{const n={...prev,breakEnd:v};if(n.breakStart&&v){const m=calcDiffMin(n.breakStart,v);if(m>0)n.pauseMin=m}return n})}}/></Fl>
+</div>
+<Fl label="Pause totale (min)"><input type="number" style={inputStyle} value={editTE.pauseMin||0} onChange={e=>setEditTE({...editTE,pauseMin:Number(e.target.value)})}/><div style={{fontSize:11,color:C.dim,marginTop:2}}>Calculee auto si Coupure+Reprise renseignees</div></Fl>
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveEdit} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>setEditTE(null)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
 {showPanne&&<Mod title="Signaler une panne" onClose={()=>setShowPanne(false)}>
@@ -2551,8 +2555,7 @@ res.title='Heures de travail'+(empFilter?' — '+empName(empFilter):'');
 res.headers=['Date','Chauffeur','Embauche','Debauche','Pause','Travail'];
 let totalH=0;
 (data.timeEntries||[]).filter(t=>t.date>=(dateFrom||'2020-01-01')&&t.date<=dateTo&&(!empFilter||t.empId===empFilter)&&t.startTime&&t.endTime).sort((a,b)=>b.date.localeCompare(a.date)).forEach(t=>{
-const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
-const wm=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);totalH+=wm;
+const wm=calcWorkedMin(t);totalH+=wm;
 res.rows.push([t.date,empName(t.empId),t.startTime,t.endTime,(t.pauseMin||0)+'min',fmtDuration(wm)])});
 res.summary='Total: '+fmtDuration(totalH)+' ('+((totalH/60).toFixed(2))+'h)';
 }
@@ -2900,7 +2903,7 @@ Object.keys(teByDate).sort().reverse().slice(0,30).forEach(d=>{
 ctx+=`${d}: `;
 teByDate[d].forEach((t,i)=>{
 if(t.type==='absence'){ctx+=(i>0?' | ':'')+`[${t.id}] ${empName(t.empId)}:ABS(${t.absenceType||'?'})`;return}
-const hours=(t.startTime&&t.endTime)?(()=>{const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);return((eh*60+em)-(sh*60+sm)-(t.pauseMin||0))/60})():null;
+const hours=(t.startTime&&t.endTime)?(calcWorkedMin(t)/60):null;
 ctx+=(i>0?' | ':'')+`[${t.id}] ${empName(t.empId)}:${t.startTime||'--'}-${t.endTime||'--'}${t.pauseMin?' p'+t.pauseMin+'m':''}${hours!==null?' ='+hours.toFixed(1)+'h':''}${t.mealType&&t.mealType!=='PANIER'?' ['+t.mealType+']':''}${t.nightHours?' nuit'+t.nightHours+'h':''}`;
 });
 ctx+='\n';
@@ -2910,8 +2913,7 @@ ctx+='\n';
 // === HEURES PAR SALARIE — semaine en cours ===
 const empWeekMin={};
 allTE.filter(t=>weekDates.includes(t.date)&&t.startTime&&t.endTime).forEach(t=>{
-const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
-const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);empWeekMin[t.empId]=(empWeekMin[t.empId]||0)+min;
+empWeekMin[t.empId]=(empWeekMin[t.empId]||0)+calcWorkedMin(t);
 });
 if(Object.keys(empWeekMin).length>0){
 ctx+=`\n=== HEURES SEMAINE EN COURS (lundi ${monDate}) ===\n`;
@@ -2921,8 +2923,7 @@ Object.entries(empWeekMin).sort((a,b)=>b[1]-a[1]).forEach(([eid,min])=>{const h=
 // === HEURES PAR SALARIE — mois en cours ===
 const empMonthMin={};
 allTE.filter(t=>t.date>=monthStart&&t.date<=monthEnd&&t.startTime&&t.endTime).forEach(t=>{
-const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
-const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);empMonthMin[t.empId]=(empMonthMin[t.empId]||0)+min;
+empMonthMin[t.empId]=(empMonthMin[t.empId]||0)+calcWorkedMin(t);
 });
 if(Object.keys(empMonthMin).length>0){
 ctx+=`\n=== HEURES MOIS EN COURS ===\n`;
@@ -2975,11 +2976,10 @@ const anom=[];
 const emp=employees.find(e=>e.id===t.empId);
 anom.push(`[Pointage non termine] ${emp?emp.name:'?'} le ${t.date} : debut ${t.startTime}, pas de fin enregistree`);
 });
-// 2. Journees > 12h (oubli de pointer la fin probable)
+// 2. Journees > 14h (oubli de pointer la fin probable, sauf shift de nuit normal)
 (data.timeEntries||[]).filter(t=>last7.includes(t.date)&&t.startTime&&t.endTime).forEach(t=>{
-const[sh,sm]=t.startTime.split(':').map(Number);const[eh,em]=t.endTime.split(':').map(Number);
-const min=(eh*60+em)-(sh*60+sm)-(t.pauseMin||0);
-if(min>720){const emp=employees.find(e=>e.id===t.empId);anom.push(`[Journee tres longue] ${emp?emp.name:'?'} le ${t.date} = ${(min/60).toFixed(1)}h (oubli de pointer la fin ?)`)}
+const min=calcWorkedMin(t);
+if(min>840){const emp=employees.find(e=>e.id===t.empId);anom.push(`[Journee tres longue] ${emp?emp.name:'?'} le ${t.date} = ${(min/60).toFixed(1)}h (oubli de pointer la fin ?)`)}
 });
 // 3. Retards d'embauche vs theorique (jours passes)
 (data.jobs||[]).filter(j=>past7.includes(j.date)&&j.employeeId).forEach(j=>{
