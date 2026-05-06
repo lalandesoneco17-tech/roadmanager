@@ -369,7 +369,18 @@ const sites=sigClusters.map((cluster,cIdx)=>{
     }
     depotDepart=pts[lastDepotIdx].hhmm;
   }
-  const siteArrival=startedInZone?null:pts[firstIdx].hhmm;
+  // siteArrival : par défaut = 1er pt GPS en zone. Mais si le 1er hop "On" est très proche en temps
+  // de ce pt (< 3 min), c'est probablement que la machine est arrivée juste avant le sampling GPS.
+  // Dans ce cas on interpole à mi-chemin entre dernier pt en transit et 1er pt en zone.
+  const firstHopAbsMin=cluster.hops.length?cluster.hops[0].min:null;
+  let siteArrival=null;
+  if(!startedInZone){
+    const firstZonePtMin=pts[firstIdx].min;
+    if(firstHopAbsMin!=null&&Math.abs(firstHopAbsMin-firstZonePtMin)<3&&firstIdx>0){
+      const midMin=Math.round((pts[firstIdx-1].min+firstZonePtMin)/2);
+      siteArrival=minToHHMM(midMin);
+    }else siteArrival=pts[firstIdx].hhmm;
+  }
   // siteDeparture = mi-chemin entre dernier pt en zone et 1er pt hors zone (= meilleure estimation
   // du moment où la machine quitte vraiment le chantier, sinon on tombe sur des heures bizarres
   // genre "00:00" pile à minuit dépendant du sampling GPS).
