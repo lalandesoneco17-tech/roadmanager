@@ -415,7 +415,43 @@ const sites=sigClusters.map((cluster,cIdx)=>{
   // Centroïde du chantier = moyenne des positions des "On" moteur du cluster
   const centroidLat=cluster.hops.reduce((s,h)=>s+h.lat,0)/cluster.hops.length;
   const centroidLon=cluster.hops.reduce((s,h)=>s+h.lon,0)/cluster.hops.length;
-  return{siteArrival,workStart,workEnd,siteDeparture,depotDepart,depotArrival,centroid:{lat:centroidLat,lon:centroidLon}};
+  // Détection des arrêts intermédiaires (>=30 min, hors dépôt et hors zone chantier) entre dépôt et chantier
+  const findPauses=(sIdx,eIdx)=>{
+    const result=[];
+    let pStart=-1;
+    const isPause=p=>{
+      const nearDepot=haversine([p.lat,p.lon],[pts[0].lat,pts[0].lon])<=1.0;
+      const nearCluster=cluster.hops.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM);
+      return!nearDepot&&!nearCluster;
+    };
+    for(let i=sIdx;i<=eIdx;i++){
+      const p=pts[i];
+      if(!isPause(p)){
+        if(pStart!==-1){
+          const dur=pts[i-1].min-pts[pStart].min;
+          if(dur>=30)result.push({startHhmm:pts[pStart].hhmm,endHhmm:pts[i-1].hhmm,lat:pts[pStart].lat,lon:pts[pStart].lon,durationMin:dur});
+          pStart=-1;
+        }continue;
+      }
+      if(pStart===-1)pStart=i;
+      else{
+        const ref=pts[pStart];
+        if(haversine([p.lat,p.lon],[ref.lat,ref.lon])>0.5){
+          const dur=pts[i-1].min-pts[pStart].min;
+          if(dur>=30)result.push({startHhmm:pts[pStart].hhmm,endHhmm:pts[i-1].hhmm,lat:ref.lat,lon:ref.lon,durationMin:dur});
+          pStart=i;
+        }
+      }
+    }
+    if(pStart!==-1&&pStart<eIdx){
+      const dur=pts[eIdx].min-pts[pStart].min;
+      if(dur>=30)result.push({startHhmm:pts[pStart].hhmm,endHhmm:pts[eIdx].hhmm,lat:pts[pStart].lat,lon:pts[pStart].lon,durationMin:dur});
+    }
+    return result;
+  };
+  const outboundPauses=!startedInZone?findPauses(Math.max(prevExitIdx+1,0),firstIdx-1):[];
+  const inboundPauses=!endedInZone?findPauses(lastIdx+1,Math.min(nextEntryIdx-1,pts.length-1)):[];
+  return{siteArrival,workStart,workEnd,siteDeparture,depotDepart,depotArrival,centroid:{lat:centroidLat,lon:centroidLon},outboundPauses,inboundPauses};
 }).filter(s=>s!==null);
 // Global depotDepart/depotArrival = 1er site / dernier site (pour rétrocompat affichage)
 const globalDepotDepart=sites.length?sites[0].depotDepart:null;
@@ -943,10 +979,14 @@ const evts=[];
 const dDep=(site&&site.depotDepart)||(isFirst?mr.depotDepart:null);
 const dArr=(site&&site.depotArrival)||(isLast?mr.depotArrival:null);
 if(dDep)evts.push({icon:'🚛',lbl:'Dép. dépôt',t:dDep,theo:theoDep!=null?minToHHMMt(theoDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
+// Pauses intermédiaires aller (chez l'employé, pause repos, etc.)
+if(site&&site.outboundPauses)site.outboundPauses.forEach(p=>{const dh=Math.floor(p.durationMin/60),dm=p.durationMin%60;const dur=dh>0?dh+'h'+String(dm).padStart(2,'0'):dm+'min';evts.push({icon:'⏸',lbl:'Pause '+dur,t:p.startHhmm+'→'+p.endHhmm,bg:'#fefce8',bd:'#eab308',tx:'#713f12',gpsLink:'https://www.google.com/maps?q='+p.lat+','+p.lon})});
 if(site&&site.siteArrival)evts.push({icon:'📍',lbl:'Arr. chantier',t:site.siteArrival,theo:theoArrCh!=null?minToHHMMt(theoArrCh):null,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
 if(site&&site.workStart)evts.push({icon:'⚙️',lbl:'Début fraisage',t:site.workStart,bg:'#f0fdf4',bd:'#22c55e',tx:'#15803d'});
 if(site&&site.workEnd)evts.push({icon:'🏁',lbl:'Fin fraisage',t:site.workEnd,bg:'#fff7ed',bd:'#f97316',tx:'#c2410c'});
 if(site&&site.siteDeparture)evts.push({icon:'🚛',lbl:'Dép. chantier',t:site.siteDeparture,bg:'#f5f3ff',bd:'#8b5cf6',tx:'#6d28d9'});
+// Pauses intermédiaires retour (rare mais possible)
+if(site&&site.inboundPauses)site.inboundPauses.forEach(p=>{const dh=Math.floor(p.durationMin/60),dm=p.durationMin%60;const dur=dh>0?dh+'h'+String(dm).padStart(2,'0'):dm+'min';evts.push({icon:'⏸',lbl:'Pause '+dur,t:p.startHhmm+'→'+p.endHhmm,bg:'#fefce8',bd:'#eab308',tx:'#713f12',gpsLink:'https://www.google.com/maps?q='+p.lat+','+p.lon})});
 if(dArr)evts.push({icon:'🏠',lbl:'Arr. dépôt',t:dArr,theo:theoArrDep!=null?minToHHMMt(theoArrDep):null,bg:'#eff6ff',bd:'#3b82f6',tx:'#1d4ed8'});
 if(!evts.length)return null;
 const toM=t=>{if(!t)return 0;const[h,m2]=t.split(':').map(Number);return h*60+m2};
@@ -958,7 +998,7 @@ return(<div style={{padding:'6px 12px',display:'flex',alignItems:'center',gap:0,
 {evts.map((ev,i)=><React.Fragment key={i}>
 {i>0&&<span style={{color:'#94a3b8',fontSize:18,margin:'0 4px',fontWeight:300,lineHeight:1,userSelect:'none'}}>→</span>}
 <div style={{display:'inline-flex',flexDirection:'column',alignItems:'center',gap:1}}>
-<span style={{background:ev.bg,border:'1px solid '+ev.bd,borderRadius:8,padding:'3px 10px',color:ev.tx,fontWeight:800,fontSize:13,whiteSpace:'nowrap',letterSpacing:'0.2px'}}>{ev.icon} {ev.t}</span>
+{ev.gpsLink?<a href={ev.gpsLink} target="_blank" rel="noopener" title="Voir sur Google Maps" style={{background:ev.bg,border:'1px solid '+ev.bd,borderRadius:8,padding:'3px 10px',color:ev.tx,fontWeight:800,fontSize:13,whiteSpace:'nowrap',letterSpacing:'0.2px',textDecoration:'none',cursor:'pointer'}}>{ev.icon} {ev.t}</a>:<span style={{background:ev.bg,border:'1px solid '+ev.bd,borderRadius:8,padding:'3px 10px',color:ev.tx,fontWeight:800,fontSize:13,whiteSpace:'nowrap',letterSpacing:'0.2px'}}>{ev.icon} {ev.t}</span>}
 <span style={{fontSize:9,color:ev.tx,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.4px',opacity:0.8}}>{ev.lbl}</span>
 {ev.theo&&(()=>{const realMin=toM(ev.t);const theoMin=toM(ev.theo);let delta=realMin-theoMin;if(delta<-720)delta+=1440;else if(delta>720)delta-=1440;const ad=Math.abs(delta);const tcol=ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';const sign=delta>0?'+':'';return<span title={'Théorique : '+ev.theo+' (réel '+(delta===0?'pile à l\'heure':sign+delta+' min)')} style={{fontSize:9,color:tcol,fontWeight:700,whiteSpace:'nowrap',cursor:'help'}}>théo {ev.theo} ({sign}{delta}m)</span>})()}
 </div>
