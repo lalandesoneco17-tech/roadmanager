@@ -1025,7 +1025,9 @@ const pMin=mainTE?(mainTE.pauseMin||0):0;
 const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');
 const mrRaw=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(m?m.name:'')&&r.date===selDate);
 const mrD=mrRaw?recomputeWirtgenReport(mrRaw):null;
-const siteD=mrD?(mrD.sites||[])[0]:null;
+// Multi-chantiers : récupère le site correspondant à CETTE mission (par son index dans grp.missions)
+const mIdxD=grp.missions.findIndex(mc=>mc.j.id===j.id);
+const siteD=mrD?(mrD.sites||[])[mIdxD>=0?mIdxD:0]:null;
 const truck=(data.trucks||[]).find(t=>emp&&t.id===emp.truckId);
 const truckCons=truck?Number(truck.fuelPer100)||25:25;
 const prixGazole=getFuelPrice(data,'gazole',j.startFrom!=='home'?j.startFrom:null);
