@@ -320,7 +320,17 @@ for(const h of hopPosClean){
 // Sélection : garde TOUS les clusters significatifs (>= 2 pts GPS dans vicinité).
 // Permet la détection multi-chantiers le même jour (ex: chantier matin + chantier nuit).
 clusters.forEach(c=>{c.gpsDwell=pts.filter(p=>c.hops.some(h=>haversine([p.lat,p.lon],[h.lat,h.lon])<=ZONE_KM)).length});
-let sigClusters=clusters.filter(c=>c.gpsDwell>=2);
+// Filtre les clusters d'1 seul hop qui sont près de pts[0] (= démarrage moteur au dépôt, pas vrai fraisage).
+// SAUF si tous les hops du fichier sont près de pts[0] (= machine à un chantier où elle a passé la nuit).
+const allNearPts0=hopPosAll.every(h=>haversine([h.lat,h.lon],[pts[0].lat,pts[0].lon])<=1.5);
+let sigClusters=clusters.filter(c=>{
+  if(c.gpsDwell<2)return false;
+  if(c.hops.length===1&&!allNearPts0){
+    const dToPts0=haversine([c.hops[0].lat,c.hops[0].lon],[pts[0].lat,pts[0].lon]);
+    if(dToPts0<=1.5)return false;
+  }
+  return true;
+});
 if(!sigClusters.length){clusters.sort((a,b)=>(b.hops.length-a.hops.length)||(b.gpsDwell-a.gpsDwell));sigClusters=[clusters[0]]}
 sigClusters.sort((a,b)=>a.hops[0].min-b.hops[0].min); // chronologique
 // Helpers communs
