@@ -407,14 +407,15 @@ if(siteArrival){
   if(inZoneHops.length){workStart=inZoneHops[0].hhmm;workStartAbsMin=inZoneHops[0].min}
   else{workStart=pts[firstInZoneIdx].hhmm;workStartAbsMin=pts[firstInZoneIdx].min}
 }
-// 5. workEnd = dernier pt GPS dans la zone, raffiné par OpTime si disponible
+// 5. workEnd = dernier pt GPS dans la zone, raffiné par OpTime si dispo en tranches HORAIRES
+// (certaines machines exportent OpTime en bucket journalier de 24h, inutilisable pour estimer la fin)
 let workEndAbsMin=pts[lastInZoneIdx].min;
 if(opTimeBuckets&&opTimeBuckets.length){
-  const sigBuckets=opTimeBuckets.filter(b=>b.opH>=MIN_OP_H);
+  const sigBuckets=opTimeBuckets.filter(b=>b.opH>=MIN_OP_H&&(b.endMin-b.startMin)<=90);
   if(sigBuckets.length){
     const lastSig=sigBuckets[sigBuckets.length-1];
     const millingEndEst=lastSig.startMin+Math.round(lastSig.opH*60);
-    if(millingEndEst<workEndAbsMin)workEndAbsMin=millingEndEst;
+    if(millingEndEst<workEndAbsMin&&millingEndEst>=workStartAbsMin)workEndAbsMin=millingEndEst;
   }
 }
 const workEndPt=pts.find(p=>p.min===workEndAbsMin);
