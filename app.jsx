@@ -360,7 +360,10 @@ const sites=sigClusters.map((cluster,cIdx)=>{
     depotDepart=pts[lastDepotIdx].hhmm;
   }
   const siteArrival=startedInZone?null:pts[firstIdx].hhmm;
-  let siteDeparture=endedInZone?null:pts[lastIdx+1].hhmm;
+  // siteDeparture = mi-chemin entre dernier pt en zone et 1er pt hors zone (= meilleure estimation
+  // du moment où la machine quitte vraiment le chantier, sinon on tombe sur des heures bizarres
+  // genre "00:00" pile à minuit dépendant du sampling GPS).
+  let siteDeparture=endedInZone?null:minToHHMM(Math.round((pts[lastIdx].min+pts[lastIdx+1].min)/2));
   // depotArrival = 1er pt à proximité de pts[0] APRÈS lastIdx (et avant nextEntryIdx)
   // OU début phase stationnaire en fin de fenêtre si pas de retour dépôt strict
   let depotArrival=null;
@@ -378,11 +381,7 @@ const sites=sigClusters.map((cluster,cIdx)=>{
       depotArrival=pts[stationaryStartIdx].hhmm;
     }
   }
-  // Si GPS trop espacé : siteDeparture = depotArrival → interpole à mi-chemin
-  if(siteDeparture&&depotArrival&&siteDeparture===depotArrival){
-    const midMin=Math.round((pts[lastIdx].min+pts[lastIdx+1].min)/2);
-    siteDeparture=minToHHMM(midMin);
-  }
+  // (Note: siteDeparture est déjà interpolé à mi-chemin ci-dessus, donc plus besoin de fallback ici)
   // workStart pour CE cluster
   const clHops=cluster.hops;
   let workStart,workStartAbsMin;
