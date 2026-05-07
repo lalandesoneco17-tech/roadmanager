@@ -650,6 +650,8 @@ const usedMachIds=dayMissions.map(j=>j.machineId);
 // - Citerne : bleu
 // - Autre / inconnue : gris
 const widthColor=mc=>{if(!mc)return C.muted;if(mc.type==='Balayeuse')return '#16a34a';if(mc.type==='Citerne')return '#3b82f6';if(mc.type!=='Raboteuse')return C.muted;let w=Number(mc.width);if(!w||isNaN(w)){const mt=String(mc.name||'').match(/(\d+)/);if(mt)w=Number(mt[1])}if(!w||isNaN(w))return C.muted;if(w>=200)return '#16a34a';if(w>=150)return '#eab308';if(w>=130)return '#dc2626';if(w>=100)return '#3b82f6';return '#1e293b'};
+// Catégorie d'une machine (= bande de largeur pour Raboteuse, type pour autres) — pour espacer visuellement
+const machCategory=mc=>{if(!mc)return 'x';if(mc.type==='Balayeuse')return 'bal';if(mc.type==='Citerne')return 'cit';if(mc.type!=='Raboteuse')return 'oth';let w=Number(mc.width);if(!w||isNaN(w)){const mt=String(mc.name||'').match(/(\d+)/);if(mt)w=Number(mt[1])}if(!w||isNaN(w))return 'r-?';if(w>=200)return 'r-200';if(w>=150)return 'r-150';if(w>=130)return 'r-130';if(w>=100)return 'r-100';return 'r-low'};
 const renderCol=(types,label)=>{
 const allM=(data.machines||[]).filter(m=>types.includes(m.type));
 const freeM=allM.filter(m=>!usedMachIds.includes(m.id));
@@ -691,9 +693,12 @@ return(
 <div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
 <span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:18}}>{label}</span>
 </div>
-{(()=>{let shownSeparator=false;return sortedCards.map(cardId=>{
-const showSep=!shownSeparator&&cardId.startsWith('m_');
-if(showSep)shownSeparator=true;
+{(()=>{let prevCat=null;return sortedCards.map(cardId=>{
+// showSep = changement de catégorie de machine entre cette card et la précédente
+const curMach=getMachineForCard(cardId);
+const curCat=curMach?machCategory(getMach(curMach)):'x';
+const showSep=prevCat!==null&&prevCat!==curCat;
+prevCat=curCat;
 if(cardId.startsWith('m_')){
 const mId=cardId.slice(2);const um=allM.find(x=>x.id===mId);if(!um)return null;
 const umHasJobWithDriver=dayJobs.some(j2=>j2.machineId===um.id&&j2.employeeId&&j2.type!=='depot');
