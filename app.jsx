@@ -644,9 +644,12 @@ const getMach=id=>(data.machines||[]).find(m=>m.id===id);
 const getClient=id=>(data.clients||[]).find(c=>c.id===id);
 const getDepot=id=>(data.depots||[]).find(d=>d.id===id);
 const usedMachIds=dayMissions.map(j=>j.machineId);
-// Couleur d'une machine par sa LARGEUR de tambour (au lieu du type)
-// 200+ vert, 150-199 jaune, 130-149 rouge, 100-129 bleu, < 100 noir
-const widthColor=mc=>{if(!mc)return C.muted;let w=Number(mc.width);if(!w||isNaN(w)){const mt=String(mc.name||'').match(/(\d+)/);if(mt)w=Number(mt[1])}if(!w||isNaN(w))return C.muted;if(w>=200)return '#16a34a';if(w>=150)return '#eab308';if(w>=130)return '#dc2626';if(w>=100)return '#3b82f6';return '#1e293b'};
+// Couleur d'une machine :
+// - Raboteuse : par LARGEUR de tambour (200+ vert, 150-199 jaune, 130-149 rouge, 100-129 bleu, <100 noir)
+// - Balayeuse : vert
+// - Citerne : bleu
+// - Autre / inconnue : gris
+const widthColor=mc=>{if(!mc)return C.muted;if(mc.type==='Balayeuse')return '#16a34a';if(mc.type==='Citerne')return '#3b82f6';if(mc.type!=='Raboteuse')return C.muted;let w=Number(mc.width);if(!w||isNaN(w)){const mt=String(mc.name||'').match(/(\d+)/);if(mt)w=Number(mt[1])}if(!w||isNaN(w))return C.muted;if(w>=200)return '#16a34a';if(w>=150)return '#eab308';if(w>=130)return '#dc2626';if(w>=100)return '#3b82f6';return '#1e293b'};
 const renderCol=(types,label)=>{
 const allM=(data.machines||[]).filter(m=>types.includes(m.type));
 const freeM=allM.filter(m=>!usedMachIds.includes(m.id));
