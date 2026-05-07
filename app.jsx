@@ -861,22 +861,34 @@ return(
 {allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);const machColor2=defMach?MC[defMach.type]||C.accent:C.muted;
 const createJobForEmp=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return(
-<div style={{background:C.card,borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid '+machColor2,padding:'6px 12px'}}>
-<div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
-<span style={{fontSize:15,fontWeight:800}}><span style={{color:C.text}}>{emp.name}</span>{defMach&&<span style={{color:machColor2}}> · {defMach.name}</span>}</span>
-{(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te2=>te2.date===d&&te2.startTime&&te2.endTime);if(!best)return s;const[sh2,sm2]=best.startTime.split(':').map(Number);const[eh2,em2]=best.endTime.split(':').map(Number);return s+Math.max(0,(eh2*60+em2)-(sh2*60+sm2)-(best.pauseMin||0))},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<span style={{fontSize:11,padding:'2px 8px',borderRadius:6,background:'#f1f5f9',color:C.dim,fontWeight:600}}>J <b style={{color:C.accent}}>{fmtDuration(dayMin)}</b> · S <b style={{color:C.accent}}>{fmtDuration(weekMin)}</b></span>)})()}
-<select value="" onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);nd.jobs=[...(nd.jobs||[]),{id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:nc.id,agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false}];save(nd)}}else if(e.target.value){createJobForEmp('clientId',e.target.value)}}} style={{fontSize:13,padding:'2px 4px',borderRadius:4,border:'1px solid '+C.border,background:'#fff',minWidth:90,maxWidth:130}}>
+<div style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+machColor2+'40',borderLeft:'6px solid '+machColor2,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
+{/* Côté gauche : nom employé + bouton "+" + nom machine + stats */}
+<div style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+machColor2+'20',background:machColor2+'08',gap:4}}>
+<div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'center'}}>
+<div style={{fontSize:15,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
+<button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} title="Ajouter un chantier" style={{background:C.accent,color:'#fff',border:'none',borderRadius:4,width:20,height:20,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'18px',padding:0,flexShrink:0}}>+</button>
+</div>
+{defMach&&<div style={{fontSize:13,fontWeight:700,color:machColor2,textAlign:'center',lineHeight:'1.2'}}>{defMach.name}</div>}
+{(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te2=>te2.date===d&&te2.startTime&&te2.endTime);if(!best)return s;const[sh2,sm2]=best.startTime.split(':').map(Number);const[eh2,em2]=best.endTime.split(':').map(Number);return s+Math.max(0,(eh2*60+em2)-(sh2*60+sm2)-(best.pauseMin||0))},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<div style={{fontSize:11,color:C.dim,textAlign:'center',marginTop:2,lineHeight:1.3,background:'#f1f5f9',borderRadius:6,padding:'3px 4px',width:'100%'}}><div>J <b style={{color:C.accent,fontSize:12}}>{fmtDuration(dayMin)}</b></div><div>S <b style={{color:C.accent,fontSize:12}}>{fmtDuration(weekMin)}</b></div></div>)})()}
+</div>
+{/* Côté droit : ligne placeholder pour saisie chantier */}
+<div style={{flex:1,minWidth:0}}>
+<div style={{padding:'6px 10px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+<select value="" onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau client:');if(n){const nd=JSON.parse(JSON.stringify(data));if(!nd.clients)nd.clients=[];const nc={id:uid(),name:n,forfaitType:'standard',agencies:[],siteManagers:[]};nd.clients.push(nc);nd.jobs=[...(nd.jobs||[]),{id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:nc.id,agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false}];save(nd)}}else if(e.target.value){createJobForEmp('clientId',e.target.value)}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:100,maxWidth:150}}>
 <option value="">Client</option>{(data.clients||[]).map(c2=><option key={c2.id} value={c2.id}>{c2.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
-<input placeholder="Lieu" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createJobForEmp('location',e.target.value);e.target.value=''}}} style={{fontSize:13,padding:'2px 6px',borderRadius:4,border:'1px solid '+C.border,minWidth:80,maxWidth:140,background:'#fff'}}/>
-<button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'2px 8px',cursor:'pointer',fontSize:12}}>Depot</button>
+<select disabled style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#f8fafc',minWidth:80,maxWidth:130,color:C.dim}}><option>Chef</option></select>
+<input placeholder="Lieu / adresse" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createJobForEmp('location',e.target.value);e.target.value=''}}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
+<input type="time" disabled value="08:00" style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75,opacity:0.5}}/>
+<button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'4px 10px',cursor:'pointer',fontSize:13,marginLeft:'auto'}}>Dépôt</button>
 </div>
-{(te.length>0)&&<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:4,fontSize:13}}>
+{(te.length>0)&&<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',padding:'4px 10px',fontSize:13,borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:'--:--'}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:'--:--'}</span>
 {workMin>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(workMin)}</span>}
 {mainTE&&mainTE.requestedEndTime&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706'}}>Deb. {mainTE.requestedEndTime}</span>}
 {mainTE&&mainTE.absenceType&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red}}>{mainTE.absenceType}</span>}
 </div>}
+</div>
 </div>)})()}
 {allMissions.length>0&&(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map(grp=>{const machColor=MC[grp.mt]||C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
 <div key={eId+'_'+(grp.m?grp.m.id:'none')} draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragOver={e2=>onDragOver(e2,cardId)} onDragEnd={onDragEnd} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
@@ -2775,18 +2787,41 @@ useEffect(()=>{if(bottomRef.current)bottomRef.current.scrollIntoView({behavior:'
 const[voiceOut,setVoiceOut]=useState(()=>{try{return localStorage.getItem('rm-chat-voice')==='1'}catch(e){return false}});
 useEffect(()=>{try{localStorage.setItem('rm-chat-voice',voiceOut?'1':'0')}catch(e){}},[voiceOut]);
 const ttsSupported=typeof window!=='undefined'&&'speechSynthesis'in window;
+const ttsUnlockedRef=useRef(false);
+// iOS/Safari : la synthese vocale doit etre debloquee par une interaction utilisateur (click/tap).
+// On appelle primeTTS() depuis un onClick (toggle ou send) pour forcer le deblocage.
+const primeTTS=()=>{
+if(!ttsSupported||ttsUnlockedRef.current)return;
+try{
+const u=new SpeechSynthesisUtterance(' ');
+u.lang='fr-FR';u.volume=0;
+window.speechSynthesis.speak(u);
+ttsUnlockedRef.current=true;
+}catch(e){}
+};
+const pickFrenchVoice=()=>{
+if(!ttsSupported)return null;
+const voices=window.speechSynthesis.getVoices()||[];
+return voices.find(v=>v.lang&&v.lang.startsWith('fr'))||null;
+};
+useEffect(()=>{
+if(!ttsSupported)return;
+// Force le chargement des voix (iOS / certains Android renvoient [] avant cet event)
+const h=()=>{};
+window.speechSynthesis.onvoiceschanged=h;
+try{window.speechSynthesis.getVoices()}catch(e){}
+return()=>{try{window.speechSynthesis.onvoiceschanged=null}catch(e){}};
+},[]);
 const speak=(text)=>{
 if(!ttsSupported||!text)return;
 try{
 window.speechSynthesis.cancel();
-// Nettoie le texte : retire les blocs JSON, emojis pour une meilleure lecture
 const clean=text.replace(/```[\s\S]*?```/g,'').replace(/[*_`#]/g,'').replace(/\s+/g,' ').trim();
 if(!clean)return;
 const u=new SpeechSynthesisUtterance(clean);
 u.lang='fr-FR';u.rate=1.05;u.pitch=1;u.volume=1;
-const voices=window.speechSynthesis.getVoices();
-const fr=voices.find(v=>v.lang&&v.lang.startsWith('fr'));
-if(fr)u.voice=fr;
+const fr=pickFrenchVoice();if(fr)u.voice=fr;
+try{window.speechSynthesis.resume()}catch(e){}
 window.speechSynthesis.speak(u);
 }catch(e){console.warn('TTS error',e)}
 };
@@ -3249,6 +3284,8 @@ const send=async()=>{
 if(!input.trim()||loading)return;
 const key=data.anthropicApiKey;
 if(!key){alert('Clé API Claude manquante.\nVa dans Paramètres > Assistant IA pour la renseigner.');return;}
+// iOS Safari : on profite du user gesture (clic sur ➤ ou Enter) pour debloquer la voix
+if(voiceOut)primeTTS();
 const userMsg={role:'user',content:input.trim()};
 const newMsgs=[...msgs,userMsg];
 setMsgs(newMsgs);setInput('');setLoading(true);
@@ -3289,7 +3326,7 @@ return(
 <div style={{background:C.accent,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
 <div style={{color:'#fff',fontWeight:700,fontSize:14}}>🤖 Assistant RoadManager</div>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
-{ttsSupported&&(<button onClick={()=>{if(voiceOut)stopSpeaking();setVoiceOut(v=>!v)}} title={voiceOut?'Couper la voix':'Activer la voix'} style={{background:voiceOut?'#fff3':'transparent',border:'none',color:'#fff',fontSize:16,cursor:'pointer',padding:'2px 6px',borderRadius:6}}>{voiceOut?'🔊':'🔇'}</button>)}
+{ttsSupported&&(<button onClick={()=>{if(voiceOut){stopSpeaking();setVoiceOut(false)}else{primeTTS();speak('Voix activee');setVoiceOut(true)}}} title={voiceOut?'Couper la voix':'Activer la voix'} style={{background:voiceOut?'#fff3':'transparent',border:'none',color:'#fff',fontSize:16,cursor:'pointer',padding:'2px 6px',borderRadius:6}}>{voiceOut?'🔊':'🔇'}</button>)}
 <button onClick={()=>{stopSpeaking();setOpen(false);setMsgs([])}} style={{background:'none',border:'none',color:'#fff',fontSize:22,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>×</button>
 </div>
 </div>
