@@ -724,7 +724,6 @@ return(<React.Fragment key={cardId}>
 <select disabled style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#f8fafc',minWidth:80,maxWidth:130,color:C.dim}}><option>Chef</option></select>
 <input placeholder="Lieu / adresse" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createUmJob('location',e.target.value);e.target.value=''}}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
 <input type="time" disabled value="08:00" style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75,opacity:0.5}}/>
-<button onClick={()=>{setDepotFormEmpId('');setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'4px 10px',cursor:'pointer',fontSize:13,marginLeft:'auto'}}>Dépôt</button>
 </div>
 </div>
 </div></React.Fragment>)}
