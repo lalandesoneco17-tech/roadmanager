@@ -660,7 +660,13 @@ const unassignedM=allM.filter(m=>!assignedMachIds.has(m.id)||driverBusyOnOtherMa
 const unassignedOrder=(data.cardOrder||{})[orderKey+'_u']||[];
 const allCardIds=[...empIds.map(id=>'e_'+id),...unassignedM.map(m=>'m_'+m.id)];
 // Ordre des machines GLOBAL (pas par jour) — drag-drop met a jour data.machineOrder
+// Pour les machines pas encore drag-droppees, on complete avec un ordre alphabetique stable
+// (evite que les nouvelles machines bougent au hasard d'un jour a l'autre).
 const machineOrderG=data.machineOrder||[];
+const allMachineIds=(data.machines||[]).map(m=>m.id);
+const effectiveOrder=[...machineOrderG.filter(id=>allMachineIds.includes(id))];
+const remainingMachs=(data.machines||[]).filter(m2=>!effectiveOrder.includes(m2.id)).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+remainingMachs.forEach(m2=>effectiveOrder.push(m2.id));
 const getMachineForCard=(cardId)=>{
 if(cardId.startsWith('m_'))return cardId.slice(2);
 const empId2=cardId.slice(2);
@@ -670,7 +676,7 @@ if(colJobs2.length>0)return colJobs2[0].machineId;
 const emp2=(data.employees||[]).find(e=>e.id===empId2);
 return emp2?emp2.machineId:null;
 };
-const sortedCards=[...allCardIds].sort((a,b)=>{const ma=getMachineForCard(a);const mb=getMachineForCard(b);const ia=ma?machineOrderG.indexOf(ma):-1;const ib=mb?machineOrderG.indexOf(mb):-1;if(ia===-1&&ib===-1)return 0;if(ia===-1)return 1;if(ib===-1)return-1;return ia-ib});
+const sortedCards=[...allCardIds].sort((a,b)=>{const ma=getMachineForCard(a);const mb=getMachineForCard(b);const ia=ma?effectiveOrder.indexOf(ma):-1;const ib=mb?effectiveOrder.indexOf(mb):-1;if(ia===-1&&ib===-1)return 0;if(ia===-1)return 1;if(ib===-1)return-1;return ia-ib});
 const onDragStart=(e,cardId)=>{setDragId(cardId);e.dataTransfer.effectAllowed='move'};
 const onDragOver=(e,cardId)=>{e.preventDefault();if(cardId!==dragId)setDragOverId(cardId)};
 const onDragEnd=()=>{if(dragId&&dragOverId&&dragId!==dragOverId){const draggedMach=getMachineForCard(dragId);const targetMach=getMachineForCard(dragOverId);if(draggedMach&&targetMach&&draggedMach!==targetMach){let order=[...(data.machineOrder||[])];const allMachineIds=(data.machines||[]).map(m=>m.id);allMachineIds.forEach(mid=>{if(!order.includes(mid))order.push(mid)});order=order.filter(mid=>allMachineIds.includes(mid));const fromIdx=order.indexOf(draggedMach);const toIdx=order.indexOf(targetMach);if(fromIdx>=0&&toIdx>=0){order.splice(fromIdx,1);order.splice(toIdx,0,draggedMach);const nd=JSON.parse(JSON.stringify(data));nd.machineOrder=order;save(nd)}}}setDragId(null);setDragOverId(null)};
