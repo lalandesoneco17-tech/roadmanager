@@ -872,7 +872,7 @@ return(
 {allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);const machColor2=defMach?widthColor(defMach):C.muted;
 const createJobForEmp=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return(
-<div style={{background:C.card,borderRadius:10,marginBottom:12,border:'2px solid '+machColor2+'40',borderLeft:'6px solid '+machColor2,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
+<div style={{background:C.card,borderRadius:10,marginBottom:12,marginTop:showSep?28:0,border:'2px solid '+machColor2+'40',borderLeft:'6px solid '+machColor2,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
 {/* Côté gauche : nom employé + bouton "+" + nom machine + stats */}
 <div style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+machColor2+'20',background:machColor2+'08',gap:4}}>
 <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'center'}}>
@@ -901,8 +901,8 @@ return(
 </div>}
 </div>
 </div>)})()}
-{allMissions.length>0&&(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map(grp=>{const machColor=grp.m?widthColor(grp.m):C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
-<div key={eId+'_'+(grp.m?grp.m.id:'none')} draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragOver={e2=>onDragOver(e2,cardId)} onDragEnd={onDragEnd} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,border:'2px solid '+(dragOverId===cardId?C.accent+'80':allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
+{allMissions.length>0&&(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map((grp,grpIdx)=>{const machColor=grp.m?widthColor(grp.m):C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
+<div key={eId+'_'+(grp.m?grp.m.id:'none')} draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragOver={e2=>onDragOver(e2,cardId)} onDragEnd={onDragEnd} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,marginTop:(showSep&&grpIdx===0)?28:0,border:'2px solid '+(dragOverId===cardId?C.accent+'80':allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 {/* Côté gauche: nom + bouton "+" sur la même ligne, machine en dessous */}
 <div style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4}}>
 <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'center'}}>
