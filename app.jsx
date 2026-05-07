@@ -1789,7 +1789,8 @@ const[refHpd,setRefHpd]=useState(data.refHoursPerDay||1);
 const[paniersP,setPaniersP]=useState(data.paniersPrice!=null?data.paniersPrice:12);
 const[restoP,setRestoP]=useState(data.restoPrice!=null?data.restoPrice:15);
 const[apiKey,setApiKey]=useState(data.anthropicApiKey||'');
-const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP),anthropicApiKey:apiKey});alert('Enregistre')};
+const[companyCtx,setCompanyCtx]=useState(data.companyContext||'');
+const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP),anthropicApiKey:apiKey,companyContext:companyCtx});alert('Enregistre')};
 const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,'');
 return(
 <div>
@@ -1834,6 +1835,22 @@ return(
 </Fl>
 {apiKey&&<div style={{fontSize:12,color:C.green,marginTop:4}}>✓ Clé renseignée — chatbot actif</div>}
 {!apiKey&&<div style={{fontSize:12,color:C.orange,marginTop:4}}>⚠ Sans clé, le bouton 💬 ne fonctionnera pas</div>}
+<div style={{marginTop:16,paddingTop:12,borderTop:'1px dashed #ddd'}}>
+<div style={{fontSize:12,color:C.dim,marginBottom:6}}><b>Contexte entreprise</b> — explique comment SONECO fonctionne. Claude utilisera ces infos pour mieux te repondre.</div>
+<div style={{fontSize:11,color:C.muted,marginBottom:6,lineHeight:1.5}}>
+Suggestions de ce que tu peux ecrire :<br/>
+- Activite principale et clients types<br/>
+- Horaires habituels (debut journee, pause, fin)<br/>
+- Particularites tarifaires (qui paye quoi, marges, urgences)<br/>
+- Saisonnalite (haute saison, basse saison, conges)<br/>
+- Process de validation (qui valide les pointages, quand)<br/>
+- Equipement specifique (machine pour tel type de chantier)<br/>
+- Habitudes des chauffeurs (X travaille toujours sur Y, etc.)<br/>
+- Regles internes (entretien hebdo, plein le matin, etc.)
+</div>
+<textarea style={{...inputStyle,minHeight:160,fontFamily:'inherit',resize:'vertical',fontSize:13,lineHeight:1.5}} value={companyCtx} onChange={e=>setCompanyCtx(e.target.value)} placeholder="Ex: SONECO fait du rabotage routier pour les TP. Nos chauffeurs commencent generalement vers 6h30 et finissent vers 16h30. Franck est specialise sur la 100fi. Le client LABTP est notre plus gros, on est prioritaires. Les pleins se font le soir au depot 16. ..."/>
+<div style={{fontSize:11,color:C.muted,marginTop:4}}>{companyCtx.length} caracteres · ecrit comme tu parles, pas besoin de formatage</div>
+</div>
 </div>
 <div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Acces employes</h3>
 {(data.employees||[]).map(e=>{const has=!!(data.empPasswords||{})[e.id];return(
@@ -2906,6 +2923,10 @@ const ot25=data.overtime25Threshold||35;
 let ctx=`Tu es l'assistant de RoadManager, logiciel de gestion de chantiers pour SONECO (rabotage routier).
 Date du jour: ${todayISO} (${fmtDate(todayISO)}). Semaine en cours: lundi ${monDate}.
 Tu as acces a TOUTES les donnees de l'app : referentiel, planning -30/+30j, pointages 30j passes, pannes, interventions, stock, messages, parametres, anomalies.\n`;
+// Contexte entreprise libre saisi par l'admin dans Parametres > Assistant IA
+if(data.companyContext&&data.companyContext.trim()){
+ctx+=`\n=== CONTEXTE ENTREPRISE (regles metier specifiques a SONECO, ecrites par l'admin) ===\n${data.companyContext.trim()}\n=== FIN CONTEXTE ENTREPRISE ===\nUtilise ce contexte pour interpreter les donnees et adapter tes reponses aux habitudes de l'entreprise.\n`;
+}
 
 // === PARAMETRES ===
 ctx+=`\n=== PARAMETRES ===\n`;
