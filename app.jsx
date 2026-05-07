@@ -1265,21 +1265,21 @@ return(<div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',b
 </div>)};
 return(
 <div>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-<div style={{display:'flex',alignItems:'center',gap:6}}>
+{/* Barre du haut compacte : [bouton pannes] [< Date >] ... [CA] [📥 JD] */}
+<div style={{display:'flex',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+{/* Gauche : bouton pannes (si pannes en cours) */}
+{(()=>{const newPannes=(data.panneReports||[]).filter(p=>p.status!=='resolved');if(!newPannes.length)return null;const urgent=newPannes.some(p=>p.severity==='urgent');return<button onClick={()=>setPg('pannes')} title={newPannes.map(p=>{const allEq=[...(data.machines||[]).map(m=>({id:m.id,name:m.name})),...(data.trucks||[]).map(t=>({id:t.id,name:t.name})),...(data.cars||[]).map(c=>({id:c.id,name:c.name}))];const eq=allEq.find(x=>x.id===(p.machineId||p.truckId||p.carId));return(eq?eq.name:'?')+' — '+(p.description||'').slice(0,40)}).join('\n')} style={{background:urgent?'#dc262618':'#d9770618',border:'2px solid '+(urgent?'#dc2626':'#d97706'),color:urgent?C.red:C.orange,borderRadius:8,padding:'6px 14px',cursor:'pointer',fontWeight:700,fontSize:14}}>⚠ {newPannes.length} panne{newPannes.length>1?'s':''}{urgent?' URGENT':''}</button>})()}
+{/* Centre : navigation date avec date GROSSE */}
+<div style={{display:'flex',alignItems:'center',gap:6,margin:'0 auto'}}>
 <button onClick={()=>navDate(-1)} style={btnStyle(C.dim)}>{'<'}</button>
-<span style={{fontWeight:800,fontSize:28,color:'#fff',padding:'4px 16px',letterSpacing:'0.5px'}}>{fmtDate(new Date(selDate))}</span>
+<span style={{fontWeight:800,fontSize:36,color:'#fff',padding:'4px 24px',letterSpacing:'0.5px'}}>{fmtDate(new Date(selDate))}</span>
 <button onClick={()=>navDate(1)} style={btnStyle(C.dim)}>{'>'}</button>
 <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:140,marginLeft:4}}/>
 </div>
-<button onClick={()=>{setFormJob(null);setFormEmpId('');setShowForm(true)}} style={btnStyle(C.accent,true)}>+ Chantier</button>
+{/* Droite : CA + bouton import JD */}
+<div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent,fontSize:16}}>{fmtMoney(caTotal)}</span></div>
 <button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a'),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
 <input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file,selDate);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
-</div>
-<div style={{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}}>
-<div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent}}>{fmtMoney(caTotal)}</span></div>
-<div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>Dispo </span>{availDrivers.map(e=><Bg key={e.id} text={e.name.split(' ')[0]} color={C.orange} style={{marginLeft:4}}/>)}</div>
-{(()=>{const newPannes=(data.panneReports||[]).filter(p=>p.status!=='resolved');return newPannes.length>0?<div style={{background:'#fef2f2',borderRadius:8,padding:'8px 14px',border:'1px solid #fecaca',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}><span style={{fontSize:14,fontWeight:700,color:C.red}}>&#9888; {newPannes.length} panne{newPannes.length>1?'s':''}</span>{newPannes.map(p=>{const allEq=[...(data.machines||[]).map(m=>({id:m.id,name:m.name})),...(data.trucks||[]).map(t=>({id:t.id,name:t.name})),...(data.cars||[]).map(c=>({id:c.id,name:c.name}))];const eq=allEq.find(x=>x.id===(p.machineId||p.truckId||p.carId));const reporter=(data.employees||[]).find(e=>e.id===p.reportedBy);return(<span key={p.id} style={{padding:'3px 10px',borderRadius:8,fontSize:13,fontWeight:600,background:p.severity==='urgent'?'#dc262618':'#d9770618',color:p.severity==='urgent'?C.red:C.orange,border:'1px solid '+(p.severity==='urgent'?'#dc262630':'#d9770630')}}>{eq?eq.name:'?'} — {(p.description||'').slice(0,30)}{p.description&&p.description.length>30?'...':''} {reporter?'('+reporter.name.split(' ')[0]+')':''} {p.severity==='urgent'?'URGENT':''}</span>)})}</div>:null})()}
 </div>
 <div className="pg" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
 {renderCol(['Raboteuse'],'Raboteuses')}
