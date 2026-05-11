@@ -382,9 +382,8 @@ const sites=sigClusters.map((cluster,cIdx)=>{
     }else siteArrival=pts[firstIdx].hhmm;
   }
   // siteDeparture = mi-chemin entre dernier pt en zone et 1er pt hors zone (= meilleure estimation
-  // du moment où la machine quitte vraiment le chantier, sinon on tombe sur des heures bizarres
-  // genre "00:00" pile à minuit dépendant du sampling GPS).
-  let siteDeparture=endedInZone?null:minToHHMM(Math.round((pts[lastIdx].min+pts[lastIdx+1].min)/2));
+  // siteDeparture = dernier pt GPS dans la zone (= dernière fois où on est sûr que la machine était au chantier)
+  let siteDeparture=endedInZone?null:pts[lastIdx].hhmm;
   // depotArrival = 1er pt à proximité de pts[0] APRÈS lastIdx (et avant nextEntryIdx)
   // OU début phase stationnaire en fin de fenêtre si pas de retour dépôt strict
   let depotArrival=null;
