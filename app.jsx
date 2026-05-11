@@ -179,6 +179,68 @@ return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'r
 </div>
 </div>);
 };
+// Modal carte planning : affiche tous les chantiers planifiés pour une date donnée (pour optimiser les trajets)
+const MapModalPlanning=({onClose,selDate,markers,depots})=>{
+const mapRef=useRef(null);
+useEffect(()=>{
+  if(!window.L||!mapRef.current)return;
+  const L=window.L;
+  const map=L.map(mapRef.current).setView([45.6,-0.5],8);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+  const allLatLngs=[];
+  // Dépôts (icône maison bleue)
+  (depots||[]).forEach(d=>{
+    if(!d.co)return;
+    allLatLngs.push([d.co.lat,d.co.lon]);
+    const ic=L.divIcon({className:'',html:'<div style="background:#1d4ed8;color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3)">🏠</div>',iconSize:[30,30],iconAnchor:[15,15]});
+    L.marker([d.co.lat,d.co.lon],{icon:ic}).addTo(map).bindPopup('<b>🏠 '+d.name+'</b>');
+  });
+  // Marqueurs chantiers
+  (markers||[]).forEach(mk=>{
+    if(!mk.co)return;
+    allLatLngs.push([mk.co.lat,mk.co.lon]);
+    const ic=L.divIcon({className:'',html:'<div style="background:'+mk.color+';color:#fff;min-width:36px;height:36px;padding:0 6px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap">'+mk.label+'</div>',iconSize:[60,36],iconAnchor:[30,18]});
+    const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+mk.machineName+'</b>'+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
+    L.marker([mk.co.lat,mk.co.lon],{icon:ic}).addTo(map).bindPopup(popup);
+  });
+  if(allLatLngs.length)map.fitBounds(allLatLngs,{padding:[50,50]});
+  return()=>{map.remove()};
+},[markers,depots]);
+return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
+<div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {markers?markers.length:0} chantier(s)</h3>
+<button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>×</button>
+</div>
+<div ref={mapRef} style={{flex:1,borderRadius:8,overflow:'hidden'}}/>
+<div style={{marginTop:8,fontSize:11,color:C.dim,display:'flex',gap:14,flexWrap:'wrap'}}>
+<span>🏠 dépôt</span>
+{(markers||[]).map((m,i)=><span key={i}><span style={{display:'inline-block',width:12,height:12,background:m.color,borderRadius:6,verticalAlign:'middle',marginRight:4}}/>{m.machineName}{m.driverName?' · '+m.driverName:''}</span>)}
+</div>
+</div>
+</div>);
+};
+// Modal de choix géocodage : affiche la liste de résultats Nominatim quand >1 résultat
+const GeocodeChoiceModal=({choice,onPick,onClose})=>{
+if(!choice)return null;
+return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100}} onClick={onClose}>
+<div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:18,width:520,maxWidth:'95vw',maxHeight:'85vh',display:'flex',flexDirection:'column'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+<h3 style={{margin:0,fontSize:15}}>📍 Choisir un lieu pour "<i>{choice.query}</i>"</h3>
+<button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>×</button>
+</div>
+<div style={{overflowY:'auto',flex:1}}>
+{(choice.results||[]).map((r,i)=>(
+<div key={i} onClick={()=>onPick(r)} style={{padding:'10px 12px',border:'1px solid '+C.border,borderRadius:8,marginBottom:8,cursor:'pointer',background:'#f8fafc'}} onMouseEnter={e=>e.currentTarget.style.background='#e0f2fe'} onMouseLeave={e=>e.currentTarget.style.background='#f8fafc'}>
+<div style={{fontSize:13,fontWeight:600,color:C.text}}>{r.display_name}</div>
+<div style={{fontSize:11,color:C.dim,marginTop:3}}>GPS : {Number(r.lat).toFixed(5)}, {Number(r.lon).toFixed(5)}{r.type?' · '+r.type:''}</div>
+</div>
+))}
+</div>
+<div style={{textAlign:'center',marginTop:8}}><button onClick={onClose} style={btnStyle(C.dim)}>Annuler</button></div>
+</div>
+</div>);
+};
 const Fl=({label,children})=>(<div style={{marginBottom:12}}><label style={{display:'block',fontSize:13,fontWeight:600,color:C.dim,marginBottom:4}}>{label}</label>{children}</div>);
 const inputStyle={width:'100%',padding:'8px 12px',border:'1px solid '+C.border,borderRadius:6,fontSize:14,outline:'none'};
 const btnStyle=(color,full)=>({padding:'8px 16px',background:full?color:'transparent',color:full?'#fff':color,border:'2px solid '+color,borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14});
@@ -712,7 +774,25 @@ const[viewDetail,setViewDetail]=useState(null);
 const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
-const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
+const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);const[showPlanMap,setShowPlanMap]=useState(false);const[geocodeChoice,setGeocodeChoice]=useState(null);
+// Géocodage via Nominatim (OpenStreetMap, gratuit, sans clé). Appelé sur blur du champ Lieu.
+const geocodeLocation=async(jobId,query)=>{
+  if(!query||query.trim().length<3)return;
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(query)+'&limit=5&countrycodes=fr');
+    const results=await r.json();
+    if(!results||!results.length)return;
+    if(results.length===1){
+      // Un seul résultat = on l'applique direct
+      const nd=JSON.parse(JSON.stringify(data));
+      const jj=nd.jobs.find(x=>x.id===jobId);
+      if(jj){jj.gps=Number(results[0].lat).toFixed(6)+','+Number(results[0].lon).toFixed(6);save(nd)}
+    }else{
+      // Plusieurs résultats : ouvre la modal pour choisir
+      setGeocodeChoice({jobId,query,results});
+    }
+  }catch(err){console.warn('Géocodage échoué',err)}
+};useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
 const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
 const[wirtgenTargetMach,setWirtgenTargetMach]=useState('');const wirtgenRef=useRef(null);
 const[depotFormEmpId,setDepotFormEmpId]=useState('');
@@ -834,7 +914,7 @@ return(<React.Fragment key={cardId}><div draggable onDragStart={e=>onDragStart(e
 <select value={uj.siteManager||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau chef:');if(n){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.siteManager=n;const cl2=(nd.clients||[]).find(c2=>c2.id===uj.clientId);if(cl2){if(!cl2.siteManagers)cl2.siteManagers=[];if(!cl2.siteManagers.find(s=>s.name===n)){const ph=prompt('Tel (optionnel):','')||'';cl2.siteManagers.push({name:n,phone:ph});jj.siteManagerPhone=ph}}save(nd)}}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===uj.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:80,maxWidth:130}}>
 <option value="">Chef</option>{(ujCl&&ujCl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
-<input value={uj.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.location=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
+<input value={uj.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.location=e.target.value;save(nd)}}} onBlur={e=>{if(!uj.gps&&e.target.value&&e.target.value.trim().length>=3)geocodeLocation(uj.id,e.target.value)}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
 <input type="time" value={uj.billingStart||'08:00'} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.billingStart=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75}}/>
 <input value={uj.gps||''} placeholder="GPS lat,lon" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.gps=e.target.value;save(nd)}}} style={{fontSize:12,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,width:110,background:'#fff',color:C.dim}}/>
 {(()=>{const gpsJ=parseCoords(uj.gps);const empCo2=uj.employeeId?getEmpCoords(data,uj.employeeId):null;const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
@@ -1077,7 +1157,7 @@ return(
 <select value={j.siteManager||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau chef chantier:');if(n){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=n;const cl2=(nd.clients||[]).find(c2=>c2.id===j.clientId);if(cl2){if(!cl2.siteManagers)cl2.siteManagers=[];if(!cl2.siteManagers.find(s=>s.name===n)){const ph=prompt('Tel du chef (optionnel):','')||'';cl2.siteManagers.push({name:n,phone:ph});jj.siteManagerPhone=ph}}save(nd)}}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===j.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:80,maxWidth:130}}>
 <option value="">Chef</option>{(cl&&cl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
-<input value={j.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.location=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
+<input value={j.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.location=e.target.value;save(nd)}}} onBlur={e=>{if(!j.gps&&e.target.value&&e.target.value.trim().length>=3)geocodeLocation(j.id,e.target.value)}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
 <input type="time" value={j.billingStart||'08:00'} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.billingStart=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75}}/>
 {/* GPS chantier + selects depart/arrivee deplaces dans le panneau detail (▼) */}
 {/* Auto-init dep/arr quand l'utilisateur saisit le GPS (effet toujours actif meme si detail ferme) */}
@@ -1369,6 +1449,7 @@ return(
 </div>
 {/* Droite : CA + bouton import JD */}
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent,fontSize:16}}>{fmtMoney(caTotal)}</span></div>
+<button onClick={()=>setShowPlanMap(true)} style={{...btnStyle('#0891b2'),fontSize:13,padding:'6px 12px'}} title="Voir le planning sur la carte (optimiser les trajets)">🗺 Carte planning</button>
 <button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a'),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
 <input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file,selDate);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
 </div>
@@ -1378,6 +1459,21 @@ return(
 </div>
 {showForm&&<MissionForm data={data} save={save} job={formJob} onClose={()=>setShowForm(false)} selectedDate={selDate} selectedEmpId={formEmpId}/>}
 {mapModal&&<MapModal {...mapModal} onClose={()=>setMapModal(null)}/>}
+{geocodeChoice&&<GeocodeChoiceModal choice={geocodeChoice} onClose={()=>setGeocodeChoice(null)} onPick={r=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===geocodeChoice.jobId);if(jj){jj.gps=Number(r.lat).toFixed(6)+','+Number(r.lon).toFixed(6);save(nd)}setGeocodeChoice(null)}}/>}
+{showPlanMap&&(()=>{
+  // Construction des marqueurs : 1 par chantier (job) du jour ayant un lieu ou un GPS
+  const markers=dayMissions.map(jb=>{
+    const mc=getMach(jb.machineId);
+    const emp=(data.employees||[]).find(e=>e.id===jb.employeeId);
+    const cl=getClient(jb.clientId);
+    const co=parseCoords(jb.gps);
+    if(!co)return null; // pas de GPS et pas géocodé => skip
+    return {co,color:widthColor(mc),label:mc?(mc.width?mc.width:mc.name.slice(0,4)):'?',machineName:mc?mc.name:'?',driverName:emp?emp.name:'',clientName:cl?cl.name:'',location:jb.location||'',billingStart:jb.billingStart||'',forfaitType:jb.forfaitType||''};
+  }).filter(x=>x);
+  // Dépôts à afficher
+  const depotsOnMap=(data.depots||[]).map(d=>({name:d.name,co:d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null})).filter(d=>d.co);
+  return<MapModalPlanning selDate={selDate} markers={markers} depots={depotsOnMap} onClose={()=>setShowPlanMap(false)}/>;
+})()}
 {showDepotForm&&<Mod title="Journee depot" onClose={()=>setShowDepotForm(false)} width={400}>
 <Fl label="Depot"><select style={inputStyle} value={depotFormDepotId} onChange={e=>setDepotFormDepotId(e.target.value)}><option value="">-- Choisir --</option>{(data.depots||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></Fl>
 <Fl label="Activite"><select style={inputStyle} value={depotFormActivity} onChange={e=>setDepotFormActivity(e.target.value)}>{DEPOT_ACTIVITIES.map(a=><option key={a} value={a}>{a}</option>)}</select></Fl>
