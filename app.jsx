@@ -212,7 +212,7 @@ useEffect(()=>{
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {markers?markers.length:0} chantier(s)</h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {markers?markers.length:0} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.11-3</span></h3>
 <button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>×</button>
 </div>
 <div ref={mapRef} style={{flex:1,borderRadius:8,overflow:'hidden'}}/>
