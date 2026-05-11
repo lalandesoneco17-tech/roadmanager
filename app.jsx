@@ -96,6 +96,54 @@ const Mod=({title,onClose,children,width})=>(
 <button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>x</button>
 </div>{children}</div></div>
 );
+// Modal carte Leaflet : affiche le trajet GPS d'une mission Wirtgen avec marqueurs dépôt/chantier/pauses
+const MapModal=({onClose,title,rawPts,centroid,depotGps,pauses,siteArrival,siteDeparture,workStart,workEnd})=>{
+const mapRef=useRef(null);
+useEffect(()=>{
+  if(!window.L||!mapRef.current||!rawPts||!rawPts.length)return;
+  const L=window.L;
+  const map=L.map(mapRef.current).setView([centroid?centroid.lat:rawPts[0].lat,centroid?centroid.lon:rawPts[0].lon],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+  // Trajet GPS complet en ligne bleue
+  const latlngs=rawPts.map(p=>[p.lat,p.lon]);
+  L.polyline(latlngs,{color:'#3b82f6',weight:3,opacity:0.6}).addTo(map);
+  // Marqueurs début/fin trajet
+  const startPt=rawPts[0],endPt=rawPts[rawPts.length-1];
+  L.marker([startPt.lat,startPt.lon],{title:'Début données GPS ('+startPt.hhmm+')'}).addTo(map).bindPopup('🏁 Début données GPS — '+startPt.hhmm);
+  L.marker([endPt.lat,endPt.lon],{title:'Fin données GPS ('+endPt.hhmm+')'}).addTo(map).bindPopup('🏁 Fin données GPS — '+endPt.hhmm);
+  // Centroïde chantier
+  if(centroid){
+    const chantierIcon=L.divIcon({className:'',html:'<div style="background:#dc2626;color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">⚙️</div>',iconSize:[36,36],iconAnchor:[18,18]});
+    L.marker([centroid.lat,centroid.lon],{icon:chantierIcon}).addTo(map).bindPopup('⚙️ <b>Chantier</b><br/>'+(workStart?'Début fraisage : '+workStart+'<br/>':'')+(workEnd?'Fin fraisage : '+workEnd:''));
+  }
+  // Dépôt
+  if(depotGps){
+    const depotIcon=L.divIcon({className:'',html:'<div style="background:#1d4ed8;color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">🏠</div>',iconSize:[32,32],iconAnchor:[16,16]});
+    L.marker([depotGps.lat,depotGps.lon],{icon:depotIcon}).addTo(map).bindPopup('🏠 <b>Dépôt</b>');
+  }
+  // Pauses
+  (pauses||[]).forEach(p=>{
+    const pIcon=L.divIcon({className:'',html:'<div style="background:#eab308;color:#000;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3)">⏸</div>',iconSize:[28,28],iconAnchor:[14,14]});
+    const dh=Math.floor(p.durationMin/60),dm=p.durationMin%60;const dur=dh>0?dh+'h'+String(dm).padStart(2,'0'):dm+'min';
+    L.marker([p.lat,p.lon],{icon:pIcon}).addTo(map).bindPopup('⏸ <b>Pause '+dur+'</b><br/>'+p.startHhmm+' → '+p.endHhmm);
+  });
+  // Fit bounds sur tous les pts
+  map.fitBounds(latlngs,{padding:[40,40]});
+  return()=>{map.remove()};
+},[rawPts,centroid,depotGps,pauses]);
+return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
+<div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'90vw',height:'85vh',maxWidth:1200,display:'flex',flexDirection:'column'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+<h3 style={{margin:0,fontSize:16}}>🗺 Trajet — {title}</h3>
+<button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>×</button>
+</div>
+<div ref={mapRef} style={{flex:1,borderRadius:8,overflow:'hidden'}}/>
+<div style={{marginTop:8,fontSize:11,color:C.dim,display:'flex',gap:14,flexWrap:'wrap'}}>
+<span>🔵 trajet</span><span>🏠 dépôt</span><span>⚙️ chantier</span><span>⏸ pause</span>
+</div>
+</div>
+</div>);
+};
 const Fl=({label,children})=>(<div style={{marginBottom:12}}><label style={{display:'block',fontSize:13,fontWeight:600,color:C.dim,marginBottom:4}}>{label}</label>{children}</div>);
 const inputStyle={width:'100%',padding:'8px 12px',border:'1px solid '+C.border,borderRadius:6,fontSize:14,outline:'none'};
 const btnStyle=(color,full)=>({padding:'8px 16px',background:full?color:'transparent',color:full?'#fff':color,border:'2px solid '+color,borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14});
@@ -629,7 +677,7 @@ const[viewDetail,setViewDetail]=useState(null);
 const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
-const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
+const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
 const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
 const[wirtgenTargetMach,setWirtgenTargetMach]=useState('');const wirtgenRef=useRef(null);
 const[depotFormEmpId,setDepotFormEmpId]=useState('');
@@ -1223,6 +1271,7 @@ return(<div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',b
 <button onClick={()=>{if(navigator.clipboard)navigator.clipboard.writeText(chantierGpsR.lat.toFixed(6)+','+chantierGpsR.lon.toFixed(6))}} style={{background:'#f1f5f9',border:'1px solid '+C.border,borderRadius:4,padding:'1px 6px',cursor:'pointer',fontSize:10,color:C.dim}} title="Copier les coordonnées">📋</button>
 {j.gps&&distFromUser!=null&&(()=>{const col=distFromUser<=100?C.green:distFromUser<=500?C.orange:C.red;const ic=distFromUser<=100?'✓':distFromUser<=500?'⚠':'❌';return<span style={{color:col,fontWeight:700,fontSize:10}} title={'GPS saisi : '+j.gps}>{ic} {distFromUser<1000?Math.round(distFromUser)+'m':(distFromUser/1000).toFixed(1)+'km'} vs saisi</span>})()}
 {!j.gps&&<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.gps=chantierGpsR.lat.toFixed(6)+','+chantierGpsR.lon.toFixed(6);save(nd)}}} style={{background:'#dcfce7',border:'1px solid #16a34a',borderRadius:4,padding:'1px 8px',cursor:'pointer',fontSize:10,color:'#14532d',fontWeight:700}}>↵ Enregistrer comme GPS chantier</button>}
+{mrD&&mrD.rawPts&&mrD.rawPts.length&&<button onClick={()=>{setMapModal({title:(m?m.name:'')+' — '+(j.location||j.billingStart||''),rawPts:mrD.rawPts,centroid:siteD&&siteD.centroid,depotGps:mrD.rawPts[0],pauses:[...((siteD&&siteD.outboundPauses)||[]),...((siteD&&siteD.inboundPauses)||[])],siteArrival:siteD&&siteD.siteArrival,siteDeparture:siteD&&siteD.siteDeparture,workStart:siteD&&siteD.workStart,workEnd:siteD&&siteD.workEnd})}} style={{background:'#eff6ff',border:'1px solid #3b82f6',borderRadius:4,padding:'2px 10px',cursor:'pointer',fontSize:11,color:'#1d4ed8',fontWeight:700,marginLeft:'auto'}}>🗺 Voir trajet</button>}
 </div>}
 {/* Ligne 1 : 8 pastilles événements (T + R + delta) */}
 <div style={{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:3}}>
@@ -1293,6 +1342,7 @@ return(
 {renderCol(['Balayeuse','Citerne'],'Balayeuses + Citernes')}
 </div>
 {showForm&&<MissionForm data={data} save={save} job={formJob} onClose={()=>setShowForm(false)} selectedDate={selDate} selectedEmpId={formEmpId}/>}
+{mapModal&&<MapModal {...mapModal} onClose={()=>setMapModal(null)}/>}
 {showDepotForm&&<Mod title="Journee depot" onClose={()=>setShowDepotForm(false)} width={400}>
 <Fl label="Depot"><select style={inputStyle} value={depotFormDepotId} onChange={e=>setDepotFormDepotId(e.target.value)}><option value="">-- Choisir --</option>{(data.depots||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></Fl>
 <Fl label="Activite"><select style={inputStyle} value={depotFormActivity} onChange={e=>setDepotFormActivity(e.target.value)}>{DEPOT_ACTIVITIES.map(a=><option key={a} value={a}>{a}</option>)}</select></Fl>
