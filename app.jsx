@@ -96,6 +96,41 @@ const Mod=({title,onClose,children,width})=>(
 <button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>x</button>
 </div>{children}</div></div>
 );
+// Modal carte SYNTHÈSE : trajets de toutes les machines du jour, chacune avec sa couleur
+const MapModalGlobal=({onClose,selDate,tracks})=>{
+const mapRef=useRef(null);
+useEffect(()=>{
+  if(!window.L||!mapRef.current||!tracks||!tracks.length)return;
+  const L=window.L;
+  const map=L.map(mapRef.current).setView([45.6,-0.5],8); // fallback centre France-Ouest
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+  const allLatLngs=[];
+  tracks.forEach(t=>{
+    if(!t.rawPts||!t.rawPts.length)return;
+    const latlngs=t.rawPts.map(p=>[p.lat,p.lon]);
+    allLatLngs.push(...latlngs);
+    L.polyline(latlngs,{color:t.color,weight:3,opacity:0.7}).addTo(map).bindPopup('<b>'+t.machineName+'</b>');
+    if(t.centroid){
+      const ic=L.divIcon({className:'',html:'<div style="background:'+t.color+';color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3)">'+t.label+'</div>',iconSize:[30,30],iconAnchor:[15,15]});
+      L.marker([t.centroid.lat,t.centroid.lon],{icon:ic}).addTo(map).bindPopup('<b>'+t.machineName+'</b><br/>'+(t.workStart?'⚙️ '+t.workStart+' → 🏁 '+t.workEnd:''));
+    }
+  });
+  if(allLatLngs.length)map.fitBounds(allLatLngs,{padding:[40,40]});
+  return()=>{map.remove()};
+},[tracks]);
+return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
+<div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte du jour — {selDate} · {tracks.length} machine(s)</h3>
+<button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>×</button>
+</div>
+<div ref={mapRef} style={{flex:1,borderRadius:8,overflow:'hidden'}}/>
+<div style={{marginTop:8,fontSize:11,color:C.dim,display:'flex',gap:14,flexWrap:'wrap'}}>
+{tracks.map((t,i)=><span key={i}><span style={{display:'inline-block',width:12,height:12,background:t.color,borderRadius:6,verticalAlign:'middle',marginRight:4}}/>{t.machineName}</span>)}
+</div>
+</div>
+</div>);
+};
 // Modal carte Leaflet : affiche le trajet GPS d'une mission Wirtgen avec marqueurs dépôt/chantier/pauses
 const MapModal=({onClose,title,rawPts,centroid,depotGps,pauses,siteArrival,siteDeparture,workStart,workEnd})=>{
 const mapRef=useRef(null);
@@ -677,7 +712,7 @@ const[viewDetail,setViewDetail]=useState(null);
 const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
-const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
+const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);const[showGlobalMap,setShowGlobalMap]=useState(false);useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
 const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
 const[wirtgenTargetMach,setWirtgenTargetMach]=useState('');const wirtgenRef=useRef(null);
 const[depotFormEmpId,setDepotFormEmpId]=useState('');
@@ -1334,6 +1369,7 @@ return(
 </div>
 {/* Droite : CA + bouton import JD */}
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent,fontSize:16}}>{fmtMoney(caTotal)}</span></div>
+<button onClick={()=>setShowGlobalMap(true)} style={{...btnStyle('#3b82f6'),fontSize:13,padding:'6px 12px'}} title="Voir toutes les machines du jour sur une carte">🗺 Carte jour</button>
 <button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a'),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
 <input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file,selDate);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
 </div>
@@ -1343,6 +1379,7 @@ return(
 </div>
 {showForm&&<MissionForm data={data} save={save} job={formJob} onClose={()=>setShowForm(false)} selectedDate={selDate} selectedEmpId={formEmpId}/>}
 {mapModal&&<MapModal {...mapModal} onClose={()=>setMapModal(null)}/>}
+{showGlobalMap&&(()=>{const palette=['#dc2626','#3b82f6','#16a34a','#eab308','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1','#14b8a6','#f43f5e'];const reports=(data.machineReports||[]).filter(r=>r.date===selDate&&r.rawPts&&r.rawPts.length);const tracks=reports.map((r,i)=>{const recomputed=recomputeWirtgenReport(r);const site=(recomputed.sites||[])[0];const color=palette[i%palette.length];const mat=String(r.machineName||'').match(/(\d+)/);return{machineName:r.machineName,label:mat?mat[1]:'?',color,rawPts:r.rawPts,centroid:site&&site.centroid,workStart:site&&site.workStart,workEnd:site&&site.workEnd}});return tracks.length?<MapModalGlobal selDate={selDate} tracks={tracks} onClose={()=>setShowGlobalMap(false)}/>:(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={()=>setShowGlobalMap(false)}><div style={{background:'#fff',borderRadius:10,padding:20,maxWidth:400,textAlign:'center'}}><h3>Aucun rapport Wirtgen pour le {selDate}</h3><p style={{color:C.dim}}>Importer un ZIP Wirtgen sur une mission pour voir le trajet.</p><button onClick={()=>setShowGlobalMap(false)} style={btnStyle(C.accent,true)}>OK</button></div></div>)})()}
 {showDepotForm&&<Mod title="Journee depot" onClose={()=>setShowDepotForm(false)} width={400}>
 <Fl label="Depot"><select style={inputStyle} value={depotFormDepotId} onChange={e=>setDepotFormDepotId(e.target.value)}><option value="">-- Choisir --</option>{(data.depots||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></Fl>
 <Fl label="Activite"><select style={inputStyle} value={depotFormActivity} onChange={e=>setDepotFormActivity(e.target.value)}>{DEPOT_ACTIVITIES.map(a=><option key={a} value={a}>{a}</option>)}</select></Fl>
