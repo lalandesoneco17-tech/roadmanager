@@ -180,6 +180,7 @@ return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'r
 </div>);
 };
 // Modal carte planning : affiche tous les chantiers planifiés pour une date donnée (pour optimiser les trajets)
+// Note : mk.co et d.co sont des tableaux [lat, lon] (sortie de parseCoords), pas des objets {lat, lon}
 const MapModalPlanning=({onClose,selDate,markers,depots})=>{
 const mapRef=useRef(null);
 useEffect(()=>{
@@ -190,18 +191,18 @@ useEffect(()=>{
   const allLatLngs=[];
   // Dépôts (icône maison bleue)
   (depots||[]).forEach(d=>{
-    if(!d.co)return;
-    allLatLngs.push([d.co.lat,d.co.lon]);
+    if(!d.co||d.co.length<2)return;
+    allLatLngs.push([d.co[0],d.co[1]]);
     const ic=L.divIcon({className:'',html:'<div style="background:#1d4ed8;color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3)">🏠</div>',iconSize:[30,30],iconAnchor:[15,15]});
-    L.marker([d.co.lat,d.co.lon],{icon:ic}).addTo(map).bindPopup('<b>🏠 '+d.name+'</b>');
+    L.marker([d.co[0],d.co[1]],{icon:ic}).addTo(map).bindPopup('<b>🏠 '+(d.name||'Dépôt')+'</b>');
   });
   // Marqueurs chantiers
   (markers||[]).forEach(mk=>{
-    if(!mk.co)return;
-    allLatLngs.push([mk.co.lat,mk.co.lon]);
+    if(!mk.co||mk.co.length<2)return;
+    allLatLngs.push([mk.co[0],mk.co[1]]);
     const ic=L.divIcon({className:'',html:'<div style="background:'+mk.color+';color:#fff;min-width:36px;height:36px;padding:0 6px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap">'+mk.label+'</div>',iconSize:[60,36],iconAnchor:[30,18]});
     const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+mk.machineName+'</b>'+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
-    L.marker([mk.co.lat,mk.co.lon],{icon:ic}).addTo(map).bindPopup(popup);
+    L.marker([mk.co[0],mk.co[1]],{icon:ic}).addTo(map).bindPopup(popup);
   });
   if(allLatLngs.length)map.fitBounds(allLatLngs,{padding:[50,50]});
   return()=>{map.remove()};
@@ -1462,16 +1463,18 @@ return(
 {geocodeChoice&&<GeocodeChoiceModal choice={geocodeChoice} onClose={()=>setGeocodeChoice(null)} onPick={r=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===geocodeChoice.jobId);if(jj){jj.gps=Number(r.lat).toFixed(6)+','+Number(r.lon).toFixed(6);save(nd)}setGeocodeChoice(null)}}/>}
 {showPlanMap&&(()=>{
   // Construction des marqueurs : 1 par chantier (job) du jour ayant un lieu ou un GPS
-  const markers=dayMissions.map(jb=>{
+  const markers=(dayMissions||[]).map(jb=>{
     const mc=getMach(jb.machineId);
     const emp=(data.employees||[]).find(e=>e.id===jb.employeeId);
     const cl=getClient(jb.clientId);
     const co=parseCoords(jb.gps);
     if(!co)return null; // pas de GPS et pas géocodé => skip
-    return {co,color:widthColor(mc),label:mc?(mc.width?mc.width:mc.name.slice(0,4)):'?',machineName:mc?mc.name:'?',driverName:emp?emp.name:'',clientName:cl?cl.name:'',location:jb.location||'',billingStart:jb.billingStart||'',forfaitType:jb.forfaitType||''};
+    const mcName=mc&&mc.name?mc.name:'?';
+    const lbl=mc&&mc.width?String(mc.width):(mcName!=='?'?mcName.slice(0,4):'?');
+    return {co,color:widthColor(mc),label:lbl,machineName:mcName,driverName:emp&&emp.name?emp.name:'',clientName:cl&&cl.name?cl.name:'',location:jb.location||'',billingStart:jb.billingStart||'',forfaitType:jb.forfaitType||''};
   }).filter(x=>x);
   // Dépôts à afficher
-  const depotsOnMap=(data.depots||[]).map(d=>({name:d.name,co:d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null})).filter(d=>d.co);
+  const depotsOnMap=(data.depots||[]).map(d=>({name:d.name||'Dépôt',co:d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null})).filter(d=>d.co);
   return<MapModalPlanning selDate={selDate} markers={markers} depots={depotsOnMap} onClose={()=>setShowPlanMap(false)}/>;
 })()}
 {showDepotForm&&<Mod title="Journee depot" onClose={()=>setShowDepotForm(false)} width={400}>
