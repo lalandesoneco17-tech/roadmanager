@@ -205,12 +205,16 @@ useEffect(()=>{
     const off=mk.dayOffset||0;
     const op=off===0?1:0.6;
     const borderStyle=off===0?'solid':(off<0?'dashed':'dotted');
+    // Bordure rouge épaisse pour les chantiers de nuit (sinon blanche)
+    const borderColor=mk.isNight?'#dc2626':'#fff';
+    const borderWidth=mk.isNight?3:2;
     const dayBadge=off===0?'':'<span style="background:rgba(0,0,0,0.35);border-radius:6px;padding:0 4px;margin-right:4px;font-size:9px;font-weight:700">'+(off<0?'J-'+Math.abs(off):'J+'+off)+'</span>';
+    const nightBadge=mk.isNight?'<span style="background:#dc2626;color:#fff;border-radius:6px;padding:0 4px;margin-right:4px;font-size:9px;font-weight:700">🌙</span>':'';
     const seqPart=mk.seq?'<span style="background:rgba(0,0,0,0.25);border-radius:8px;padding:0 5px;margin-right:4px;font-size:10px">'+mk.seq+'</span>':'';
-    const html='<div style="opacity:'+op+';background:'+mk.color+';color:#fff;padding:3px 8px;border-radius:14px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px '+borderStyle+' #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;line-height:1.15"><div>'+dayBadge+seqPart+mk.mainLabel+'</div>'+(mk.secondLine?'<div style="font-size:10px;font-weight:700;opacity:0.95">'+mk.secondLine+'</div>':'')+(mk.billingStart?'<div style="font-size:9px;font-weight:600;opacity:0.9">'+mk.billingStart+'</div>':'')+'</div>';
+    const html='<div style="opacity:'+op+';background:'+mk.color+';color:#fff;padding:3px 8px;border-radius:14px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:'+borderWidth+'px '+borderStyle+' '+borderColor+';box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;line-height:1.15"><div>'+nightBadge+dayBadge+seqPart+mk.mainLabel+'</div>'+(mk.secondLine?'<div style="font-size:10px;font-weight:700;opacity:0.95">'+mk.secondLine+'</div>':'')+(mk.billingStart?'<div style="font-size:9px;font-weight:600;opacity:0.9">'+mk.billingStart+'</div>':'')+'</div>';
     const ic=L.divIcon({className:'',html,iconSize:null,iconAnchor:[40,20]});
     const dayLabel=off===0?'':' ('+(off<0?'J-'+Math.abs(off):'J+'+off)+' · '+(mk.dateISO||'')+')';
-    const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+(mk.seq?'#'+mk.seq+' · ':'')+mk.machineName+dayLabel+'</b>'+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
+    const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+(mk.seq?'#'+mk.seq+' · ':'')+mk.machineName+dayLabel+'</b>'+(mk.isNight?'<br/><span style="color:#dc2626;font-weight:700">🌙 NUIT</span>':'')+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
     L.marker([mk.co[0],mk.co[1]],{icon:ic}).addTo(map).bindPopup(popup);
   });
   if(allLatLngs.length)map.fitBounds(allLatLngs,{padding:[50,50]});
@@ -222,7 +226,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.11-6</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.11-7</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -235,6 +239,7 @@ return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'r
 <span style={{border:'2px solid '+C.dim,borderRadius:8,padding:'1px 6px'}}>jour J</span>
 {showVeille&&<span style={{border:'2px dashed '+C.dim,borderRadius:8,padding:'1px 6px',opacity:0.7}}>veille</span>}
 {showSurlend&&<span style={{border:'2px dotted '+C.dim,borderRadius:8,padding:'1px 6px',opacity:0.7}}>lendemain</span>}
+<span style={{border:'3px solid #dc2626',borderRadius:8,padding:'1px 6px',color:'#dc2626',fontWeight:700}}>🌙 nuit</span>
 {(markers||[]).map((m,i)=><span key={i} style={{opacity:(m.dayOffset||0)===0?1:0.6}}><span style={{display:'inline-block',width:12,height:12,background:m.color,borderRadius:6,verticalAlign:'middle',marginRight:4}}/>{(m.dayOffset===-1?'J-1 ':m.dayOffset===1?'J+1 ':'')+(m.seq?'#'+m.seq+' ':'')+m.machineName}{m.driverName?' · '+m.driverName:''}{m.billingStart?' · '+m.billingStart:''}</span>)}
 </div>
 </div>
@@ -1591,7 +1596,7 @@ return(
         mainLabel=mcName;
         if(empName)secondLine=empName.split(' ')[0];
       }
-      return {co:[co[0],co[1]],color:widthColor(mc),mainLabel,secondLine,seq:seqMap[jb.id]||null,billingStart:jb.billingStart||'',machineName:mcName,driverName:empName,clientName:cl&&cl.name?cl.name:'',location:jb.location||'',forfaitType:jb.forfaitType||'',mcType,dayOffset,dateISO};
+      return {co:[co[0],co[1]],color:widthColor(mc),mainLabel,secondLine,seq:seqMap[jb.id]||null,billingStart:jb.billingStart||'',machineName:mcName,driverName:empName,clientName:cl&&cl.name?cl.name:'',location:jb.location||'',forfaitType:jb.forfaitType||'',mcType,dayOffset,dateISO,isNight:!!jb.isNight};
     }).filter(x=>x);
   };
   // Date helpers
