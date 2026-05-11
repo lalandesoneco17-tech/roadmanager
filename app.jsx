@@ -181,8 +181,9 @@ return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'r
 };
 // Modal carte planning : affiche tous les chantiers planifiés pour une date donnée (pour optimiser les trajets)
 // Note : mk.co et d.co sont des tableaux [lat, lon] (sortie de parseCoords), pas des objets {lat, lon}
-const MapModalPlanning=({onClose,selDate,markers,depots})=>{
+const MapModalPlanning=({onClose,selDate,veilleISO,surlendISO,markers,depots,showVeille,showSurlend,onToggleVeille,onToggleSurlend})=>{
 const mapRef=useRef(null);
+const fmtDDMM=iso=>{const d=new Date(iso);return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')};
 useEffect(()=>{
   if(!window.L||!mapRef.current)return;
   const L=window.L;
@@ -200,25 +201,41 @@ useEffect(()=>{
   (markers||[]).forEach(mk=>{
     if(!mk.co||mk.co.length<2)return;
     allLatLngs.push([mk.co[0],mk.co[1]]);
+    // Styling selon dayOffset : 0=jour J (plein), -1=veille (dashed, transparent), +1=lendemain (dotted, transparent)
+    const off=mk.dayOffset||0;
+    const op=off===0?1:0.6;
+    const borderStyle=off===0?'solid':(off<0?'dashed':'dotted');
+    const dayBadge=off===0?'':'<span style="background:rgba(0,0,0,0.35);border-radius:6px;padding:0 4px;margin-right:4px;font-size:9px;font-weight:700">'+(off<0?'J-'+Math.abs(off):'J+'+off)+'</span>';
     const seqPart=mk.seq?'<span style="background:rgba(0,0,0,0.25);border-radius:8px;padding:0 5px;margin-right:4px;font-size:10px">'+mk.seq+'</span>':'';
-    const html='<div style="background:'+mk.color+';color:#fff;padding:3px 8px;border-radius:14px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;line-height:1.15"><div>'+seqPart+mk.mainLabel+'</div>'+(mk.billingStart?'<div style="font-size:9px;font-weight:600;opacity:0.95">'+mk.billingStart+'</div>':'')+'</div>';
+    const html='<div style="opacity:'+op+';background:'+mk.color+';color:#fff;padding:3px 8px;border-radius:14px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px '+borderStyle+' #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;line-height:1.15"><div>'+dayBadge+seqPart+mk.mainLabel+'</div>'+(mk.billingStart?'<div style="font-size:9px;font-weight:600;opacity:0.95">'+mk.billingStart+'</div>':'')+'</div>';
     const ic=L.divIcon({className:'',html,iconSize:null,iconAnchor:[40,20]});
-    const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+(mk.seq?'#'+mk.seq+' · ':'')+mk.machineName+'</b>'+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
+    const dayLabel=off===0?'':' ('+(off<0?'J-'+Math.abs(off):'J+'+off)+' · '+(mk.dateISO||'')+')';
+    const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+(mk.seq?'#'+mk.seq+' · ':'')+mk.machineName+dayLabel+'</b>'+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
     L.marker([mk.co[0],mk.co[1]],{icon:ic}).addTo(map).bindPopup(popup);
   });
   if(allLatLngs.length)map.fitBounds(allLatLngs,{padding:[50,50]});
   return()=>{map.remove()};
 },[markers,depots]);
+const todayCount=(markers||[]).filter(m=>(m.dayOffset||0)===0).length;
+const veilleCount=(markers||[]).filter(m=>m.dayOffset===-1).length;
+const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {markers?markers.length:0} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.11-3</span></h3>
-<button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>×</button>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.11-4</span></h3>
+<div style={{display:'flex',gap:6,alignItems:'center'}}>
+<button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
+<button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
+<button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim,marginLeft:6}}>×</button>
+</div>
 </div>
 <div ref={mapRef} style={{flex:1,borderRadius:8,overflow:'hidden'}}/>
-<div style={{marginTop:8,fontSize:11,color:C.dim,display:'flex',gap:14,flexWrap:'wrap'}}>
+<div style={{marginTop:8,fontSize:11,color:C.dim,display:'flex',gap:14,flexWrap:'wrap',alignItems:'center'}}>
 <span>🏠 dépôt</span>
-{(markers||[]).map((m,i)=><span key={i}><span style={{display:'inline-block',width:12,height:12,background:m.color,borderRadius:6,verticalAlign:'middle',marginRight:4}}/>{(m.seq?'#'+m.seq+' ':'')+m.machineName}{m.driverName?' · '+m.driverName:''}{m.billingStart?' · '+m.billingStart:''}</span>)}
+<span style={{border:'2px solid '+C.dim,borderRadius:8,padding:'1px 6px'}}>jour J</span>
+{showVeille&&<span style={{border:'2px dashed '+C.dim,borderRadius:8,padding:'1px 6px',opacity:0.7}}>veille</span>}
+{showSurlend&&<span style={{border:'2px dotted '+C.dim,borderRadius:8,padding:'1px 6px',opacity:0.7}}>lendemain</span>}
+{(markers||[]).map((m,i)=><span key={i} style={{opacity:(m.dayOffset||0)===0?1:0.6}}><span style={{display:'inline-block',width:12,height:12,background:m.color,borderRadius:6,verticalAlign:'middle',marginRight:4}}/>{(m.dayOffset===-1?'J-1 ':m.dayOffset===1?'J+1 ':'')+(m.seq?'#'+m.seq+' ':'')+m.machineName}{m.driverName?' · '+m.driverName:''}{m.billingStart?' · '+m.billingStart:''}</span>)}
 </div>
 </div>
 </div>);
@@ -801,7 +818,7 @@ const[viewDetail,setViewDetail]=useState(null);
 const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
-const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);const[showPlanMap,setShowPlanMap]=useState(false);
+const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);const[showPlanMap,setShowPlanMap]=useState(false);const[planMapShowVeille,setPlanMapShowVeille]=useState(false);const[planMapShowSurlend,setPlanMapShowSurlend]=useState(false);
 // Autocomplete géocodage Nominatim — déclenché en live (debounce 400ms) au fil de la frappe
 // Les résultats sont biaisés sur la zone des dépôts SONECO (priorité aux lieux proches) et triés
 // par distance au dépôt le plus proche. Coordonnées stockées en _geocodedGps (champ caché).
@@ -1545,45 +1562,51 @@ return(
   </React.Fragment>);
 })()}
 {showPlanMap&&(()=>{
-  // Numérotation par chauffeur : si un chauffeur a plusieurs chantiers le jour, on numérote
-  // ses chantiers 1, 2, 3 dans l'ordre de billingStart (heure de début).
-  const seqMap={};
-  const byDriver={};
-  (dayMissions||[]).forEach(jb=>{if(jb.employeeId){(byDriver[jb.employeeId]=byDriver[jb.employeeId]||[]).push(jb)}});
-  Object.values(byDriver).forEach(arr=>{
-    arr.sort((a,b)=>(a.billingStart||'99:99').localeCompare(b.billingStart||'99:99'));
-    if(arr.length>1)arr.forEach((jb,i)=>{seqMap[jb.id]=i+1});
-  });
-  // Construction des marqueurs : 1 par chantier (job) du jour ayant un lieu géocodé (ou un GPS manuel)
-  const markers=(dayMissions||[]).map(jb=>{
-    const mc=getMach(jb.machineId);
-    const emp=(data.employees||[]).find(e=>e.id===jb.employeeId);
-    const cl=getClient(jb.clientId);
-    const co=parseCoords(jb._geocodedGps||jb.gps);
-    if(!co)return null; // pas de GPS géocodé et pas de GPS manuel => skip
-    const mcName=mc&&mc.name?mc.name:'?';
-    const mcType=mc&&mc.type?mc.type:'';
-    const empName=emp&&emp.name?emp.name:'';
-    // Label principal :
-    // - Raboteuse / Citerne / autre => nom machine complet
-    // - Balayeuse => prénom chauffeur (ou nom machine si pas de chauffeur)
-    let mainLabel;
-    if(mcType==='Balayeuse')mainLabel=empName?empName.split(' ')[0]:(mcName||'?');
-    else mainLabel=mcName;
-    return {co:[co[0],co[1]],color:widthColor(mc),mainLabel,seq:seqMap[jb.id]||null,billingStart:jb.billingStart||'',machineName:mcName,driverName:empName,clientName:cl&&cl.name?cl.name:'',location:jb.location||'',forfaitType:jb.forfaitType||'',mcType};
-  }).filter(x=>x);
-  // Décalage des marqueurs qui se superposent (mêmes coords ≈ même chantier multi-machines)
+  // Construction des marqueurs pour une date donnée + dayOffset (-1=veille, 0=selDate, +1=lendemain)
+  const buildMarkersFor=(dateISO,dayOffset)=>{
+    const jobs=(data.jobs||[]).filter(j=>j.date===dateISO&&j.type!=='depot');
+    // Numérotation par chauffeur : si un chauffeur a plusieurs chantiers le jour, 1, 2, 3 dans l'ordre billingStart
+    const seqMap={};
+    const byDriver={};
+    jobs.forEach(jb=>{if(jb.employeeId){(byDriver[jb.employeeId]=byDriver[jb.employeeId]||[]).push(jb)}});
+    Object.values(byDriver).forEach(arr=>{
+      arr.sort((a,b)=>(a.billingStart||'99:99').localeCompare(b.billingStart||'99:99'));
+      if(arr.length>1)arr.forEach((jb,i)=>{seqMap[jb.id]=i+1});
+    });
+    return jobs.map(jb=>{
+      const mc=getMach(jb.machineId);
+      const emp=(data.employees||[]).find(e=>e.id===jb.employeeId);
+      const cl=getClient(jb.clientId);
+      const co=parseCoords(jb._geocodedGps||jb.gps);
+      if(!co)return null;
+      const mcName=mc&&mc.name?mc.name:'?';
+      const mcType=mc&&mc.type?mc.type:'';
+      const empName=emp&&emp.name?emp.name:'';
+      let mainLabel;
+      if(mcType==='Balayeuse')mainLabel=empName?empName.split(' ')[0]:(mcName||'?');
+      else mainLabel=mcName;
+      return {co:[co[0],co[1]],color:widthColor(mc),mainLabel,seq:seqMap[jb.id]||null,billingStart:jb.billingStart||'',machineName:mcName,driverName:empName,clientName:cl&&cl.name?cl.name:'',location:jb.location||'',forfaitType:jb.forfaitType||'',mcType,dayOffset,dateISO};
+    }).filter(x=>x);
+  };
+  // Date helpers
+  const offsetISO=(iso,days)=>{const d=new Date(iso);d.setDate(d.getDate()+days);return fmtDateISO(d)};
+  const veilleISO=offsetISO(selDate,-1);
+  const surlendISO=offsetISO(selDate,1);
+  // Assemble markers
+  let markers=buildMarkersFor(selDate,0);
+  if(planMapShowVeille)markers=[...markers,...buildMarkersFor(veilleISO,-1)];
+  if(planMapShowSurlend)markers=[...markers,...buildMarkersFor(surlendISO,1)];
+  // Décalage des marqueurs qui se superposent
   const groups={};
   markers.forEach(mk=>{const k=mk.co[0].toFixed(4)+','+mk.co[1].toFixed(4);(groups[k]=groups[k]||[]).push(mk)});
   Object.values(groups).forEach(g=>{
     if(g.length<=1)return;
-    // Décalage circulaire ~80m autour du point original
     const offsetDeg=0.0008;
     g.forEach((mk,i)=>{const ang=(2*Math.PI*i)/g.length;mk.co=[mk.co[0]+offsetDeg*Math.cos(ang),mk.co[1]+offsetDeg*Math.sin(ang)]});
   });
-  // Dépôts à afficher
+  // Dépôts
   const depotsOnMap=(data.depots||[]).map(d=>({name:d.name||'Dépôt',co:d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null})).filter(d=>d.co);
-  return<MapModalPlanning selDate={selDate} markers={markers} depots={depotsOnMap} onClose={()=>setShowPlanMap(false)}/>;
+  return<MapModalPlanning selDate={selDate} veilleISO={veilleISO} surlendISO={surlendISO} markers={markers} depots={depotsOnMap} showVeille={planMapShowVeille} showSurlend={planMapShowSurlend} onToggleVeille={()=>setPlanMapShowVeille(v=>!v)} onToggleSurlend={()=>setPlanMapShowSurlend(v=>!v)} onClose={()=>setShowPlanMap(false)}/>;
 })()}
 {showDepotForm&&<Mod title="Journee depot" onClose={()=>setShowDepotForm(false)} width={400}>
 <Fl label="Depot"><select style={inputStyle} value={depotFormDepotId} onChange={e=>setDepotFormDepotId(e.target.value)}><option value="">-- Choisir --</option>{(data.depots||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></Fl>
