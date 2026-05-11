@@ -417,18 +417,27 @@ const sites=sigClusters.map((cluster,cIdx)=>{
     if(clHops.length){workStart=clHops[0].hhmm;workStartAbsMin=clHops[0].min}
     else{workStart=pts[firstIdx].hhmm;workStartAbsMin=pts[firstIdx].min}
   }
-  // workEnd, raffiné par OpTime horaire de CE cluster uniquement
-  let workEndAbsMin=pts[lastIdx].min;
+  // workEnd : on prend le MAX des candidats pour ne pas s'arrêter trop tôt :
+  //   - dernier hop "On" moteur en zone (= dernière coupure-redémarrage avant départ chantier)
+  //   - OpTime end estimé (millingEndEst) si bucket horaire
+  // Plafonné par le dernier pt GPS en zone (la machine ne peut pas fraiser hors zone).
+  const lastPtInZoneMin=pts[lastIdx].min;
+  let workEndAbsMin=workStartAbsMin;
+  const lastHopInZone=cluster.hops[cluster.hops.length-1];
+  if(lastHopInZone&&lastHopInZone.min<=lastPtInZoneMin)workEndAbsMin=Math.max(workEndAbsMin,lastHopInZone.min);
   if(opTimeBuckets&&opTimeBuckets.length){
     const sigBuckets=opTimeBuckets.filter(b=>b.opH>=MIN_OP_H&&(b.endMin-b.startMin)<=90);
-    const clStart=pts[firstIdx].min,clEnd=pts[lastIdx].min;
-    const relevant=sigBuckets.filter(b=>b.startMin>=clStart-60&&b.endMin<=clEnd+60);
+    const clStart=pts[firstIdx].min;
+    const relevant=sigBuckets.filter(b=>b.startMin>=clStart-60&&b.endMin<=lastPtInZoneMin+60);
     if(relevant.length){
       const lastSig=relevant[relevant.length-1];
       const millingEndEst=lastSig.startMin+Math.round(lastSig.opH*60);
-      if(millingEndEst<workEndAbsMin&&millingEndEst>=workStartAbsMin)workEndAbsMin=millingEndEst;
+      if(millingEndEst<=lastPtInZoneMin)workEndAbsMin=Math.max(workEndAbsMin,millingEndEst);
     }
   }
+  // Si aucun candidat trouvé, utilise le dernier pt GPS en zone par défaut
+  if(workEndAbsMin<=workStartAbsMin)workEndAbsMin=lastPtInZoneMin;
+  workEndAbsMin=Math.min(workEndAbsMin,lastPtInZoneMin);
   const workEndPt=pts.find(p=>p.min===workEndAbsMin);
   let workEnd=workEndPt?workEndPt.hhmm:minToHHMM(workEndAbsMin);
   if(workEndAbsMin<workStartAbsMin)workEnd=workStart;
