@@ -196,12 +196,14 @@ useEffect(()=>{
     const ic=L.divIcon({className:'',html:'<div style="background:#1d4ed8;color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3)">🏠</div>',iconSize:[30,30],iconAnchor:[15,15]});
     L.marker([d.co[0],d.co[1]],{icon:ic}).addTo(map).bindPopup('<b>🏠 '+(d.name||'Dépôt')+'</b>');
   });
-  // Marqueurs chantiers
+  // Marqueurs chantiers : pill avec [seq.] nom complet + heure de début dessous
   (markers||[]).forEach(mk=>{
     if(!mk.co||mk.co.length<2)return;
     allLatLngs.push([mk.co[0],mk.co[1]]);
-    const ic=L.divIcon({className:'',html:'<div style="background:'+mk.color+';color:#fff;min-width:36px;height:36px;padding:0 6px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap">'+mk.label+'</div>',iconSize:[60,36],iconAnchor:[30,18]});
-    const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+mk.machineName+'</b>'+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
+    const seqPart=mk.seq?'<span style="background:rgba(0,0,0,0.25);border-radius:8px;padding:0 5px;margin-right:4px;font-size:10px">'+mk.seq+'</span>':'';
+    const html='<div style="background:'+mk.color+';color:#fff;padding:3px 8px;border-radius:14px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;line-height:1.15"><div>'+seqPart+mk.mainLabel+'</div>'+(mk.billingStart?'<div style="font-size:9px;font-weight:600;opacity:0.95">'+mk.billingStart+'</div>':'')+'</div>';
+    const ic=L.divIcon({className:'',html,iconSize:null,iconAnchor:[40,20]});
+    const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+(mk.seq?'#'+mk.seq+' · ':'')+mk.machineName+'</b>'+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
     L.marker([mk.co[0],mk.co[1]],{icon:ic}).addTo(map).bindPopup(popup);
   });
   if(allLatLngs.length)map.fitBounds(allLatLngs,{padding:[50,50]});
@@ -216,7 +218,7 @@ return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'r
 <div ref={mapRef} style={{flex:1,borderRadius:8,overflow:'hidden'}}/>
 <div style={{marginTop:8,fontSize:11,color:C.dim,display:'flex',gap:14,flexWrap:'wrap'}}>
 <span>🏠 dépôt</span>
-{(markers||[]).map((m,i)=><span key={i}><span style={{display:'inline-block',width:12,height:12,background:m.color,borderRadius:6,verticalAlign:'middle',marginRight:4}}/>{m.machineName}{m.driverName?' · '+m.driverName:''}</span>)}
+{(markers||[]).map((m,i)=><span key={i}><span style={{display:'inline-block',width:12,height:12,background:m.color,borderRadius:6,verticalAlign:'middle',marginRight:4}}/>{(m.seq?'#'+m.seq+' ':'')+m.machineName}{m.driverName?' · '+m.driverName:''}{m.billingStart?' · '+m.billingStart:''}</span>)}
 </div>
 </div>
 </div>);
@@ -1543,6 +1545,15 @@ return(
   </React.Fragment>);
 })()}
 {showPlanMap&&(()=>{
+  // Numérotation par chauffeur : si un chauffeur a plusieurs chantiers le jour, on numérote
+  // ses chantiers 1, 2, 3 dans l'ordre de billingStart (heure de début).
+  const seqMap={};
+  const byDriver={};
+  (dayMissions||[]).forEach(jb=>{if(jb.employeeId){(byDriver[jb.employeeId]=byDriver[jb.employeeId]||[]).push(jb)}});
+  Object.values(byDriver).forEach(arr=>{
+    arr.sort((a,b)=>(a.billingStart||'99:99').localeCompare(b.billingStart||'99:99'));
+    if(arr.length>1)arr.forEach((jb,i)=>{seqMap[jb.id]=i+1});
+  });
   // Construction des marqueurs : 1 par chantier (job) du jour ayant un lieu géocodé (ou un GPS manuel)
   const markers=(dayMissions||[]).map(jb=>{
     const mc=getMach(jb.machineId);
@@ -1551,9 +1562,25 @@ return(
     const co=parseCoords(jb._geocodedGps||jb.gps);
     if(!co)return null; // pas de GPS géocodé et pas de GPS manuel => skip
     const mcName=mc&&mc.name?mc.name:'?';
-    const lbl=mc&&mc.width?String(mc.width):(mcName!=='?'?mcName.slice(0,4):'?');
-    return {co,color:widthColor(mc),label:lbl,machineName:mcName,driverName:emp&&emp.name?emp.name:'',clientName:cl&&cl.name?cl.name:'',location:jb.location||'',billingStart:jb.billingStart||'',forfaitType:jb.forfaitType||''};
+    const mcType=mc&&mc.type?mc.type:'';
+    const empName=emp&&emp.name?emp.name:'';
+    // Label principal :
+    // - Raboteuse / Citerne / autre => nom machine complet
+    // - Balayeuse => prénom chauffeur (ou nom machine si pas de chauffeur)
+    let mainLabel;
+    if(mcType==='Balayeuse')mainLabel=empName?empName.split(' ')[0]:(mcName||'?');
+    else mainLabel=mcName;
+    return {co:[co[0],co[1]],color:widthColor(mc),mainLabel,seq:seqMap[jb.id]||null,billingStart:jb.billingStart||'',machineName:mcName,driverName:empName,clientName:cl&&cl.name?cl.name:'',location:jb.location||'',forfaitType:jb.forfaitType||'',mcType};
   }).filter(x=>x);
+  // Décalage des marqueurs qui se superposent (mêmes coords ≈ même chantier multi-machines)
+  const groups={};
+  markers.forEach(mk=>{const k=mk.co[0].toFixed(4)+','+mk.co[1].toFixed(4);(groups[k]=groups[k]||[]).push(mk)});
+  Object.values(groups).forEach(g=>{
+    if(g.length<=1)return;
+    // Décalage circulaire ~80m autour du point original
+    const offsetDeg=0.0008;
+    g.forEach((mk,i)=>{const ang=(2*Math.PI*i)/g.length;mk.co=[mk.co[0]+offsetDeg*Math.cos(ang),mk.co[1]+offsetDeg*Math.sin(ang)]});
+  });
   // Dépôts à afficher
   const depotsOnMap=(data.depots||[]).map(d=>({name:d.name||'Dépôt',co:d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null})).filter(d=>d.co);
   return<MapModalPlanning selDate={selDate} markers={markers} depots={depotsOnMap} onClose={()=>setShowPlanMap(false)}/>;
