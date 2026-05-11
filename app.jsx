@@ -221,23 +221,47 @@ return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'r
 </div>
 </div>);
 };
-// Modal de choix géocodage : affiche la liste de résultats Nominatim quand >1 résultat
+// Modal de choix géocodage : affiche la liste de résultats Nominatim avec département bien visible
 const GeocodeChoiceModal=({choice,onPick,onClose})=>{
 if(!choice)return null;
+// Extrait le numéro de département (code postal débute par 2 chiffres en France)
+const getDept=r=>{
+  const a=r.address||{};
+  if(a.postcode){const cp=String(a.postcode);if(cp.length>=2)return cp.slice(0,2)}
+  return null;
+};
+const getDeptName=r=>{
+  const a=r.address||{};
+  return a.county||a.state_district||a.state||'';
+};
+const getCity=r=>{
+  const a=r.address||{};
+  return a.city||a.town||a.village||a.municipality||a.hamlet||'';
+};
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100}} onClick={onClose}>
-<div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:18,width:520,maxWidth:'95vw',maxHeight:'85vh',display:'flex',flexDirection:'column'}}>
+<div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:18,width:580,maxWidth:'95vw',maxHeight:'85vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-<h3 style={{margin:0,fontSize:15}}>📍 Choisir un lieu pour "<i>{choice.query}</i>"</h3>
+<h3 style={{margin:0,fontSize:15}}>📍 Choisir le bon lieu pour "<i>{choice.query}</i>"</h3>
 <button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.dim}}>×</button>
 </div>
+{choice.noResult?
+<div style={{padding:'20px',textAlign:'center',color:C.red,fontSize:14}}>Aucun résultat trouvé. Vérifie l'orthographe ou ajoute le département (ex : "Angoulême 16").</div>
+:
 <div style={{overflowY:'auto',flex:1}}>
-{(choice.results||[]).map((r,i)=>(
-<div key={i} onClick={()=>onPick(r)} style={{padding:'10px 12px',border:'1px solid '+C.border,borderRadius:8,marginBottom:8,cursor:'pointer',background:'#f8fafc'}} onMouseEnter={e=>e.currentTarget.style.background='#e0f2fe'} onMouseLeave={e=>e.currentTarget.style.background='#f8fafc'}>
-<div style={{fontSize:13,fontWeight:600,color:C.text}}>{r.display_name}</div>
-<div style={{fontSize:11,color:C.dim,marginTop:3}}>GPS : {Number(r.lat).toFixed(5)}, {Number(r.lon).toFixed(5)}{r.type?' · '+r.type:''}</div>
+<div style={{fontSize:12,color:C.dim,marginBottom:8,fontStyle:'italic'}}>Clique sur le bon département pour valider</div>
+{(choice.results||[]).map((r,i)=>{
+const dept=getDept(r),deptName=getDeptName(r),city=getCity(r);
+return(
+<div key={i} onClick={()=>onPick(r)} style={{padding:'10px 12px',border:'2px solid '+C.border,borderRadius:8,marginBottom:8,cursor:'pointer',background:'#f8fafc',display:'flex',alignItems:'center',gap:12}} onMouseEnter={e=>{e.currentTarget.style.background='#e0f2fe';e.currentTarget.style.borderColor=C.accent}} onMouseLeave={e=>{e.currentTarget.style.background='#f8fafc';e.currentTarget.style.borderColor=C.border}}>
+{dept&&<div style={{background:C.accent,color:'#fff',fontWeight:800,fontSize:18,padding:'8px 10px',borderRadius:8,minWidth:48,textAlign:'center'}}>{dept}</div>}
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontSize:14,fontWeight:700,color:C.text}}>{city||r.display_name.split(',')[0]}{deptName?' — '+deptName:''}</div>
+<div style={{fontSize:11,color:C.dim,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.display_name}</div>
 </div>
-))}
 </div>
+)})}
+</div>
+}
 <div style={{textAlign:'center',marginTop:8}}><button onClick={onClose} style={btnStyle(C.dim)}>Annuler</button></div>
 </div>
 </div>);
@@ -777,21 +801,16 @@ const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
 const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);const[showPlanMap,setShowPlanMap]=useState(false);const[geocodeChoice,setGeocodeChoice]=useState(null);
 // Géocodage via Nominatim (OpenStreetMap, gratuit, sans clé). Appelé sur blur du champ Lieu.
+// Toujours afficher la liste pour que l'utilisateur valide le bon département (évite les erreurs sur villes homonymes).
+// Les coordonnées sont stockées dans j._geocodedGps (champ caché, jamais affiché).
 const geocodeLocation=async(jobId,query)=>{
   if(!query||query.trim().length<3)return;
   try{
-    const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(query)+'&limit=5&countrycodes=fr');
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q='+encodeURIComponent(query)+'&limit=8&countrycodes=fr');
     const results=await r.json();
-    if(!results||!results.length)return;
-    if(results.length===1){
-      // Un seul résultat = on l'applique direct
-      const nd=JSON.parse(JSON.stringify(data));
-      const jj=nd.jobs.find(x=>x.id===jobId);
-      if(jj){jj.gps=Number(results[0].lat).toFixed(6)+','+Number(results[0].lon).toFixed(6);save(nd)}
-    }else{
-      // Plusieurs résultats : ouvre la modal pour choisir
-      setGeocodeChoice({jobId,query,results});
-    }
+    if(!results||!results.length){setGeocodeChoice({jobId,query,results:[],noResult:true});return}
+    // Toujours ouvrir la modal (même avec 1 seul résultat) pour valider le département
+    setGeocodeChoice({jobId,query,results});
   }catch(err){console.warn('Géocodage échoué',err)}
 };useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
 const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
@@ -915,10 +934,10 @@ return(<React.Fragment key={cardId}><div draggable onDragStart={e=>onDragStart(e
 <select value={uj.siteManager||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau chef:');if(n){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.siteManager=n;const cl2=(nd.clients||[]).find(c2=>c2.id===uj.clientId);if(cl2){if(!cl2.siteManagers)cl2.siteManagers=[];if(!cl2.siteManagers.find(s=>s.name===n)){const ph=prompt('Tel (optionnel):','')||'';cl2.siteManagers.push({name:n,phone:ph});jj.siteManagerPhone=ph}}save(nd)}}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===uj.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:80,maxWidth:130}}>
 <option value="">Chef</option>{(ujCl&&ujCl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
-<input value={uj.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.location=e.target.value;save(nd)}}} onBlur={e=>{if(!uj.gps&&e.target.value&&e.target.value.trim().length>=3)geocodeLocation(uj.id,e.target.value)}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
+<input value={uj.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.location=e.target.value;if(jj._geocodedGps)jj._geocodedGps='';save(nd)}}} onBlur={e=>{if(e.target.value&&e.target.value.trim().length>=3&&!uj._geocodedGps)geocodeLocation(uj.id,e.target.value)}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+(uj._geocodedGps?C.green:C.border),minWidth:100,flex:1,maxWidth:220,background:uj._geocodedGps?'#dcfce7':'#fff'}}/>
 <input type="time" value={uj.billingStart||'08:00'} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.billingStart=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75}}/>
-<input value={uj.gps||''} placeholder="GPS lat,lon" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.gps=e.target.value;save(nd)}}} style={{fontSize:12,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,width:110,background:'#fff',color:C.dim}}/>
-{(()=>{const gpsJ=parseCoords(uj.gps);const empCo2=uj.employeeId?getEmpCoords(data,uj.employeeId):null;const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
+{/* Champ GPS masqué : alimenté automatiquement via géocodage (caché à l'utilisateur) */}
+{(()=>{const gpsJ=parseCoords(uj._geocodedGps||uj.gps);const empCo2=uj.employeeId?getEmpCoords(data,uj.employeeId):null;const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
 if(gpsJ&&!uj.startFrom&&shortDep){setTimeout(()=>{const nd2=JSON.parse(JSON.stringify(data));const jj2=nd2.jobs.find(x=>x.id===uj.id);if(jj2&&!jj2.startFrom){jj2.startFrom=shortDep.id;jj2.kmAller=shortDep.km;jj2.travelMinAller=Math.round((shortDep.km/80)*60);if(!jj2.endAt&&shortArr){jj2.endAt=shortArr.id;jj2.kmRetour=shortArr.km;jj2.travelMinRetour=Math.round((shortArr.km/80)*60)}jj2.distanceKm=(jj2.kmAller||0)+(jj2.kmRetour||0);jj2.travelMin=(jj2.travelMinAller||0)+(jj2.travelMinRetour||0);save(nd2)}},0)}
 return(<React.Fragment>
 <select value={uj.startFrom||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj){jj.startFrom=e.target.value;const sel2=depOptions2.find(o=>o.id===e.target.value);jj.kmAller=sel2&&sel2.km?sel2.km:0;jj.travelMinAller=sel2&&sel2.km?Math.round((sel2.km/80)*60):0;jj.distanceKm=(jj.kmAller||0)+(jj.kmRetour||0);jj.travelMin=(jj.travelMinAller||0)+(jj.travelMinRetour||0);save(nd)}}} style={{fontSize:12,padding:'2px 3px',borderRadius:4,border:'1px solid #0891b240',background:uj.startFrom&&shortDep&&uj.startFrom===shortDep.id?'#0891b218':'#0891b208',color:'#0891b2',fontWeight:600,minWidth:60,maxWidth:110}}>
@@ -1158,11 +1177,11 @@ return(
 <select value={j.siteManager||''} onChange={e=>{if(e.target.value==='__new__'){const n=prompt('Nouveau chef chantier:');if(n){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=n;const cl2=(nd.clients||[]).find(c2=>c2.id===j.clientId);if(cl2){if(!cl2.siteManagers)cl2.siteManagers=[];if(!cl2.siteManagers.find(s=>s.name===n)){const ph=prompt('Tel du chef (optionnel):','')||'';cl2.siteManagers.push({name:n,phone:ph});jj.siteManagerPhone=ph}}save(nd)}}}else{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.siteManager=e.target.value;const cl2=(data.clients||[]).find(c2=>c2.id===j.clientId);const sm=(cl2&&cl2.siteManagers||[]).find(s=>s.name===e.target.value);if(sm)jj.siteManagerPhone=sm.phone||'';save(nd)}}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,background:'#fff',minWidth:80,maxWidth:130}}>
 <option value="">Chef</option>{(cl&&cl.siteManagers||[]).map((s,si)=><option key={si} value={s.name}>{s.name}</option>)}<option value="__new__">+ Nouveau...</option>
 </select>
-<input value={j.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.location=e.target.value;save(nd)}}} onBlur={e=>{if(!j.gps&&e.target.value&&e.target.value.trim().length>=3)geocodeLocation(j.id,e.target.value)}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
+<input value={j.location||''} placeholder="Lieu / adresse" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.location=e.target.value;if(jj._geocodedGps)jj._geocodedGps='';save(nd)}}} onBlur={e=>{if(e.target.value&&e.target.value.trim().length>=3&&!j._geocodedGps)geocodeLocation(j.id,e.target.value)}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+(j._geocodedGps?C.green:C.border),minWidth:100,flex:1,maxWidth:220,background:j._geocodedGps?'#dcfce7':'#fff'}}/>
 <input type="time" value={j.billingStart||'08:00'} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.billingStart=e.target.value;save(nd)}}} style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75}}/>
 {/* GPS chantier + selects depart/arrivee deplaces dans le panneau detail (▼) */}
 {/* Auto-init dep/arr quand l'utilisateur saisit le GPS (effet toujours actif meme si detail ferme) */}
-{(()=>{const gpsJ=parseCoords(j.gps);if(!gpsJ)return null;const empCo2=getEmpCoords(data,j.employeeId);const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
+{(()=>{const gpsJ=parseCoords(j._geocodedGps||j.gps);if(!gpsJ)return null;const empCo2=getEmpCoords(data,j.employeeId);const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
 if(!j.startFrom&&shortDep){setTimeout(()=>{const nd2=JSON.parse(JSON.stringify(data));const jj2=nd2.jobs.find(x=>x.id===j.id);if(jj2&&!jj2.startFrom){jj2.startFrom=shortDep.id;jj2.kmAller=shortDep.km;jj2.travelMinAller=Math.round((shortDep.km/80)*60);if(!jj2.endAt&&shortArr){jj2.endAt=shortArr.id;jj2.kmRetour=shortArr.km;jj2.travelMinRetour=Math.round((shortArr.km/80)*60)}jj2.distanceKm=(jj2.kmAller||0)+(jj2.kmRetour||0);jj2.travelMin=(jj2.travelMinAller||0)+(jj2.travelMinRetour||0);save(nd2)}},0)}
 return null;
 })()}
@@ -1366,11 +1385,10 @@ if(siteD&&siteD.centroid){
 }
 return(<div style={{display:'flex',flexDirection:'column',gap:6,fontSize:11}}>
 {/* Ligne -1 : GPS saisi + Dep + Arr (déplacés ici depuis la ligne chantier) */}
-{(()=>{const gpsJ=parseCoords(j.gps);const empCo2=getEmpCoords(data,j.employeeId);const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
+{(()=>{const gpsJ=parseCoords(j._geocodedGps||j.gps);const empCo2=getEmpCoords(data,j.employeeId);const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
 return(<div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',background:'#fff',border:'1px solid '+C.border,borderRadius:6,fontSize:11,flexWrap:'wrap'}}>
-<span style={{fontWeight:700,color:C.dim}}>📌 GPS chantier (saisi) :</span>
-<input value={j.gps||''} placeholder="lat,lon" onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.gps=e.target.value;save(nd)}}} style={{fontSize:12,padding:'4px 6px',borderRadius:6,border:'1px solid '+C.border,width:160,background:'#fff'}}/>
-<span style={{color:C.dim,marginLeft:6}}>↗ Dép :</span>
+{/* Champ GPS saisi masqué : alimenté automatiquement via géocodage du lieu */}
+<span style={{color:C.dim}}>↗ Dép :</span>
 <select value={j.startFrom||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.startFrom=e.target.value;const sel2=depOptions2.find(o=>o.id===e.target.value);jj.kmAller=sel2&&sel2.km?sel2.km:0;jj.travelMinAller=sel2&&sel2.km?Math.round((sel2.km/80)*60):0;jj.distanceKm=(jj.kmAller||0)+(jj.kmRetour||0);jj.travelMin=(jj.travelMinAller||0)+(jj.travelMinRetour||0);save(nd)}}} style={{fontSize:12,padding:'2px 5px',borderRadius:4,border:'1px solid #0891b240',background:j.startFrom&&shortDep&&j.startFrom===shortDep.id?'#0891b218':'#0891b208',color:'#0891b2',fontWeight:600,minWidth:110,maxWidth:160}}>
 <option value="">--</option>{depOptions2.map(o=><option key={o.id} value={o.id}>{o.name}{o.km!==null?' '+o.km+'km':''}{shortDep&&o.id===shortDep.id?' ★':''}</option>)}
 </select>
@@ -1460,15 +1478,15 @@ return(
 </div>
 {showForm&&<MissionForm data={data} save={save} job={formJob} onClose={()=>setShowForm(false)} selectedDate={selDate} selectedEmpId={formEmpId}/>}
 {mapModal&&<MapModal {...mapModal} onClose={()=>setMapModal(null)}/>}
-{geocodeChoice&&<GeocodeChoiceModal choice={geocodeChoice} onClose={()=>setGeocodeChoice(null)} onPick={r=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===geocodeChoice.jobId);if(jj){jj.gps=Number(r.lat).toFixed(6)+','+Number(r.lon).toFixed(6);save(nd)}setGeocodeChoice(null)}}/>}
+{geocodeChoice&&<GeocodeChoiceModal choice={geocodeChoice} onClose={()=>setGeocodeChoice(null)} onPick={r=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===geocodeChoice.jobId);if(jj){jj._geocodedGps=Number(r.lat).toFixed(6)+','+Number(r.lon).toFixed(6);save(nd)}setGeocodeChoice(null)}}/>}
 {showPlanMap&&(()=>{
-  // Construction des marqueurs : 1 par chantier (job) du jour ayant un lieu ou un GPS
+  // Construction des marqueurs : 1 par chantier (job) du jour ayant un lieu géocodé (ou un GPS manuel)
   const markers=(dayMissions||[]).map(jb=>{
     const mc=getMach(jb.machineId);
     const emp=(data.employees||[]).find(e=>e.id===jb.employeeId);
     const cl=getClient(jb.clientId);
-    const co=parseCoords(jb.gps);
-    if(!co)return null; // pas de GPS et pas géocodé => skip
+    const co=parseCoords(jb._geocodedGps||jb.gps);
+    if(!co)return null; // pas de GPS géocodé et pas de GPS manuel => skip
     const mcName=mc&&mc.name?mc.name:'?';
     const lbl=mc&&mc.width?String(mc.width):(mcName!=='?'?mcName.slice(0,4):'?');
     return {co,color:widthColor(mc),label:lbl,machineName:mcName,driverName:emp&&emp.name?emp.name:'',clientName:cl&&cl.name?cl.name:'',location:jb.location||'',billingStart:jb.billingStart||'',forfaitType:jb.forfaitType||''};
