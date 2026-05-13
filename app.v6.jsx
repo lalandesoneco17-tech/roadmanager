@@ -186,29 +186,39 @@ return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'r
 // Note : mk.co et d.co sont des tableaux [lat, lon] (sortie de parseCoords), pas des objets {lat, lon}
 const MapModalPlanning=({onClose,selDate,veilleISO,surlendISO,markers,depots,showVeille,showSurlend,onToggleVeille,onToggleSurlend})=>{
 const mapRef=useRef(null);
+const mapInst=useRef(null);
+const markersLayer=useRef(null);
+const fittedRef=useRef(false);
 const fmtDDMM=iso=>{const d=new Date(iso);return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')};
+// Init de la carte une seule fois (au mount) — ne pas la recreer aux changements de markers
 useEffect(()=>{
-  if(!window.L||!mapRef.current)return;
+  if(!window.L||!mapRef.current||mapInst.current)return;
   const L=window.L;
   const map=L.map(mapRef.current).setView([45.6,-0.5],8);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+  mapInst.current=map;
+  markersLayer.current=L.layerGroup().addTo(map);
+  return()=>{map.remove();mapInst.current=null;markersLayer.current=null;fittedRef.current=false};
+},[]);
+// Update des markers sans toucher au zoom / position courants (fitBounds seulement au 1er rendu)
+useEffect(()=>{
+  if(!mapInst.current||!markersLayer.current||!window.L)return;
+  const L=window.L;
+  const map=mapInst.current;
+  markersLayer.current.clearLayers();
   const allLatLngs=[];
-  // Dépôts (icône maison bleue)
   (depots||[]).forEach(d=>{
     if(!d.co||d.co.length<2)return;
     allLatLngs.push([d.co[0],d.co[1]]);
     const ic=L.divIcon({className:'',html:'<div style="background:#1d4ed8;color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3)">🏠</div>',iconSize:[30,30],iconAnchor:[15,15]});
-    L.marker([d.co[0],d.co[1]],{icon:ic}).addTo(map).bindPopup('<b>🏠 '+(d.name||'Dépôt')+'</b>');
+    L.marker([d.co[0],d.co[1]],{icon:ic}).addTo(markersLayer.current).bindPopup('<b>🏠 '+(d.name||'Dépôt')+'</b>');
   });
-  // Marqueurs chantiers : pill avec [seq.] nom complet + heure de début dessous
   (markers||[]).forEach(mk=>{
     if(!mk.co||mk.co.length<2)return;
     allLatLngs.push([mk.co[0],mk.co[1]]);
-    // Styling selon dayOffset : 0=jour J (plein), -1=veille (dashed, transparent), +1=lendemain (dotted, transparent)
     const off=mk.dayOffset||0;
     const op=off===0?1:0.6;
     const borderStyle=off===0?'solid':(off<0?'dashed':'dotted');
-    // Bordure rouge épaisse pour les chantiers de nuit (sinon blanche)
     const borderColor=mk.isNight?'#dc2626':'#fff';
     const borderWidth=mk.isNight?3:2;
     const dayBadge=off===0?'':'<span style="background:rgba(0,0,0,0.35);border-radius:6px;padding:0 4px;margin-right:4px;font-size:9px;font-weight:700">'+(off<0?'J-'+Math.abs(off):'J+'+off)+'</span>';
@@ -218,10 +228,9 @@ useEffect(()=>{
     const ic=L.divIcon({className:'',html,iconSize:null,iconAnchor:[40,20]});
     const dayLabel=off===0?'':' ('+(off<0?'J-'+Math.abs(off):'J+'+off)+' · '+(mk.dateISO||'')+')';
     const popup='<div style="min-width:180px"><b style="color:'+mk.color+'">'+(mk.seq?'#'+mk.seq+' · ':'')+mk.machineName+dayLabel+'</b>'+(mk.isNight?'<br/><span style="color:#dc2626;font-weight:700">🌙 NUIT</span>':'')+(mk.driverName?'<br/>👤 '+mk.driverName:'')+(mk.clientName?'<br/>🏢 '+mk.clientName:'')+(mk.location?'<br/>📍 '+mk.location:'')+(mk.billingStart?'<br/>🕐 '+mk.billingStart:'')+(mk.forfaitType?'<br/>📋 '+mk.forfaitType:'')+'</div>';
-    L.marker([mk.co[0],mk.co[1]],{icon:ic}).addTo(map).bindPopup(popup);
+    L.marker([mk.co[0],mk.co[1]],{icon:ic}).addTo(markersLayer.current).bindPopup(popup);
   });
-  if(allLatLngs.length)map.fitBounds(allLatLngs,{padding:[50,50]});
-  return()=>{map.remove()};
+  if(allLatLngs.length&&!fittedRef.current){map.fitBounds(allLatLngs,{padding:[50,50]});fittedRef.current=true}
 },[markers,depots]);
 const todayCount=(markers||[]).filter(m=>(m.dayOffset||0)===0).length;
 const veilleCount=(markers||[]).filter(m=>m.dayOffset===-1).length;
@@ -229,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.13-16</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.13-17</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
