@@ -229,7 +229,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.13-10</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.13-11</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -812,7 +812,7 @@ return{id:uid(),machineName,serial,date:reportDate,depotDepart,depotArrival,site
 };
 // ======== PLANNING PAGE ========
 const DEPOT_ACTIVITIES=['Rangement / nettoyage','Mecanique / entretien','Attente pieces','Formation','Administratif','Autre'];
-const PlanningPage=({data,save})=>{
+const PlanningPage=({data,save,sbHidden,setSbHidden})=>{
 const[selDate,setSelDate]=useState(fmtDateISO(new Date()));
 const[showJdImport,setShowJdImport]=useState(false);
 const[jdImportRows,setJdImportRows]=useState([]);
@@ -1525,6 +1525,7 @@ return(
 <div style={{background:C.card,borderRadius:8,padding:'8px 14px',border:'1px solid '+C.border}}><span style={{fontSize:12,color:C.dim}}>CA jour </span><span style={{fontWeight:700,color:C.accent,fontSize:16}}>{fmtMoney(caTotal)}</span></div>
 <button onClick={()=>setShowPlanMap(true)} style={{...btnStyle('#0891b2'),fontSize:13,padding:'6px 12px'}} title="Voir le planning sur la carte (optimiser les trajets)">🗺 Carte planning</button>
 <button onClick={()=>{if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen().catch(()=>{})}}} style={{...btnStyle('#7c3aed'),fontSize:13,padding:'6px 12px'}} title="Passer en plein ecran (Echap pour sortir)">⛶ Plein ecran</button>
+{typeof setSbHidden==='function'&&<button onClick={()=>setSbHidden(!sbHidden)} style={{...btnStyle('#0f766e'),fontSize:13,padding:'6px 12px'}} title={sbHidden?'Reafficher le menu de gauche':'Masquer le menu de gauche pour gagner de la place'}>{sbHidden?'▶ Menu':'◀ Masquer menu'}</button>}
 <button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a'),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
 <input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file,selDate);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
 </div>
@@ -3099,14 +3100,15 @@ return(
 
 // ======== ADMIN PANEL ========
 const AdminPanel=({data,save,onLogout,onUndo})=>{
-const[pg,setPg]=useState('planning');const[mobOpen,setMobOpen]=useState(false);
+const[pg,setPg]=useState('planning');const[mobOpen,setMobOpen]=useState(false);const[sbHidden,setSbHidden]=useState(false);
 const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'equipements',l:'Equipements',i:'&#129520;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
-const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'equipements':return(<EquipmentListsPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
+const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save} sbHidden={sbHidden} setSbHidden={setSbHidden}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'equipements':return(<EquipmentListsPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
 return(
 <div>
 {mobOpen&&<div className="sb-overlay" style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.3)',zIndex:199}} onClick={()=>setMobOpen(false)}/>}
 <button className="mob-btn" onClick={()=>setMobOpen(!mobOpen)} style={{position:'fixed',top:8,left:8,zIndex:300,background:C.accent,color:'#fff',border:'none',borderRadius:6,width:36,height:36,cursor:'pointer',fontSize:20,display:'none'}}>&#9776;</button>
-<div className={'sb'+(mobOpen?' open':'')} style={{position:'fixed',top:0,left:0,width:160,height:'100vh',background:'#1e293b',padding:'16px 0',zIndex:200,overflowY:'auto'}}>
+{sbHidden&&<button onClick={()=>setSbHidden(false)} title="Reafficher le menu" style={{position:'fixed',top:8,left:8,zIndex:300,background:C.accent,color:'#fff',border:'none',borderRadius:6,width:36,height:36,cursor:'pointer',fontSize:18,fontWeight:700,boxShadow:'0 2px 6px rgba(0,0,0,.3)'}}>&#9776;</button>}
+<div className={'sb'+(mobOpen?' open':'')} style={{position:'fixed',top:0,left:0,width:160,height:'100vh',background:'#1e293b',padding:'16px 0',zIndex:200,overflowY:'auto',display:sbHidden?'none':'block'}}>
 <div style={{padding:'8px 12px',marginBottom:8}}><img src="logo.png" alt="SONECO" style={{width:120,marginBottom:2}}/><div style={{fontSize:9,color:'#94a3b8',marginTop:2}}>RoadManager</div></div>
 {pages.map(p=>(
 <div key={p.k} onClick={()=>{setPg(p.k);setMobOpen(false)}} style={{padding:'8px 12px',cursor:'pointer',color:pg===p.k?'#fff':'#94a3b8',background:pg===p.k?'#334155':'transparent',fontSize:13,fontWeight:pg===p.k?700:400,display:'flex',alignItems:'center',gap:8}}>
@@ -3115,7 +3117,7 @@ return(
 <div onClick={onUndo} style={{padding:'8px 12px',cursor:'pointer',color:'#fbbf24',fontSize:13,marginTop:16,borderTop:'1px solid #334155'}}>↩ Annuler</div>
 <div onClick={onLogout} style={{padding:'8px 12px',cursor:'pointer',color:'#f87171',fontSize:13}}>Deconnexion</div>
 </div>
-<div className="main" style={{marginLeft:160,padding:20,minHeight:'100vh',background:C.bg}}>
+<div className="main" style={{marginLeft:sbHidden?0:160,padding:20,minHeight:'100vh',background:C.bg}}>
 {content()}
 </div>
 <AdminChatbot data={data} save={save}/>
