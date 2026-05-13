@@ -226,7 +226,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.11-7</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.13-1</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -870,6 +870,7 @@ const pickGeocodeResult=(jobId,r)=>{
   setGeocodeAuto(null);
 };useEffect(()=>{const close=()=>setAddEmpOpen(null);document.addEventListener('click',close);return()=>document.removeEventListener('click',close);},[]);
 const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
+const[dragJobId,setDragJobId]=useState(null);const[dragJobOverEmp,setDragJobOverEmp]=useState(null);
 const[wirtgenTargetMach,setWirtgenTargetMach]=useState('');const wirtgenRef=useRef(null);
 const[depotFormEmpId,setDepotFormEmpId]=useState('');
 const[depotFormDepotId,setDepotFormDepotId]=useState('');
@@ -935,6 +936,10 @@ const sortedCards=[...allCardIds].sort((a,b)=>{const ma=getMachineForCard(a);con
 const onDragStart=(e,cardId)=>{setDragId(cardId);e.dataTransfer.effectAllowed='move'};
 const onDragOver=(e,cardId)=>{e.preventDefault();if(cardId!==dragId)setDragOverId(cardId)};
 const onDragEnd=()=>{if(dragId&&dragOverId&&dragId!==dragOverId){const draggedMach=getMachineForCard(dragId);const targetMach=getMachineForCard(dragOverId);if(draggedMach&&targetMach&&draggedMach!==targetMach){let order=[...(data.machineOrder||[])];const allMachineIds=(data.machines||[]).map(m=>m.id);allMachineIds.forEach(mid=>{if(!order.includes(mid))order.push(mid)});order=order.filter(mid=>allMachineIds.includes(mid));const fromIdx=order.indexOf(draggedMach);const toIdx=order.indexOf(targetMach);if(fromIdx>=0&&toIdx>=0){order.splice(fromIdx,1);order.splice(toIdx,0,draggedMach);const nd=JSON.parse(JSON.stringify(data));nd.machineOrder=order;save(nd)}}}setDragId(null);setDragOverId(null)};
+const onJobDragStart=(e,jobId)=>{e.stopPropagation();setDragJobId(jobId);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','job:'+jobId)}catch(_){}};
+const onJobDragOver=(e,empId)=>{if(!dragJobId)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';if(empId!==dragJobOverEmp)setDragJobOverEmp(empId)};
+const onJobDrop=(e,targetEmpId)=>{if(!dragJobId)return;e.preventDefault();e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));const jj=(nd.jobs||[]).find(x=>x.id===dragJobId);if(jj&&targetEmpId&&jj.employeeId!==targetEmpId){const targetEmp=(nd.employees||[]).find(x=>x.id===targetEmpId);jj.employeeId=targetEmpId;if(targetEmp&&targetEmp.machineId)jj.machineId=targetEmp.machineId;save(nd)}setDragJobId(null);setDragJobOverEmp(null)};
+const onJobDragEnd=()=>{setDragJobId(null);setDragJobOverEmp(null)};
 return(
 <div>
 <div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
@@ -1118,7 +1123,7 @@ return(
 {allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);const machColor2=defMach?widthColor(defMach):C.muted;
 const createJobForEmp=(field,value)=>{const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return(
-<div style={{background:C.card,borderRadius:10,marginBottom:12,marginTop:showSep?28:0,border:'2px solid '+machColor2+'40',borderLeft:'6px solid '+machColor2,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
+<div onDragOver={e2=>{if(dragJobId){e2.preventDefault();e2.stopPropagation();if(eId!==dragJobOverEmp)setDragJobOverEmp(eId)}}} onDrop={e2=>{if(dragJobId)onJobDrop(e2,eId)}} style={{background:C.card,borderRadius:10,marginBottom:12,marginTop:showSep?28:0,border:'2px solid '+(dragJobOverEmp===eId?C.cyan+'CC':machColor2+'40'),borderLeft:'6px solid '+machColor2,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
 {/* Côté gauche : nom employé + bouton "+" + nom machine + stats */}
 <div style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+machColor2+'20',background:machColor2+'08',gap:4}}>
 <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'center'}}>
@@ -1148,9 +1153,9 @@ return(
 </div>
 </div>)})()}
 {allMissions.length>0&&(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map((grp,grpIdx)=>{const machColor=grp.m?widthColor(grp.m):C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
-<div key={eId+'_'+(grp.m?grp.m.id:'none')} draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragOver={e2=>onDragOver(e2,cardId)} onDragEnd={onDragEnd} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,marginTop:(showSep&&grpIdx===0)?28:0,border:'2px solid '+(dragOverId===cardId?C.accent+'80':allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
-{/* Côté gauche: nom + bouton "+" sur la même ligne, machine en dessous */}
-<div style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4}}>
+<div key={eId+'_'+(grp.m?grp.m.id:'none')} onDragOver={e2=>{e2.preventDefault();if(dragJobId){if(eId!==dragJobOverEmp)setDragJobOverEmp(eId)}else if(dragId&&cardId!==dragId){setDragOverId(cardId)}}} onDrop={e2=>{if(dragJobId)onJobDrop(e2,eId)}} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,marginTop:(showSep&&grpIdx===0)?28:0,border:'2px solid '+(dragJobOverEmp===eId?C.cyan+'CC':dragOverId===cardId?C.accent+'80':allAck?'#16a34a40':machColor+'40'),borderLeft:'6px solid '+(allAck?C.green:machColor),overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1}}>
+{/* Côté gauche: nom + bouton "+" sur la même ligne, machine en dessous (draggable pour réordonner machines) */}
+<div draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragEnd={onDragEnd} style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4,cursor:'grab'}}>
 <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'center'}}>
 <div style={{fontSize:15,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:grp.m?grp.m.id:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} title="Ajouter un chantier" style={{background:machColor,color:'#fff',border:'none',borderRadius:4,width:20,height:20,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'18px',padding:0,flexShrink:0}}>+</button>
@@ -1223,7 +1228,7 @@ const theoJ=calcTheoreticalTimes(j,data,pMinGlobal);
 const depName=j.startFrom==='home'?'Domicile':(getDepot(j.startFrom)||{}).name||'';
 const arrName=j.endAt==='home'?'Domicile':(getDepot(j.endAt)||{}).name||'';
 return(
-<div key={j.id} style={{borderBottom:'1px solid '+C.border,background:j.isNight?'#fee2e2':j.ack?'#dcfce7':C.card}}>
+<div key={j.id} draggable onDragStart={e=>onJobDragStart(e,j.id)} onDragEnd={onJobDragEnd} style={{borderBottom:'1px solid '+C.border,background:j.isNight?'#fee2e2':j.ack?'#dcfce7':C.card,opacity:dragJobId===j.id?0.4:1,cursor:dragJobId===j.id?'grabbing':'grab'}}>
 <div style={{padding:'6px 10px',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.sent=!jj.sent;save(nd)}}} title={j.sent?'Chantier envoye au chauffeur':'Envoyer chantier au chauffeur'} style={{width:24,height:24,borderRadius:6,border:'2px solid '+(j.sent?C.green:C.muted),background:j.sent?C.green:'transparent',color:'#fff',cursor:'pointer',fontSize:14,fontWeight:800,padding:0,lineHeight:1,flexShrink:0}}>{j.sent?'✓':''}</button>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.paid=!jj.paid;save(nd)}}} title={j.paid?'Client a paye':'Marquer client paye'} style={{width:24,height:24,borderRadius:6,border:'2px solid '+(j.paid?C.purple:C.muted),background:j.paid?C.purple:'transparent',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:800,padding:0,lineHeight:1,flexShrink:0}}>{j.paid?'€':''}</button>
