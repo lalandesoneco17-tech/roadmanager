@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.14-3</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.15-1</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -2210,6 +2210,10 @@ Suggestions de ce que tu peux ecrire :<br/>
 <div><span style={{fontWeight:500}}>{e.name}</span><span style={{fontSize:12,color:C.muted,marginLeft:8}}>({genLogin(e.name)})</span></div>
 <span style={{fontSize:12,padding:'2px 8px',borderRadius:8,background:has?'#d4edda':'#f8d7da',color:has?'#155724':'#721c24'}}>{has?'Actif':'Inactif'}</span>
 </div>)})}
+</div>
+<div style={{borderTop:'1px solid #eee',marginTop:16,paddingTop:12}}><h3>Sauvegarde / Export</h3>
+<div style={{fontSize:12,color:C.dim,marginBottom:8}}>Telecharge toutes les donnees de l'app (referentiel, planning, pointages, rapports Wirtgen/JD, pannes, stock...) dans un fichier JSON.</div>
+<button onClick={()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='roadmanager_export_'+fmtDateISO(new Date())+'.json';a.click();URL.revokeObjectURL(url)}} style={{...btnStyle('#0891b2',true)}}>⬇ Exporter les donnees (JSON)</button>
 </div>
 <button onClick={doSave} style={{...btnStyle(C.accent,true),marginTop:16}}>Enregistrer</button>
 </div></div>)};
