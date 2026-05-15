@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.15-2</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.15-3</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1271,7 +1271,14 @@ return null;
 {openDetails[j.id]&&(()=>{const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const mrRaw=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(grp.m?grp.m.name:'')&&r.date===selDate);if(!mrRaw)return null;const mr=recomputeWirtgenReport(mrRaw);
 const mIdx=grp.missions.findIndex(mc=>mc.j.id===j.id);
 const isFirst=mIdx===0;const isLast=mIdx===grp.missions.length-1;
-const site=(mr.sites||[])[mIdx];
+const _allSites=mr.sites||[];
+let site;
+if(grp.missions.length===1&&_allSites.length>1){
+  // 1 seul chantier saisi mais l'algo Wirtgen a decoupe en plusieurs zones (centroides distants).
+  // On agrege : 1er depart depot / 1ere arrivee chantier / 1er debut fraisage -> dernier fin fraisage / dernier depart chantier / dernier retour depot.
+  const _ws=_allSites.filter(s=>s&&s.workStart);const _we=_allSites.filter(s=>s&&s.workEnd);const _da=_allSites.filter(s=>s&&s.depotArrival);const _f=_allSites[0]||{};const _l=_allSites[_allSites.length-1]||{};
+  site={centroid:_f.centroid,depotDepart:_f.depotDepart,siteArrival:_f.siteArrival,workStart:(_ws[0]||_f).workStart||null,workEnd:(_we[_we.length-1]||_l).workEnd||null,siteDeparture:_l.siteDeparture||null,depotArrival:(_da[_da.length-1]||_l).depotArrival||null,outboundPauses:_allSites.reduce((a,s)=>a.concat((s&&s.outboundPauses)||[]),[]),inboundPauses:_allSites.reduce((a,s)=>a.concat((s&&s.inboundPauses)||[]),[])};
+}else{site=_allSites[mIdx];}
 // Heures théoriques (calculées à partir du GPS chantier + dépôt sélectionné + heure début chantier)
 // Inclut les temps préparation matin (tpDepart) et mise en sécurité soir (tpArrivee) configurés dans les réglages.
 // Marge de 15 min avant le début de facturation pour préparer la machine sur le chantier.
