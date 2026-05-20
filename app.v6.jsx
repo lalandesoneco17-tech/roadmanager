@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-16</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-17</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -2528,54 +2528,128 @@ return(
   </div>
 </div>
 </Mod>}
-{editTE&&<Mod title="Modifier pointage" onClose={()=>setEditTE(null)}>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-<Fl label="Embauche"><input type="time" style={inputStyle} value={editTE.startTime||''} onChange={e=>setEditTE({...editTE,startTime:e.target.value})}/></Fl>
-<Fl label="Debauche"><input type="time" style={inputStyle} value={editTE.endTime||''} onChange={e=>setEditTE({...editTE,endTime:e.target.value})}/></Fl>
-<Fl label="Coupure (debut)"><input type="time" style={inputStyle} value={editTE.breakStart||''} onChange={e=>{const v=e.target.value;setEditTE(prev=>{const n={...prev,breakStart:v};if(v&&n.breakEnd){const m=calcDiffMin(v,n.breakEnd);if(m>0)n.pauseMin=m}return n})}}/></Fl>
-<Fl label="Reprise"><input type="time" style={inputStyle} value={editTE.breakEnd||''} onChange={e=>{const v=e.target.value;setEditTE(prev=>{const n={...prev,breakEnd:v};if(n.breakStart&&v){const m=calcDiffMin(n.breakStart,v);if(m>0)n.pauseMin=m}return n})}}/></Fl>
+{editTE&&<Mod title="✏️ Modifier pointage" onClose={()=>setEditTE(null)} width={440}>
+<div style={{display:'flex',flexDirection:'column',gap:16}}>
+  <div>
+    <label style={empLabelS}>⏰ Horaires</label>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <input type="time" style={empInputS} value={editTE.startTime||''} onChange={e=>setEditTE({...editTE,startTime:e.target.value})}/>
+      <input type="time" style={empInputS} value={editTE.endTime||''} onChange={e=>setEditTE({...editTE,endTime:e.target.value})}/>
+    </div>
+    <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:C.dim,padding:'0 4px'}}><span>Embauche</span><span>Debauche</span></div>
+  </div>
+  <div>
+    <label style={empLabelS}>☕ Pause repas</label>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <input type="time" style={empInputS} value={editTE.breakStart||''} onChange={e=>{const v=e.target.value;setEditTE(prev=>{const n={...prev,breakStart:v};if(v&&n.breakEnd){const m=calcDiffMin(v,n.breakEnd);if(m>0)n.pauseMin=m}return n})}}/>
+      <input type="time" style={empInputS} value={editTE.breakEnd||''} onChange={e=>{const v=e.target.value;setEditTE(prev=>{const n={...prev,breakEnd:v};if(n.breakStart&&v){const m=calcDiffMin(n.breakStart,v);if(m>0)n.pauseMin=m}return n})}}/>
+    </div>
+    <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:C.dim,padding:'0 4px'}}><span>Coupure</span><span>Reprise</span></div>
+  </div>
+  <div>
+    <label style={empLabelS}>⏸ Pause totale (min)</label>
+    <input type="number" style={empInputS} value={editTE.pauseMin||0} onChange={e=>setEditTE({...editTE,pauseMin:Number(e.target.value)})}/>
+    <div style={{fontSize:11,color:C.dim,marginTop:4}}>Calculee auto si Coupure + Reprise renseignees</div>
+  </div>
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={()=>setEditTE(null)} style={empBtnS}>Annuler</button>
+    <button onClick={saveEdit} style={empBtnP(C.accent)}>✓ Enregistrer</button>
+  </div>
 </div>
-<Fl label="Pause totale (min)"><input type="number" style={inputStyle} value={editTE.pauseMin||0} onChange={e=>setEditTE({...editTE,pauseMin:Number(e.target.value)})}/><div style={{fontSize:11,color:C.dim,marginTop:2}}>Calculee auto si Coupure+Reprise renseignees</div></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveEdit} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>setEditTE(null)} style={btnStyle(C.dim)}>Annuler</button></div>
 </Mod>}
-{showPanne&&<Mod title="Signaler une panne" onClose={()=>setShowPanne(false)}>
-<Fl label="Equipement"><select style={inputStyle} value={panneEquip} onChange={e=>setPanneEquip(e.target.value)}><option value="">--</option>{allEquipEmp.map(eq=><option key={eq.id} value={eq.id}>({eq.t}) {eq.name}</option>)}</select></Fl>
-<Fl label="Severite"><select style={inputStyle} value={panneSev} onChange={e=>setPanneSev(e.target.value)}>{SEVERITIES.map(s=><option key={s} value={s}>{s}</option>)}</select></Fl>
-<Fl label="Description"><textarea style={{...inputStyle,height:80}} value={panneDesc} onChange={e=>setPanneDesc(e.target.value)} placeholder="Decrivez le probleme..."/></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitPanne} style={btnStyle(C.red,true)}>Envoyer</button><button onClick={()=>setShowPanne(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+{showPanne&&<Mod title="⚠️ Signaler une panne" onClose={()=>setShowPanne(false)} width={440}>
+<div style={{display:'flex',flexDirection:'column',gap:16}}>
+  <div>
+    <label style={empLabelS}>🔧 Equipement</label>
+    <select style={empInputS} value={panneEquip} onChange={e=>setPanneEquip(e.target.value)}>
+      <option value="">-- Choisir --</option>
+      {allEquipEmp.map(eq=><option key={eq.id} value={eq.id}>({eq.t}) {eq.name}</option>)}
+    </select>
+  </div>
+  <div>
+    <label style={empLabelS}>🚨 Severite</label>
+    <div style={{display:'grid',gridTemplateColumns:'repeat('+SEVERITIES.length+',1fr)',gap:8}}>
+      {SEVERITIES.map(s=>{const col=s==='urgent'?C.red:s==='haute'?C.orange:s==='moyenne'?'#eab308':'#64748b';return<button key={s} onClick={()=>setPanneSev(s)} style={empTglBtn(panneSev===s,col)}>{s}</button>})}
+    </div>
+  </div>
+  <div>
+    <label style={empLabelS}>💬 Description</label>
+    <textarea style={{...empInputS,height:100,fontFamily:'inherit',resize:'vertical'}} value={panneDesc} onChange={e=>setPanneDesc(e.target.value)} placeholder="Decrivez le probleme..."/>
+  </div>
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={()=>setShowPanne(false)} style={empBtnS}>Annuler</button>
+    <button onClick={submitPanne} style={empBtnP(C.red)}>✓ Envoyer</button>
+  </div>
+</div>
 </Mod>}
-{showTakePart&&<Mod title="Prendre une piece" onClose={()=>setShowTakePart(false)}>
-<Fl label="Type de machine"><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-{['Raboteuse','Balayeuse','Citerne'].map(t=><button key={t} onClick={()=>{setTakePartType(t);setTakePartEquip('');setTakePartId('')}} style={{...btnStyle(MC[t]||C.accent,takePartType===t),padding:'8px 16px',fontSize:15}}>{t}</button>)}
-</div></Fl>
-{takePartType&&<Fl label={takePartType+' - choisir'}><select style={inputStyle} value={takePartEquip} onChange={e=>{setTakePartEquip(e.target.value);setTakePartId('')}}>
-<option value="">-- Choisir --</option>{(data.machines||[]).filter(mx=>mx.type===takePartType).map(mx=><option key={mx.id} value={mx.id}>{mx.name}</option>)}
-</select></Fl>}
-{takePartEquip&&<Fl label="Piece"><select style={inputStyle} value={takePartId} onChange={e=>setTakePartId(e.target.value)}><option value="">--</option>{availPartsForEmp.map(p=><option key={p.id} value={p.id}>{p.name} ({p.category}) - stock: {p.quantity}</option>)}</select></Fl>}
-{takePartEquip&&<Fl label="Quantite"><input type="number" style={inputStyle} min="1" value={takePartQte} onChange={e=>setTakePartQte(Number(e.target.value)||1)}/></Fl>}
-{takePartEquip&&<Fl label="Raison"><input style={inputStyle} value={takePartReason} onChange={e=>setTakePartReason(e.target.value)} placeholder="Remplacement, reparation..."/></Fl>}
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitTakePart} style={btnStyle(C.cyan,true)}>Confirmer</button><button onClick={()=>setShowTakePart(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+{showTakePart&&<Mod title="🔩 Prendre une piece" onClose={()=>setShowTakePart(false)} width={460}>
+<div style={{display:'flex',flexDirection:'column',gap:16}}>
+  <div>
+    <label style={empLabelS}>🚜 Type de machine</label>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+      {['Raboteuse','Balayeuse','Citerne'].map(t=><button key={t} onClick={()=>{setTakePartType(t);setTakePartEquip('');setTakePartId('')}} style={empTglBtn(takePartType===t,MC[t]||C.accent)}>{t}</button>)}
+    </div>
+  </div>
+  {takePartType&&<div>
+    <label style={empLabelS}>{takePartType} a affecter</label>
+    <select style={empInputS} value={takePartEquip} onChange={e=>{setTakePartEquip(e.target.value);setTakePartId('')}}>
+      <option value="">-- Choisir --</option>{(data.machines||[]).filter(mx=>mx.type===takePartType).map(mx=><option key={mx.id} value={mx.id}>{mx.name}</option>)}
+    </select>
+  </div>}
+  {takePartEquip&&<div>
+    <label style={empLabelS}>📦 Piece</label>
+    <select style={empInputS} value={takePartId} onChange={e=>setTakePartId(e.target.value)}>
+      <option value="">--</option>{availPartsForEmp.map(p=><option key={p.id} value={p.id}>{p.name} ({p.category}) — stock: {p.quantity}</option>)}
+    </select>
+  </div>}
+  {takePartEquip&&<div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:10}}>
+    <div><label style={empLabelS}>🔢 Quantite</label><input type="number" style={empInputS} min="1" value={takePartQte} onChange={e=>setTakePartQte(Number(e.target.value)||1)}/></div>
+    <div><label style={empLabelS}>💬 Raison</label><input style={empInputS} value={takePartReason} onChange={e=>setTakePartReason(e.target.value)} placeholder="Remplacement, reparation..."/></div>
+  </div>}
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={()=>setShowTakePart(false)} style={empBtnS}>Annuler</button>
+    <button onClick={submitTakePart} style={empBtnP(C.cyan)}>✓ Confirmer</button>
+  </div>
+</div>
 </Mod>}
-{showEntFait&&<Mod title={'Entretien fait'+(selectedMachine?' - '+selectedMachine.name:'')} onClose={()=>setShowEntFait(false)}>
-<Fl label="Description de l'entretien"><textarea style={{...inputStyle,height:90}} value={entFaitDesc} onChange={e=>setEntFaitDesc(e.target.value)} placeholder="Vidange, graissage, controle niveaux..."/></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitEntFait} style={btnStyle(C.green,true)}>Enregistrer</button><button onClick={()=>setShowEntFait(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+{showEntFait&&<Mod title={'🔧 Entretien fait'+(selectedMachine?' — '+selectedMachine.name:'')} onClose={()=>setShowEntFait(false)} width={440}>
+<div style={{display:'flex',flexDirection:'column',gap:16}}>
+  <div>
+    <label style={empLabelS}>💬 Description de l'entretien</label>
+    <textarea style={{...empInputS,height:110,fontFamily:'inherit',resize:'vertical'}} value={entFaitDesc} onChange={e=>setEntFaitDesc(e.target.value)} placeholder="Vidange, graissage, controle niveaux..."/>
+  </div>
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={()=>setShowEntFait(false)} style={empBtnS}>Annuler</button>
+    <button onClick={submitEntFait} style={empBtnP(C.green)}>✓ Enregistrer</button>
+  </div>
+</div>
 </Mod>}
-{showEntFaire&&<Mod title={'Entretien a faire'+(selectedMachine?' - '+selectedMachine.name:'')} onClose={()=>setShowEntFaire(false)}>
-<Fl label="Decrire le besoin"><textarea style={{...inputStyle,height:90}} value={entFaireDesc} onChange={e=>setEntFaireDesc(e.target.value)} placeholder="Ex: prevoir vidange, changement filtre..."/></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitEntFaire} style={btnStyle(C.orange,true)}>Envoyer</button><button onClick={()=>setShowEntFaire(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+{showEntFaire&&<Mod title={'🛠 Entretien a faire'+(selectedMachine?' — '+selectedMachine.name:'')} onClose={()=>setShowEntFaire(false)} width={440}>
+<div style={{display:'flex',flexDirection:'column',gap:16}}>
+  <div>
+    <label style={empLabelS}>💬 Decrire le besoin</label>
+    <textarea style={{...empInputS,height:110,fontFamily:'inherit',resize:'vertical'}} value={entFaireDesc} onChange={e=>setEntFaireDesc(e.target.value)} placeholder="Ex: prevoir vidange, changement filtre..."/>
+  </div>
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={()=>setShowEntFaire(false)} style={empBtnS}>Annuler</button>
+    <button onClick={submitEntFaire} style={empBtnP(C.orange)}>✓ Envoyer</button>
+  </div>
+</div>
 </Mod>}
 {showEquip&&selectedMachine&&(()=>{const list=(data.equipmentLists||{})[selectedMachine.type]||[];const statMap=((data.machineEquipmentStatus||{})[selectedMachineId])||{};return(
-<Mod title={'Equipements - '+selectedMachine.name+' ('+selectedMachine.type+')'} onClose={()=>setShowEquip(false)} width={500}>
-{list.length===0&&<div style={{fontSize:14,color:C.dim,padding:12,textAlign:'center'}}>Aucun equipement configure pour ce type. Demandez a l'admin.</div>}
-{list.map(eq=>{const st=statMap[eq.id]||'';return(
-<div key={eq.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid #f1f5f9'}}>
-<span style={{fontWeight:600,fontSize:15}}>{eq.name}</span>
-<div style={{display:'flex',gap:6}}>
-<button onClick={()=>setEquipStatus(eq.id,'present')} style={{...btnStyle(C.green,st==='present'),padding:'4px 12px',fontSize:13}}>Present</button>
-<button onClick={()=>setEquipStatus(eq.id,'missing')} style={{...btnStyle(C.red,st==='missing'),padding:'4px 12px',fontSize:13}}>Manquant</button>
+<Mod title={'🧰 Equipements — '+selectedMachine.name+' ('+selectedMachine.type+')'} onClose={()=>setShowEquip(false)} width={520}>
+<div style={{display:'flex',flexDirection:'column',gap:6}}>
+  {list.length===0&&<div style={{fontSize:14,color:C.dim,padding:20,textAlign:'center',background:'#f8fafc',borderRadius:10,border:'1px dashed #cbd5e1'}}>Aucun equipement configure pour ce type.<br/>Demandez a l'admin.</div>}
+  {list.map(eq=>{const st=statMap[eq.id]||'';return(
+    <div key={eq.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,gap:8}}>
+      <span style={{fontWeight:600,fontSize:15,flex:1}}>{eq.name}</span>
+      <div style={{display:'flex',gap:6,flexShrink:0}}>
+        <button onClick={()=>setEquipStatus(eq.id,'present')} style={{...empTglBtn(st==='present',C.green),padding:'8px 14px',fontSize:13,flex:'none'}}>✓ Present</button>
+        <button onClick={()=>setEquipStatus(eq.id,'missing')} style={{...empTglBtn(st==='missing',C.red),padding:'8px 14px',fontSize:13,flex:'none'}}>× Manquant</button>
+      </div>
+    </div>)})}
+  <button onClick={()=>setShowEquip(false)} style={{...empBtnP(C.accent),marginTop:12}}>Fermer</button>
 </div>
-</div>)})}
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={()=>setShowEquip(false)} style={btnStyle(C.accent,true)}>Fermer</button></div>
 </Mod>)})()}
 {tab==='heures'&&<React.Fragment>
 <div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginBottom:16}}>
