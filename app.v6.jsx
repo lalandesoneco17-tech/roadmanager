@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-15</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-16</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -2381,6 +2381,12 @@ if(typeof Notification!=='undefined'&&Notification.permission==='granted'){try{c
 }
 },[data.jobs,empId,data.clients,data.machines]);
 if(!emp)return(<div style={{fontSize:14}}>Employe non trouve</div>);
+// Styles modals salarie (plus gros, mobile-friendly)
+const empInputS={fontSize:16,padding:'12px 14px',borderRadius:10,border:'2px solid #e2e8f0',background:'#fff',width:'100%',fontWeight:500,outline:'none',boxSizing:'border-box'};
+const empLabelS={fontSize:11,fontWeight:700,color:C.dim,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6,display:'block'};
+const empBtnP=(bg)=>({padding:'14px 20px',fontSize:16,fontWeight:800,borderRadius:10,border:'none',cursor:'pointer',flex:1,color:'#fff',boxShadow:'0 2px 6px rgba(0,0,0,.12)',background:bg||C.accent});
+const empBtnS={padding:'14px 20px',fontSize:15,fontWeight:600,borderRadius:10,border:'2px solid #cbd5e1',background:'#fff',color:'#475569',cursor:'pointer',flex:1};
+const empTglBtn=(active,activeColor)=>({padding:'14px 16px',fontSize:15,fontWeight:700,borderRadius:10,border:'2px solid '+(active?activeColor:'#e2e8f0'),background:active?activeColor:'#fff',color:active?'#fff':C.dim,cursor:'pointer',flex:1,boxShadow:active?'0 2px 4px rgba(0,0,0,.1)':'none'});
 return(
 <div style={{maxWidth:700,margin:'0 auto',padding:16,fontSize:14}}>
 <div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',zIndex:9999,display:'flex',flexDirection:'column',gap:6,maxWidth:'92vw',width:'420px'}}>
@@ -2412,38 +2418,115 @@ return(
 <div style={{display:'flex',gap:6,marginBottom:16}}>
 {[{k:'heures',l:'Heures'},{k:'chantier',l:'Chantier'},{k:'machine',l:'Machine'}].map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{...btnStyle(C.accent,tab===x.k),flex:1,fontSize:15,padding:'10px 4px'}}>{x.l}</button>)}
 </div>
-{showManual&&<Mod title="Saisir mes heures" onClose={()=>setShowManual(false)} width={450}>
-<Fl label="Date"><input type="date" style={inputStyle} value={manDate} onChange={e=>setManDate(e.target.value)}/></Fl>
-{!manAbsence&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-<Fl label="Embauche"><input type="time" style={inputStyle} value={manStart} onChange={e=>setManStart(e.target.value)}/></Fl>
-<Fl label="Debauche"><input type="time" style={inputStyle} value={manEnd} onChange={e=>setManEnd(e.target.value)}/></Fl>
-<Fl label="Coupure (debut)"><input type="time" style={inputStyle} value={manBreakStart} onChange={e=>setManBreakStart(e.target.value)}/></Fl>
-<Fl label="Reprise"><input type="time" style={inputStyle} value={manBreakEnd} onChange={e=>setManBreakEnd(e.target.value)}/></Fl>
-</div>}
-{!manAbsence&&<Fl label="Repas"><div style={{display:'flex',gap:8}}>{['PANIER','RESTO'].map(m=><button key={m} onClick={()=>setManMeal(m)} style={{...btnStyle(m==='PANIER'?C.accent:C.orange,manMeal===m),padding:'4px 12px',fontSize:12}}>{m}</button>)}</div></Fl>}
-{!manAbsence&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-<Fl label="Pause (min)"><input type="number" style={inputStyle} value={manPause} onChange={e=>setManPause(e.target.value)}/></Fl>
-<Fl label="Heures nuit"><input type="number" step="0.25" style={inputStyle} value={manNight} onChange={e=>setManNight(e.target.value)}/></Fl>
-</div>}
-<Fl label="Debauche demandee (optionnel)"><div style={{display:'flex',alignItems:'center',gap:8}}><input type="time" style={{...inputStyle,flex:1}} value={manRequestEnd} onChange={e=>setManRequestEnd(e.target.value)} placeholder="Ex: 16:00"/>{manRequestEnd&&<button onClick={()=>setManRequestEnd('')} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:14}}>x</button>}</div><div style={{fontSize:12,color:C.orange,marginTop:4}}>Indiquer ici si vous devez partir a une heure precise</div></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveManual} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>setShowManual(false)} style={btnStyle(C.dim)}>Annuler</button></div>
-</Mod>}
-{showRdv&&<Mod title="Debauche / Absence" onClose={()=>setShowRdv(false)} width={420}>
-<div style={{display:'flex',gap:6,marginBottom:12}}><button onClick={()=>setRdvType('rdv')} style={{...btnStyle(C.orange,rdvType==='rdv'),fontSize:14}}>Debauche RDV</button><button onClick={()=>setRdvType('absence')} style={{...btnStyle(C.red,rdvType==='absence'),fontSize:14}}>Absence</button></div>
-{rdvType==='rdv'&&<React.Fragment>
-<Fl label="Date"><input type="date" style={inputStyle} value={rdvDate} onChange={e=>setRdvDate(e.target.value)}/></Fl>
-<Fl label="Heure de debauche souhaitee"><input type="time" style={inputStyle} value={rdvTime} onChange={e=>setRdvTime(e.target.value)}/></Fl>
-<Fl label="Motif"><input style={inputStyle} value={rdvMotif} onChange={e=>setRdvMotif(e.target.value)} placeholder="RDV medical, personnel..."/></Fl>
-</React.Fragment>}
-{rdvType==='absence'&&<React.Fragment>
-<Fl label="Motif absence"><select style={inputStyle} value={rdvAbsType} onChange={e=>setRdvAbsType(e.target.value)}><option value="conge">Conge</option><option value="maladie">Maladie</option><option value="rtt">RTT</option><option value="formation">Formation</option><option value="accident">Accident travail</option><option value="autre">Autre</option></select></Fl>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-<Fl label="Date debut"><input type="date" style={inputStyle} value={rdvDate} onChange={e=>setRdvDate(e.target.value)}/></Fl>
-<Fl label="Date fin"><input type="date" style={inputStyle} value={rdvDateFin} onChange={e=>setRdvDateFin(e.target.value)}/></Fl>
+{showManual&&<Mod title="⏱ Saisir mes heures" onClose={()=>setShowManual(false)} width={460}>
+<div style={{display:'flex',flexDirection:'column',gap:16}}>
+  <div>
+    <label style={empLabelS}>📅 Date</label>
+    <input type="date" style={empInputS} value={manDate} onChange={e=>setManDate(e.target.value)}/>
+  </div>
+  <div>
+    <label style={empLabelS}>⏰ Horaires</label>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <input type="time" style={empInputS} value={manStart} onChange={e=>setManStart(e.target.value)} placeholder="Embauche"/>
+      <input type="time" style={empInputS} value={manEnd} onChange={e=>setManEnd(e.target.value)} placeholder="Debauche"/>
+    </div>
+    <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:C.dim,padding:'0 4px'}}>
+      <span>Embauche</span><span>Debauche</span>
+    </div>
+  </div>
+  <div>
+    <label style={empLabelS}>☕ Pause repas</label>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <input type="time" style={empInputS} value={manBreakStart} onChange={e=>setManBreakStart(e.target.value)}/>
+      <input type="time" style={empInputS} value={manBreakEnd} onChange={e=>setManBreakEnd(e.target.value)}/>
+    </div>
+    <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:C.dim,padding:'0 4px'}}>
+      <span>Coupure</span><span>Reprise</span>
+    </div>
+  </div>
+  <div>
+    <label style={empLabelS}>🍽 Type de repas</label>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <button onClick={()=>setManMeal('PANIER')} style={empTglBtn(manMeal==='PANIER',C.accent)}>🥪 Panier</button>
+      <button onClick={()=>setManMeal('RESTO')} style={empTglBtn(manMeal==='RESTO',C.orange)}>🍽 Restaurant</button>
+    </div>
+  </div>
+  <details style={{borderTop:'1px dashed #cbd5e1',paddingTop:12}}>
+    <summary style={{fontSize:13,fontWeight:600,color:C.dim,cursor:'pointer',userSelect:'none',marginBottom:10}}>⚙️ Options avancees</summary>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+      <div><label style={empLabelS}>Pause (min)</label><input type="number" style={empInputS} value={manPause} onChange={e=>setManPause(e.target.value)}/></div>
+      <div><label style={empLabelS}>Heures nuit</label><input type="number" step="0.25" style={empInputS} value={manNight} onChange={e=>setManNight(e.target.value)}/></div>
+    </div>
+    <div>
+      <label style={empLabelS}>🕒 Debauche demandee (RDV)</label>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <input type="time" style={{...empInputS,flex:1}} value={manRequestEnd} onChange={e=>setManRequestEnd(e.target.value)} placeholder="Ex: 16:00"/>
+        {manRequestEnd&&<button onClick={()=>setManRequestEnd('')} style={{background:'#fef2f2',border:'2px solid #fca5a5',borderRadius:8,padding:'10px 14px',cursor:'pointer',color:C.red,fontSize:14,fontWeight:700}}>×</button>}
+      </div>
+      <div style={{fontSize:11,color:C.orange,marginTop:4}}>Indiquez ici si vous devez partir a une heure precise</div>
+    </div>
+  </details>
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={()=>setShowManual(false)} style={empBtnS}>Annuler</button>
+    <button onClick={saveManual} style={empBtnP(C.accent)}>✓ Enregistrer</button>
+  </div>
 </div>
-<Fl label="Commentaire"><input style={inputStyle} value={rdvMotif} onChange={e=>setRdvMotif(e.target.value)} placeholder="Precision..."/></Fl>
-</React.Fragment>}
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={submitRdv} style={btnStyle(rdvType==='rdv'?C.orange:C.red,true)}>Envoyer</button><button onClick={()=>setShowRdv(false)} style={btnStyle(C.dim)}>Annuler</button></div>
+</Mod>}
+{showRdv&&<Mod title="📅 Debauche / Absence" onClose={()=>setShowRdv(false)} width={440}>
+<div style={{display:'flex',flexDirection:'column',gap:16}}>
+  <div>
+    <label style={empLabelS}>Type de demande</label>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <button onClick={()=>setRdvType('rdv')} style={empTglBtn(rdvType==='rdv',C.orange)}>🕐 Debauche RDV</button>
+      <button onClick={()=>setRdvType('absence')} style={empTglBtn(rdvType==='absence',C.red)}>🚫 Absence</button>
+    </div>
+  </div>
+  {rdvType==='rdv'&&<React.Fragment>
+    <div>
+      <label style={empLabelS}>📅 Date</label>
+      <input type="date" style={empInputS} value={rdvDate} onChange={e=>setRdvDate(e.target.value)}/>
+    </div>
+    <div>
+      <label style={empLabelS}>⏰ Heure de debauche souhaitee</label>
+      <input type="time" style={empInputS} value={rdvTime} onChange={e=>setRdvTime(e.target.value)}/>
+    </div>
+    <div>
+      <label style={empLabelS}>💬 Motif</label>
+      <input style={empInputS} value={rdvMotif} onChange={e=>setRdvMotif(e.target.value)} placeholder="RDV medical, personnel..."/>
+    </div>
+  </React.Fragment>}
+  {rdvType==='absence'&&<React.Fragment>
+    <div>
+      <label style={empLabelS}>📋 Motif d'absence</label>
+      <select style={empInputS} value={rdvAbsType} onChange={e=>setRdvAbsType(e.target.value)}>
+        <option value="conge">🏖 Conge</option>
+        <option value="maladie">🤒 Maladie</option>
+        <option value="rtt">⏸ RTT</option>
+        <option value="formation">🎓 Formation</option>
+        <option value="accident">🚑 Accident travail</option>
+        <option value="autre">❓ Autre</option>
+      </select>
+    </div>
+    <div>
+      <label style={empLabelS}>📅 Periode</label>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <input type="date" style={empInputS} value={rdvDate} onChange={e=>setRdvDate(e.target.value)}/>
+        <input type="date" style={empInputS} value={rdvDateFin} onChange={e=>setRdvDateFin(e.target.value)}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:C.dim,padding:'0 4px'}}>
+        <span>Du</span><span>Au</span>
+      </div>
+    </div>
+    <div>
+      <label style={empLabelS}>💬 Commentaire (optionnel)</label>
+      <input style={empInputS} value={rdvMotif} onChange={e=>setRdvMotif(e.target.value)} placeholder="Precision..."/>
+    </div>
+  </React.Fragment>}
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={()=>setShowRdv(false)} style={empBtnS}>Annuler</button>
+    <button onClick={submitRdv} style={empBtnP(rdvType==='rdv'?C.orange:C.red)}>✓ Envoyer</button>
+  </div>
+</div>
 </Mod>}
 {editTE&&<Mod title="Modifier pointage" onClose={()=>setEditTE(null)}>
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
