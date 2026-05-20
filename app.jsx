@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-8</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-9</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1510,50 +1510,46 @@ const _max=480;
 const _totR=transfertTR+chantierTR+depotTR;
 if(_totR>_max){depotTR=Math.max(0,depotTR-(_totR-_max))}
 const blocks=[
-  {lbl:'Transfert',d:{tR:transfertTR,sR:(transfertTR/60)*hourly,...transfertLC},color:'#d97706'},
-  {lbl:'Chantier',d:{tR:chantierTR,sR:(chantierTR/60)*hourly,...chantierLC},color:'#16a34a'},
-  {lbl:'Depot',d:{tR:depotTR,sR:(depotTR/60)*hourly,...depotLC},color:'#0891b2'}
+  {lbl:'Transfert',d:{tR:transfertTR,sR:(transfertTR/60)*hourly,...transfertLC},ca:j.hasTransfer?(j.transferPrice||0):0,color:'#d97706'},
+  {lbl:'Chantier',d:{tR:chantierTR,sR:(chantierTR/60)*hourly,...chantierLC},ca:j.priceForfait||0,color:'#16a34a'},
+  {lbl:'Depot',d:{tR:depotTR,sR:(depotTR/60)*hourly,...depotLC},ca:0,color:'#0891b2'}
 ];
-const totSal=blocks.reduce((s,b)=>s+(b.d.sR||0),0);
-const totCarb=blocks.reduce((s,b)=>s+(b.d.ccR||0),0);
-const totCost=totSal+totCarb;
+blocks.forEach(b=>{b.cost=(b.d.sR||0)+(b.d.ccR||0);b.benef=b.ca-b.cost});
+const totBenef=blocks.reduce((s,b)=>s+b.benef,0);
 return(<React.Fragment>
 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-{blocks.map((b,bi)=>(<div key={bi} style={{background:'#fff',border:'2px solid '+b.color,borderRadius:10,overflow:'hidden',display:'flex',flexDirection:'column',boxShadow:'0 1px 3px rgba(0,0,0,.06)'}}>
-<div style={{background:b.color,color:'#fff',fontWeight:800,padding:'5px 10px',textAlign:'center',fontSize:13,textTransform:'uppercase',letterSpacing:'0.8px'}}>{b.lbl}</div>
-<div style={{padding:'12px 8px 10px',textAlign:'center',background:b.color+'08',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
-  <div style={{fontSize:24,fontWeight:800,color:b.color,lineHeight:1}}>{b.d.tR!=null?(b.d.tR>0?fmtMinD(b.d.tR):'0min'):'—'}</div>
-  {b.d.cR>0&&<div style={{fontSize:12,color:C.dim,marginTop:4,fontWeight:600}}>⛽ {b.d.cR.toFixed(1)} L</div>}
-</div>
-<div style={{padding:'6px 8px',borderTop:'1px solid '+b.color+'33',background:'#fafbfc',display:'flex',justifyContent:'space-around',gap:6}}>
-  {b.d.sR!=null&&<div style={{textAlign:'center',flex:1}}><div style={{fontSize:9,color:C.dim,textTransform:'uppercase',fontWeight:700,letterSpacing:'0.3px'}}>Salaire</div><div style={{fontWeight:800,color:'#15803d',fontSize:13}}>{fmtMoney(b.d.sR||0)}</div></div>}
-  {b.d.ccR>0&&<div style={{textAlign:'center',flex:1,borderLeft:'1px dashed '+b.color+'40',paddingLeft:6}}><div style={{fontSize:9,color:C.dim,textTransform:'uppercase',fontWeight:700,letterSpacing:'0.3px'}}>Carburant</div><div style={{fontWeight:800,color:'#15803d',fontSize:13}}>{fmtMoney(b.d.ccR)}</div></div>}
-</div>
+{blocks.map((b,bi)=>(<div key={bi} style={{display:'flex',flexDirection:'column',gap:6}}>
+  {/* Carre principal : Temps + couts detailles */}
+  <div style={{background:'#fff',border:'2px solid '+b.color,borderRadius:10,overflow:'hidden',display:'flex',flexDirection:'column',boxShadow:'0 1px 3px rgba(0,0,0,.06)'}}>
+    <div style={{background:b.color,color:'#fff',fontWeight:800,padding:'5px 10px',textAlign:'center',fontSize:13,textTransform:'uppercase',letterSpacing:'0.8px'}}>{b.lbl}</div>
+    <div style={{padding:'12px 8px 10px',textAlign:'center',background:b.color+'08',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+      <div style={{fontSize:24,fontWeight:800,color:b.color,lineHeight:1}}>{b.d.tR!=null?(b.d.tR>0?fmtMinD(b.d.tR):'0min'):'—'}</div>
+      {b.d.cR>0&&<div style={{fontSize:12,color:C.dim,marginTop:4,fontWeight:600}}>⛽ {b.d.cR.toFixed(1)} L</div>}
+    </div>
+    <div style={{padding:'6px 8px',borderTop:'1px solid '+b.color+'33',background:'#fafbfc',display:'flex',justifyContent:'space-around',gap:6}}>
+      {b.d.sR!=null&&<div style={{textAlign:'center',flex:1}}><div style={{fontSize:9,color:C.dim,textTransform:'uppercase',fontWeight:700,letterSpacing:'0.3px'}}>Salaire</div><div style={{fontWeight:800,color:'#15803d',fontSize:13}}>{fmtMoney(b.d.sR||0)}</div></div>}
+      {b.d.ccR>0&&<div style={{textAlign:'center',flex:1,borderLeft:'1px dashed '+b.color+'40',paddingLeft:6}}><div style={{fontSize:9,color:C.dim,textTransform:'uppercase',fontWeight:700,letterSpacing:'0.3px'}}>Carburant</div><div style={{fontWeight:800,color:'#15803d',fontSize:13}}>{fmtMoney(b.d.ccR)}</div></div>}
+    </div>
+  </div>
+  {/* Mini-card CA / Couts / Benefice */}
+  <div style={{background:b.benef>=0?'#f0fdf4':'#fff1f2',border:'2px solid '+(b.benef>=0?'#86efac':'#fca5a5'),borderRadius:8,padding:'6px 10px'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11,marginBottom:2}}>
+      <span style={{color:C.dim}}>CA <b style={{color:'#1d4ed8'}}>{fmtMoney(b.ca)}</b></span>
+      <span style={{color:C.dim}}>Couts <b style={{color:'#dc2626'}}>{fmtMoney(b.cost)}</b></span>
+    </div>
+    <div style={{textAlign:'center',fontSize:16,fontWeight:800,color:b.benef>=0?'#15803d':'#dc2626',lineHeight:1.1}}>
+      {b.benef>=0?'+':''}{fmtMoney(b.benef)}
+    </div>
+  </div>
 </div>))}
 </div>
-<div style={{marginTop:6,padding:'8px 14px',background:'#0f172a',borderRadius:10,display:'flex',justifyContent:'space-between',alignItems:'center',color:'#fff',boxShadow:'0 2px 6px rgba(0,0,0,.1)'}}>
-<span style={{fontWeight:800,fontSize:13,textTransform:'uppercase',letterSpacing:'0.8px'}}>💰 Total coûts</span>
-<span style={{fontSize:12,color:'#cbd5e1'}}>Salaire <b style={{color:'#86efac'}}>{fmtMoney(totSal)}</b> &nbsp;·&nbsp; Carburant <b style={{color:'#fde68a'}}>{fmtMoney(totCarb)}</b></span>
-<span style={{fontSize:20,fontWeight:800,color:'#fff'}}>{fmtMoney(totCost)}</span>
+{/* Bandeau Benefice total tout en bas */}
+<div style={{marginTop:8,padding:'10px 16px',background:totBenef>=0?'#15803d':'#dc2626',borderRadius:10,display:'flex',justifyContent:'space-between',alignItems:'center',color:'#fff',boxShadow:'0 2px 6px rgba(0,0,0,.15)'}}>
+<span style={{fontWeight:800,fontSize:14,textTransform:'uppercase',letterSpacing:'0.8px'}}>📊 Benefice du chantier</span>
+<span style={{fontSize:24,fontWeight:800}}>{totBenef>=0?'+':''}{fmtMoney(totBenef)}</span>
 </div>
 </React.Fragment>);
 })()}
-{/* Ligne 3 : Totaux CA / Coût-Bénéf Théo / Coût-Bénéf Réel */}
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
-<div style={{background:'#eff6ff',border:'1px solid #93c5fd',borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
-<div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase'}}>CA Total</div>
-<div style={{fontSize:18,fontWeight:800,color:'#1d4ed8'}}>{fmtMoney(ca)}</div>
-</div>
-<div style={{background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
-<div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase'}}>Théo · Coût {fmtMoney(coutT)}</div>
-<div style={{fontSize:18,fontWeight:800,color:benefT>=0?C.green:C.red}}>Bénéf {benefT>=0?'+':''}{fmtMoney(benefT)}</div>
-</div>
-<div style={{background:benefR>=0?'#f0fdf4':'#fff1f2',border:'1px solid '+(benefR>=0?'#86efac':'#fca5a5'),borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
-<div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase'}}>Réel · Coût {fmtMoney(coutR)}</div>
-<div style={{fontSize:18,fontWeight:800,color:benefR>=0?C.green:C.red}}>Bénéf {benefR>=0?'+':''}{fmtMoney(benefR)}</div>
-{Math.abs(benefR-benefT)>=1&&<div style={{fontSize:10,color:benefR>benefT?C.green:C.red,fontWeight:700,marginTop:2}}>{benefR>benefT?'✓ +':'⚠️ '}{fmtMoney(benefR-benefT)} vs théo</div>}
-</div>
-</div>
 </div>);
 })()}
 </div>}
