@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-12</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-13</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1443,7 +1443,18 @@ if(siteD&&siteD.centroid){
 }
 return(<div style={{display:'flex',flexDirection:'column',gap:6,fontSize:11}}>
 {/* Ligne -1 : GPS saisi + Dep + Arr (déplacés ici depuis la ligne chantier) */}
-{(()=>{const gpsJ=parseCoords(j.gps||j._geocodedGps);const empCo2=getEmpCoords(data,j.employeeId);const depOptions2=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));const arrOptions2=depOptions2.map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
+{(()=>{const gpsJ=parseCoords(j.gps||j._geocodedGps);const empCo2=getEmpCoords(data,j.employeeId);const depBase=[{id:'home',name:'Dom.',co:empCo2},...(data.depots||[]).map(d2=>({id:d2.id,name:d2.name,co:d2._coords?parseCoords(typeof d2._coords==='string'?d2._coords:d2._coords.join(',')):null}))];
+// Voisins (autres chantiers du meme chauffeur le meme jour, tries par heure de facturation) → ajoutent une option 'chantier prec.' a Dep et 'chantier suiv.' a Arr.
+const sortedEmpJobs=(data.jobs||[]).filter(jb=>jb.employeeId===j.employeeId&&jb.date===j.date&&jb.type!=='depot').sort((a,b)=>(a.billingStart||'99:99').localeCompare(b.billingStart||'99:99'));
+const _myIdx=sortedEmpJobs.findIndex(x=>x.id===j.id);
+const _prevJ=_myIdx>0?sortedEmpJobs[_myIdx-1]:null;
+const _nextJ=_myIdx>=0&&_myIdx<sortedEmpJobs.length-1?sortedEmpJobs[_myIdx+1]:null;
+const _jobOpt=(jb,arrow)=>{if(!jb)return null;const co=parseCoords(jb.gps||jb._geocodedGps);if(!co)return null;return{id:jb.id,name:arrow+' '+(jb.location||jb.billingStart||'chantier').slice(0,18),co,_isJob:true}};
+const prevOpt=_jobOpt(_prevJ,'←');
+const nextOpt=_jobOpt(_nextJ,'→');
+const depOptions2=[...(prevOpt?[prevOpt]:[]),...depBase].map(o=>({...o,km:o.co&&gpsJ?+(haversine(o.co,gpsJ)*1.3).toFixed(0):null}));
+const arrOptions2=[...(nextOpt?[nextOpt]:[]),...depBase].map(o=>({...o,km:o.co&&gpsJ?+(haversine(gpsJ,o.co)*1.3).toFixed(0):null}));
+const validDep=depOptions2.filter(o=>o.km!==null);const validArr=arrOptions2.filter(o=>o.km!==null);const shortDep=validDep.length>0?validDep.reduce((mn,o)=>o.km<mn.km?o:mn,validDep[0]):null;const shortArr=validArr.length>0?validArr.reduce((mn,o)=>o.km<mn.km?o:mn,validArr[0]):null;
 return(<div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',background:'#fff',border:'1px solid '+C.border,borderRadius:6,fontSize:11,flexWrap:'wrap'}}>
 {/* Champ GPS saisi masqué : alimenté automatiquement via géocodage du lieu */}
 <span style={{color:C.dim}}>↗ Dép :</span>
