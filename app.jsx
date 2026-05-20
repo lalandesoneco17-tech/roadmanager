@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-2</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-3</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1482,28 +1482,26 @@ return(<div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',b
 {!j.gps&&<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.gps=chantierGpsR.lat.toFixed(6)+','+chantierGpsR.lon.toFixed(6);save(nd)}}} style={{background:'#dcfce7',border:'1px solid #16a34a',borderRadius:4,padding:'1px 8px',cursor:'pointer',fontSize:10,color:'#14532d',fontWeight:700}}>↵ Enregistrer comme GPS chantier</button>}
 {mrD&&mrD.rawPts&&mrD.rawPts.length&&<button onClick={()=>{setMapModal({title:(m?m.name:'')+' — '+(j.location||j.billingStart||''),rawPts:mrD.rawPts,centroid:siteD&&siteD.centroid,depotGps:mrD.rawPts[0],pauses:[...((siteD&&siteD.outboundPauses)||[]),...((siteD&&siteD.inboundPauses)||[])],siteArrival:siteD&&siteD.siteArrival,siteDeparture:siteD&&siteD.siteDeparture,workStart:siteD&&siteD.workStart,workEnd:siteD&&siteD.workEnd})}} style={{background:'#eff6ff',border:'1px solid #3b82f6',borderRadius:4,padding:'2px 10px',cursor:'pointer',fontSize:11,color:'#1d4ed8',fontWeight:700,marginLeft:'auto'}}>🗺 Voir trajet</button>}
 </div>}
-{/* Ligne 1 : 8 pastilles événements (T + R + delta) */}
-<div style={{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:3}}>
-{KEYS.map((k,i)=>{const tTv=T[k],tRv=R[k];let dlt=(tTv!=null&&tRv!=null)?tRv-tTv:null;if(dlt!=null){if(dlt<-720)dlt+=1440;else if(dlt>720)dlt-=1440}const ad=dlt!=null?Math.abs(dlt):0;const dCol=dlt==null?'#94a3b8':ad<=5?'#16a34a':ad<=15?'#d97706':'#dc2626';return(<div key={k} style={{display:'flex',flexDirection:'column',alignItems:'center',background:'#fff',border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px'}}>
-<div style={{fontSize:9,fontWeight:700,color:C.dim,textTransform:'uppercase',whiteSpace:'nowrap'}}>{LABELS[i]}</div>
-<div style={{fontSize:8,color:'#94a3b8',marginBottom:2}} title={SOURCES[i]==='P'?'Source : Pointage employé':'Source : Rapport Wirtgen'}>{SOURCES[i]}</div>
-<div style={{fontSize:11,fontWeight:700,color:'#1d4ed8'}}>T {minToHHMMd(tTv)}</div>
-<div style={{fontSize:11,fontWeight:700,color:'#15803d'}}>R {minToHHMMd(tRv)}</div>
-{dlt!=null&&<div style={{fontSize:9,color:dCol,fontWeight:700}}>{dlt>0?'+':''}{dlt}m</div>}
-</div>)})}
-</div>
-{/* Ligne 2 : 7 boxes segments (entre les pastilles) */}
-<div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,marginLeft:'6.25%',marginRight:'6.25%'}}>
-{segs.map((sg,i)=>(<div key={i} style={{background:'#fff',border:'1px solid '+C.border,borderRadius:6,padding:'4px 5px',fontSize:10}}>
-<div style={{fontWeight:700,color:C.text,marginBottom:3,textAlign:'center',fontSize:10}}>{sg.lbl}</div>
-{sg.tT!=null&&sg.tT>=0&&<div style={{color:'#1d4ed8'}}>TpT <b>{fmtMinD(sg.tT)}</b></div>}
-{sg.tR!=null&&sg.tR>=0&&<div style={{color:'#15803d'}}>TpR <b>{fmtMinD(sg.tR)}</b></div>}
-{sg.sT!=null&&sg.sT>0&&<div style={{color:'#1d4ed8'}}>SalT <b>{fmtMoney(sg.sT)}</b></div>}
-{sg.sR!=null&&sg.sR>0&&<div style={{color:'#15803d'}}>SalR <b>{fmtMoney(sg.sR)}</b></div>}
-{sg.cT!=null&&<div style={{color:'#1d4ed8'}}>ConsT <b>{sg.cT.toFixed(1)}L</b> <span style={{color:'#94a3b8'}}>{fmtMoney(sg.ccT)}</span></div>}
-{sg.cR!=null&&<div style={{color:'#15803d'}}>ConsR <b>{sg.cR.toFixed(1)}L</b> <span style={{color:'#94a3b8'}}>{fmtMoney(sg.ccR)}</span></div>}
+{/* 3 carres agreges : Transfert (trajet aller+retour), Chantier (installation+fraisage+rangement), Depot (preparation+mise sec.) */}
+{(()=>{
+const agg=(idxs)=>{const r={tT:0,tR:0,sT:0,sR:0,cT:0,cR:0,ccT:0,ccR:0};idxs.forEach(i=>{const sg=segs[i];if(!sg)return;if(sg.tT!=null&&sg.tT>=0)r.tT+=sg.tT;if(sg.tR!=null&&sg.tR>=0)r.tR+=sg.tR;if(sg.sT!=null)r.sT+=sg.sT;if(sg.sR!=null)r.sR+=sg.sR;if(sg.cT!=null)r.cT+=sg.cT;if(sg.cR!=null)r.cR+=sg.cR;if(sg.ccT!=null)r.ccT+=sg.ccT;if(sg.ccR!=null)r.ccR+=sg.ccR});return r};
+const blocks=[
+  {lbl:'Transfert',d:agg([1,5]),color:'#d97706'},
+  {lbl:'Chantier',d:agg([2,3,4]),color:'#16a34a'},
+  {lbl:'Depot',d:agg([0,6]),color:'#0891b2'}
+];
+return(<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
+{blocks.map((b,bi)=>(<div key={bi} style={{background:'#fff',border:'2px solid '+b.color,borderRadius:8,padding:'8px 10px',fontSize:11}}>
+<div style={{fontWeight:800,color:b.color,marginBottom:4,textAlign:'center',fontSize:13,textTransform:'uppercase',letterSpacing:'0.5px'}}>{b.lbl}</div>
+{b.d.tT>0&&<div style={{color:'#1d4ed8'}}>Temps T <b>{fmtMinD(b.d.tT)}</b></div>}
+{b.d.tR>0&&<div style={{color:'#15803d'}}>Temps R <b>{fmtMinD(b.d.tR)}</b></div>}
+{b.d.sT>0&&<div style={{color:'#1d4ed8'}}>Salaire T <b>{fmtMoney(b.d.sT)}</b></div>}
+{b.d.sR>0&&<div style={{color:'#15803d'}}>Salaire R <b>{fmtMoney(b.d.sR)}</b></div>}
+{b.d.cT>0&&<div style={{color:'#1d4ed8'}}>Conso T <b>{b.d.cT.toFixed(1)}L</b> <span style={{color:'#94a3b8'}}>{fmtMoney(b.d.ccT)}</span></div>}
+{b.d.cR>0&&<div style={{color:'#15803d'}}>Conso R <b>{b.d.cR.toFixed(1)}L</b> <span style={{color:'#94a3b8'}}>{fmtMoney(b.d.ccR)}</span></div>}
 </div>))}
-</div>
+</div>);
+})()}
 {/* Ligne 3 : Totaux CA / Coût-Bénéf Théo / Coût-Bénéf Réel */}
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
 <div style={{background:'#eff6ff',border:'1px solid #93c5fd',borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
