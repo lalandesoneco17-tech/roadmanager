@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-9</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-10</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1465,11 +1465,11 @@ return(<div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',b
 {/* Champ GPS saisi masqué : alimenté automatiquement via géocodage du lieu */}
 <span style={{color:C.dim}}>↗ Dép :</span>
 <select value={j.startFrom||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.startFrom=e.target.value;const sel2=depOptions2.find(o=>o.id===e.target.value);jj.kmAller=sel2&&sel2.km?sel2.km:0;jj.travelMinAller=sel2&&sel2.km?Math.round((sel2.km/80)*60):0;jj.distanceKm=(jj.kmAller||0)+(jj.kmRetour||0);jj.travelMin=(jj.travelMinAller||0)+(jj.travelMinRetour||0);save(nd)}}} style={{fontSize:12,padding:'2px 5px',borderRadius:4,border:'1px solid #0891b240',background:j.startFrom&&shortDep&&j.startFrom===shortDep.id?'#0891b218':'#0891b208',color:'#0891b2',fontWeight:600,minWidth:110,maxWidth:160}}>
-<option value="">--</option>{depOptions2.map(o=><option key={o.id} value={o.id}>{o.name}{o.km!==null?' '+o.km+'km':''}{shortDep&&o.id===shortDep.id?' ★':''}</option>)}
+<option value="">--</option>{depOptions2.map(o=>{const tm=o.km!==null?Math.round((o.km/80)*60):null;const tStr=tm!=null?(tm<60?tm+'min':Math.floor(tm/60)+'h'+String(tm%60).padStart(2,'0')):'';return<option key={o.id} value={o.id}>{o.name}{o.km!==null?' '+o.km+'km · '+tStr:''}{shortDep&&o.id===shortDep.id?' ★':''}</option>})}
 </select>
 <span style={{color:C.dim,marginLeft:6}}>↙ Arr :</span>
 <select value={j.endAt||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.endAt=e.target.value;const sel2=arrOptions2.find(o=>o.id===e.target.value);jj.kmRetour=sel2&&sel2.km?sel2.km:0;jj.travelMinRetour=sel2&&sel2.km?Math.round((sel2.km/80)*60):0;jj.distanceKm=(jj.kmAller||0)+(jj.kmRetour||0);jj.travelMin=(jj.travelMinAller||0)+(jj.travelMinRetour||0);save(nd)}}} style={{fontSize:12,padding:'2px 5px',borderRadius:4,border:'1px solid #7c3aed40',background:j.endAt&&shortArr&&j.endAt===shortArr.id?'#7c3aed18':'#7c3aed08',color:'#7c3aed',fontWeight:600,minWidth:110,maxWidth:160}}>
-<option value="">--</option>{arrOptions2.map(o=><option key={o.id} value={o.id}>{o.name}{o.km!==null?' '+o.km+'km':''}{shortArr&&o.id===shortArr.id?' ★':''}</option>)}
+<option value="">--</option>{arrOptions2.map(o=>{const tm=o.km!==null?Math.round((o.km/80)*60):null;const tStr=tm!=null?(tm<60?tm+'min':Math.floor(tm/60)+'h'+String(tm%60).padStart(2,'0')):'';return<option key={o.id} value={o.id}>{o.name}{o.km!==null?' '+o.km+'km · '+tStr:''}{shortArr&&o.id===shortArr.id?' ★':''}</option>})}
 </select>
 </div>);
 })()}
