@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-1</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-2</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1124,8 +1124,8 @@ return(
 <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:4,fontSize:13}}>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:'--:--'}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:'--:--'}</span>
 {workMin>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(workMin)}</span>}
-{mainTE&&mainTE.requestedEndTime&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706'}}>Deb. {mainTE.requestedEndTime}</span>}
-{mainTE&&mainTE.absenceType&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red}}>{mainTE.absenceType}</span>}
+{mainTE&&mainTE.requestedEndTime&&<span title={mainTE.requestedEndMotif?'Motif : '+mainTE.requestedEndMotif:'RDV / debauche demandee'} style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}}>Deb. {mainTE.requestedEndTime}{mainTE.requestedEndMotif?' · '+mainTE.requestedEndMotif:''}</span>}
+{mainTE&&mainTE.absenceType&&<span title={mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?'Motif : '+mainTE.requestedEndMotif:mainTE.absenceType} style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red,maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}}>{mainTE.absenceType}{mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?' · '+mainTE.requestedEndMotif:''}</span>}
 </div>
 </div>)})}
 {allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);const machColor2=defMach?widthColor(defMach):C.muted;
@@ -1153,8 +1153,8 @@ return(
 {(te.length>0)&&<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',padding:'4px 10px',fontSize:13,borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:'--:--'}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:'--:--'}</span>
 {workMin>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(workMin)}</span>}
-{mainTE&&mainTE.requestedEndTime&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706'}}>Deb. {mainTE.requestedEndTime}</span>}
-{mainTE&&mainTE.absenceType&&<span style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red}}>{mainTE.absenceType}</span>}
+{mainTE&&mainTE.requestedEndTime&&<span title={mainTE.requestedEndMotif?'Motif : '+mainTE.requestedEndMotif:'RDV / debauche demandee'} style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}}>Deb. {mainTE.requestedEndTime}{mainTE.requestedEndMotif?' · '+mainTE.requestedEndMotif:''}</span>}
+{mainTE&&mainTE.absenceType&&<span title={mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?'Motif : '+mainTE.requestedEndMotif:mainTE.absenceType} style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red,maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}}>{mainTE.absenceType}{mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?' · '+mainTE.requestedEndMotif:''}</span>}
 </div>}
 </div>
 </div>)})()}
@@ -1224,7 +1224,7 @@ return(<React.Fragment>
 {tItems.map(i=><React.Fragment key={i.k}>{i.jsx}</React.Fragment>)}
 {/* Carré 2 : debauche réelle pointée (séparé à droite) */}
 {mainTE&&mainTE.endTime&&<React.Fragment><span style={{color:C.muted,margin:'0 4px',fontWeight:300}}>|</span><span style={{background:'#fef9c3',border:'2px solid #eab308',borderRadius:8,padding:'3px 10px',color:'#713f12',fontWeight:800,whiteSpace:'nowrap'}}>{'↙ Deb. '+mainTE.endTime}</span></React.Fragment>}
-{mainTE&&mainTE.absenceType&&<span style={{padding:'2px 7px',borderRadius:6,fontWeight:700,background:C.red+'20',color:C.red,border:'1px solid '+C.red+'40'}}>{mainTE.absenceType}</span>}
+{mainTE&&mainTE.absenceType&&<span title={mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?'Motif : '+mainTE.requestedEndMotif:mainTE.absenceType} style={{padding:'2px 7px',borderRadius:6,fontWeight:700,background:C.red+'20',color:C.red,border:'1px solid '+C.red+'40',maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block',verticalAlign:'middle'}}>{mainTE.absenceType}{mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?' · '+mainTE.requestedEndMotif:''}</span>}
 </React.Fragment>);
 })()}
 </div>}
