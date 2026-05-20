@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-5</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.20-6</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1506,17 +1506,13 @@ return(<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
   <div>
     <div style={{fontSize:9,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',marginBottom:2}}>Temps / Litres</div>
-    {b.d.tT>0&&<div style={{color:'#1d4ed8'}}>T <b>{fmtMinD(b.d.tT)}</b></div>}
-    {b.d.tR>0&&<div style={{color:'#15803d'}}>R <b>{fmtMinD(b.d.tR)}</b></div>}
-    {b.d.cT>0&&<div style={{color:'#1d4ed8'}}>L T <b>{b.d.cT.toFixed(1)}L</b></div>}
-    {b.d.cR>0&&<div style={{color:'#15803d'}}>L R <b>{b.d.cR.toFixed(1)}L</b></div>}
+    {b.d.tR>0&&<div style={{color:'#15803d'}}>Temps <b>{fmtMinD(b.d.tR)}</b></div>}
+    {b.d.cR>0&&<div style={{color:'#15803d'}}>Litres <b>{b.d.cR.toFixed(1)}L</b></div>}
   </div>
   <div style={{borderLeft:'1px dashed '+b.color+'66',paddingLeft:6}}>
     <div style={{fontSize:9,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',marginBottom:2}}>Couts</div>
-    {b.d.sT>0&&<div style={{color:'#1d4ed8'}}>Sal T <b>{fmtMoney(b.d.sT)}</b></div>}
-    {b.d.sR>0&&<div style={{color:'#15803d'}}>Sal R <b>{fmtMoney(b.d.sR)}</b></div>}
-    {b.d.ccT>0&&<div style={{color:'#1d4ed8'}}>€L T <b>{fmtMoney(b.d.ccT)}</b></div>}
-    {b.d.ccR>0&&<div style={{color:'#15803d'}}>€L R <b>{fmtMoney(b.d.ccR)}</b></div>}
+    {b.d.sR>0&&<div style={{color:'#15803d'}}>Salaire <b>{fmtMoney(b.d.sR)}</b></div>}
+    {b.d.ccR>0&&<div style={{color:'#15803d'}}>Carburant <b>{fmtMoney(b.d.ccR)}</b></div>}
   </div>
 </div>
 </div>))}
