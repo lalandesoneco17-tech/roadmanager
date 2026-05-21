@@ -238,7 +238,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:10,padding:14,width:'95vw',height:'90vh',maxWidth:1400,display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.21-1</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.21-2</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -2396,15 +2396,13 @@ return(
 </div>
 ))}
 </div>
-<div style={{textAlign:'center',marginBottom:10,padding:'6px 0'}}>
-<img src="logo.png" alt="SONECO" style={{maxWidth:180,height:'auto',maxHeight:56}}/>
-</div>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,background:C.accent,color:'#fff',padding:'12px 16px',borderRadius:10,boxShadow:'0 2px 6px rgba(0,0,0,.08)'}}>
-<div style={{display:'flex',alignItems:'center',gap:10}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,background:C.accent,color:'#fff',padding:'12px 16px',borderRadius:10,boxShadow:'0 2px 6px rgba(0,0,0,.08)',gap:10}}>
+<div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
 <div style={{width:40,height:40,borderRadius:'50%',background:'#fff3',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:18}}>{(emp.name||'?')[0].toUpperCase()}</div>
 <div><div style={{fontWeight:700,fontSize:18}}>{emp.name}</div><div style={{fontSize:14,opacity:.8}}>Espace chauffeur</div></div>
 </div>
-<div style={{display:'flex',gap:6}}>
+<img src="logo.png" alt="SONECO" style={{height:80,maxWidth:'40%',objectFit:'contain',flexShrink:1}}/>
+<div style={{display:'flex',gap:6,flexShrink:0}}>
 <button onClick={openInbox} title="Messages" style={{position:'relative',background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:16}}>🔔{unreadCount>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#ef4444',color:'#fff',borderRadius:'50%',minWidth:18,height:18,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{unreadCount}</span>}</button>
 <button onClick={()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>↻</button>
 <button onClick={onLogout} style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 14px',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:14}}>Deconnexion</button>
