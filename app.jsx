@@ -244,7 +244,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.27-3</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.27-4</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -2369,6 +2369,7 @@ const[showEquip,setShowEquip]=useState(false);
 // Signature chef de chantier
 const[signJob,setSignJob]=useState(null);
 const[signName,setSignName]=useState('');
+const[signForfait,setSignForfait]=useState(null);
 const signCanvas=useRef(null);const signCtx=useRef(null);const signDrawing=useRef(false);const signHasInk=useRef(false);
 useEffect(()=>{if(!signJob||!signCanvas.current)return;const c=signCanvas.current;const dpr=window.devicePixelRatio||1;const rect=c.getBoundingClientRect();c.width=rect.width*dpr;c.height=rect.height*dpr;const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#0f172a';ctx.lineWidth=2.5;signCtx.current=ctx;signHasInk.current=false},[signJob]);
 const _signPos=e=>{const c=signCanvas.current;if(!c)return null;const r=c.getBoundingClientRect();const t=e.touches&&e.touches[0]?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}};
@@ -2376,20 +2377,30 @@ const signStart=e=>{e.preventDefault();const p=_signPos(e);if(!p||!signCtx.curre
 const signMove=e=>{if(!signDrawing.current)return;e.preventDefault();const p=_signPos(e);if(!p||!signCtx.current)return;signCtx.current.lineTo(p.x,p.y);signCtx.current.stroke();signHasInk.current=true};
 const signEnd=()=>{signDrawing.current=false};
 const signClear=()=>{if(!signCanvas.current||!signCtx.current)return;const c=signCanvas.current;signCtx.current.clearRect(0,0,c.width,c.height);signHasInk.current=false};
-const openSignModal=(j)=>{setSignJob(j);setSignName(j.siteManager||'')};
-const closeSignModal=()=>{setSignJob(null);setSignName('')};
+const openSignModal=(j)=>{
+  setSignJob(j);setSignName(j.siteManager||'');
+  // Calcul du forfait au moment de l'ouverture (visible avant signature)
+  const _toM=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
+  const billStart=_toM(j.billingStart);
+  if(billStart==null){setSignForfait(null);return}
+  const now=new Date();let endMin=now.getHours()*60+now.getMinutes();if(endMin<billStart)endMin+=1440;
+  let dur=endMin-billStart;
+  let pauseDeducted=0;
+  const te=(data.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&(t.breakStart||t.pauseStart||t.pauseMin));
+  if(te){const pS=_toM(te.breakStart||te.pauseStart);const pE=_toM(te.breakEnd||te.pauseEnd);const pM=(pS!=null&&pE!=null&&pE>pS)?(pE-pS):(te.pauseMin?Number(te.pauseMin):0);if(pS!=null&&pS>=billStart&&pM>0){dur-=pM;pauseDeducted=pM}}
+  dur=Math.max(0,dur);const durH=dur/60;
+  const m=(data.machines||[]).find(mm=>mm.id===j.machineId);
+  let label=null;
+  if(m&&m.type==='Citerne')label=durH<=4?'Demi-journee':'Journee';
+  else{if(durH<=2)label='2h';else if(durH<=4)label='4h';else if(durH<=6)label='6h';else label='8h'}
+  setSignForfait({label,durMin:dur,pauseDeducted,endHHmm:String(Math.floor((endMin%1440)/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0')});
+};
+const closeSignModal=()=>{setSignJob(null);setSignName('');setSignForfait(null)};
 const signSave=()=>{if(!signJob)return;if(!signHasInk.current){alert('La signature est vide');return}if(!signName.trim()){alert('Nom du chef requis');return}const dataUrl=signCanvas.current.toDataURL('image/png');const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===signJob.id);if(!jj){closeSignModal();return}
-// Calcul automatique du forfait : duree = (now - billingStart) - pause si pause apres billingStart
-const _toM=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
-const billStart=_toM(jj.billingStart);let newForfait=null;
-if(billStart!=null){const now=new Date();let endMin=now.getHours()*60+now.getMinutes();if(endMin<billStart)endMin+=1440;let dur=endMin-billStart;const te=(nd.timeEntries||[]).find(t=>t.empId===jj.employeeId&&t.date===jj.date&&(t.breakStart||t.pauseStart||t.pauseMin));if(te){const pS=_toM(te.breakStart||te.pauseStart);const pE=_toM(te.breakEnd||te.pauseEnd);const pM=(pS!=null&&pE!=null&&pE>pS)?(pE-pS):(te.pauseMin?Number(te.pauseMin):0);if(pS!=null&&pS>=billStart)dur-=pM}
-dur=Math.max(0,dur);const durH=dur/60;
-const m=(nd.machines||[]).find(mm=>mm.id===jj.machineId);
-if(m&&m.type==='Citerne'){newForfait=durH<=4?'Demi-journee':'Journee'}
-else{if(durH<=2)newForfait='2h';else if(durH<=4)newForfait='4h';else if(durH<=6)newForfait='6h';else newForfait='8h'}
-if(newForfait){jj.forfaitType=newForfait;const p=getForfaitPrice(nd,jj.clientId,m,newForfait,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}}
-jj.signature={dataUrl,signedBy:signName.trim(),signedAt:new Date().toISOString(),autoForfait:newForfait||null};
-save(nd);closeSignModal();alert('✓ Signature enregistree !'+(newForfait?'\nForfait calcule : '+newForfait:''))};
+// Applique le forfait pre-calcule (visible dans la modal)
+if(signForfait&&signForfait.label){jj.forfaitType=signForfait.label;const m=(nd.machines||[]).find(mm=>mm.id===jj.machineId);const p=getForfaitPrice(nd,jj.clientId,m,signForfait.label,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}
+jj.signature={dataUrl,signedBy:signName.trim(),signedAt:new Date().toISOString(),autoForfait:signForfait?signForfait.label:null,durationMin:signForfait?signForfait.durMin:null,pauseDeducted:signForfait?signForfait.pauseDeducted:0};
+save(nd);closeSignModal();alert('✓ Signature enregistree !')};
 const selectedMachine=(data.machines||[]).find(m=>m.id===selectedMachineId)||null;
 const submitEntFait=()=>{if(!selectedMachineId||!entFaitDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.interventions)nd.interventions=[];nd.interventions.push({id:uid(),date:fmtDateISO(new Date()),machineId:selectedMachineId,type:'entretien',description:entFaitDesc,employeeId:empId,partsUsed:[],laborHours:0,laborCost:0,totalCost:0,status:'done',notes:'Declare par chauffeur'});save(nd);setShowEntFait(false);setEntFaitDesc('');alert('Entretien enregistre !')};
 const submitEntFaire=()=>{if(!selectedMachineId||!entFaireDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.maintenanceRequests)nd.maintenanceRequests=[];nd.maintenanceRequests.push({id:uid(),date:fmtDateISO(new Date()),reportedBy:empId,machineId:selectedMachineId,description:entFaireDesc,status:'new'});save(nd);setShowEntFaire(false);setEntFaireDesc('');alert('Demande envoyee !')};
@@ -2696,8 +2707,18 @@ return(
 <div style={{display:'flex',flexDirection:'column',gap:14}}>
   <div style={{background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:'10px 14px',fontSize:13,color:'#15803d'}}>
     <div style={{fontWeight:700,marginBottom:4}}>📋 Chantier termine</div>
-    <div style={{fontSize:12,color:'#166534'}}>{signJob.location||'Sans lieu'}{signJob.billingStart?' • '+signJob.billingStart:''}</div>
+    <div style={{fontSize:12,color:'#166534'}}>{signJob.location||'Sans lieu'}{signJob.billingStart?' • Debut '+signJob.billingStart:''}{signForfait?' • Fin '+signForfait.endHHmm:''}</div>
   </div>
+  {signForfait&&<div style={{background:'#eff6ff',border:'2px solid #93c5fd',borderRadius:10,padding:'12px 14px'}}>
+    <div style={{fontSize:11,fontWeight:800,color:'#1d4ed8',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>💰 Forfait calcule automatiquement</div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
+      <div style={{fontSize:28,fontWeight:800,color:'#1d4ed8',lineHeight:1}}>{signForfait.label}</div>
+      <div style={{fontSize:12,color:'#1e40af',textAlign:'right'}}>
+        <div>Duree : <b>{Math.floor(signForfait.durMin/60)}h{String(signForfait.durMin%60).padStart(2,'0')}</b></div>
+        {signForfait.pauseDeducted>0&&<div style={{color:'#d97706'}}>(pause {signForfait.pauseDeducted}min deduite)</div>}
+      </div>
+    </div>
+  </div>}
   <div>
     <label style={empLabelS}>👤 Nom du chef de chantier</label>
     <input style={empInputS} value={signName} onChange={e=>setSignName(e.target.value)} placeholder="Nom et prenom"/>
