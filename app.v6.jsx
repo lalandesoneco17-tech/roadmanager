@@ -244,7 +244,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.21-5</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.27-1</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1575,6 +1575,16 @@ return(<div style={{padding:'4px 8px',display:'flex',alignItems:'center',gap:5,f
 <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:12,fontWeight:600}}>🏠 Affecter au depot</button>
 </div>
+{j.signature&&j.signature.dataUrl&&<div style={{marginTop:8,background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:10}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:8}}>
+<div>
+<div style={{fontWeight:800,color:'#15803d',fontSize:14}}>✍️ Signature chef de chantier</div>
+<div style={{fontSize:12,color:'#166534',marginTop:2}}>Par <b>{j.signature.signedBy}</b> le {new Date(j.signature.signedAt).toLocaleString('fr-FR')}</div>
+</div>
+<button onClick={()=>{if(confirm('Supprimer la signature ?')){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){delete jj.signature;save(nd)}}}} style={{background:'#fff',border:'1px solid #ef4444',color:'#dc2626',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700}}>🗑 Supprimer</button>
+</div>
+<img src={j.signature.dataUrl} alt="Signature" style={{maxWidth:'100%',background:'#fff',border:'1px solid '+C.border,borderRadius:8,padding:6,display:'block'}}/>
+</div>}
 </div>}
 </div>)})}
 </div>
@@ -2356,6 +2366,19 @@ const[entFaitDesc,setEntFaitDesc]=useState('');
 const[showEntFaire,setShowEntFaire]=useState(false);
 const[entFaireDesc,setEntFaireDesc]=useState('');
 const[showEquip,setShowEquip]=useState(false);
+// Signature chef de chantier
+const[signJob,setSignJob]=useState(null);
+const[signName,setSignName]=useState('');
+const signCanvas=useRef(null);const signCtx=useRef(null);const signDrawing=useRef(false);const signHasInk=useRef(false);
+useEffect(()=>{if(!signJob||!signCanvas.current)return;const c=signCanvas.current;const dpr=window.devicePixelRatio||1;const rect=c.getBoundingClientRect();c.width=rect.width*dpr;c.height=rect.height*dpr;const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#0f172a';ctx.lineWidth=2.5;signCtx.current=ctx;signHasInk.current=false},[signJob]);
+const _signPos=e=>{const c=signCanvas.current;if(!c)return null;const r=c.getBoundingClientRect();const t=e.touches&&e.touches[0]?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}};
+const signStart=e=>{e.preventDefault();const p=_signPos(e);if(!p||!signCtx.current)return;signDrawing.current=true;signCtx.current.beginPath();signCtx.current.moveTo(p.x,p.y)};
+const signMove=e=>{if(!signDrawing.current)return;e.preventDefault();const p=_signPos(e);if(!p||!signCtx.current)return;signCtx.current.lineTo(p.x,p.y);signCtx.current.stroke();signHasInk.current=true};
+const signEnd=()=>{signDrawing.current=false};
+const signClear=()=>{if(!signCanvas.current||!signCtx.current)return;const c=signCanvas.current;signCtx.current.clearRect(0,0,c.width,c.height);signHasInk.current=false};
+const openSignModal=(j)=>{setSignJob(j);setSignName(j.siteManager||'')};
+const closeSignModal=()=>{setSignJob(null);setSignName('')};
+const signSave=()=>{if(!signJob)return;if(!signHasInk.current){alert('La signature est vide');return}if(!signName.trim()){alert('Nom du chef requis');return}const dataUrl=signCanvas.current.toDataURL('image/png');const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===signJob.id);if(jj){jj.signature={dataUrl,signedBy:signName.trim(),signedAt:new Date().toISOString()};save(nd)}closeSignModal();alert('✓ Signature enregistree !')};
 const selectedMachine=(data.machines||[]).find(m=>m.id===selectedMachineId)||null;
 const submitEntFait=()=>{if(!selectedMachineId||!entFaitDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.interventions)nd.interventions=[];nd.interventions.push({id:uid(),date:fmtDateISO(new Date()),machineId:selectedMachineId,type:'entretien',description:entFaitDesc,employeeId:empId,partsUsed:[],laborHours:0,laborCost:0,totalCost:0,status:'done',notes:'Declare par chauffeur'});save(nd);setShowEntFait(false);setEntFaitDesc('');alert('Entretien enregistre !')};
 const submitEntFaire=()=>{if(!selectedMachineId||!entFaireDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.maintenanceRequests)nd.maintenanceRequests=[];nd.maintenanceRequests.push({id:uid(),date:fmtDateISO(new Date()),reportedBy:empId,machineId:selectedMachineId,description:entFaireDesc,status:'new'});save(nd);setShowEntFaire(false);setEntFaireDesc('');alert('Demande envoyee !')};
@@ -2658,6 +2681,27 @@ return(
   <button onClick={()=>setShowEquip(false)} style={{...empBtnP(C.accent),marginTop:12}}>Fermer</button>
 </div>
 </Mod>)})()}
+{signJob&&<Mod title="✍️ Signature du chef de chantier" onClose={closeSignModal} width={520}>
+<div style={{display:'flex',flexDirection:'column',gap:14}}>
+  <div style={{background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:'10px 14px',fontSize:13,color:'#15803d'}}>
+    <div style={{fontWeight:700,marginBottom:4}}>📋 Chantier termine</div>
+    <div style={{fontSize:12,color:'#166534'}}>{signJob.location||'Sans lieu'}{signJob.billingStart?' • '+signJob.billingStart:''}</div>
+  </div>
+  <div>
+    <label style={empLabelS}>👤 Nom du chef de chantier</label>
+    <input style={empInputS} value={signName} onChange={e=>setSignName(e.target.value)} placeholder="Nom et prenom"/>
+  </div>
+  <div>
+    <label style={empLabelS}>✍️ Signature (utilisez le doigt ou la souris)</label>
+    <canvas ref={signCanvas} style={{width:'100%',height:200,background:'#fff',border:'2px dashed #cbd5e1',borderRadius:10,touchAction:'none',cursor:'crosshair',display:'block'}} onMouseDown={signStart} onMouseMove={signMove} onMouseUp={signEnd} onMouseLeave={signEnd} onTouchStart={signStart} onTouchMove={signMove} onTouchEnd={signEnd}/>
+    <button onClick={signClear} style={{marginTop:8,padding:'8px 14px',fontSize:13,fontWeight:600,borderRadius:8,border:'2px solid #cbd5e1',background:'#fff',color:'#475569',cursor:'pointer'}}>🗑 Effacer la signature</button>
+  </div>
+  <div style={{display:'flex',gap:10,marginTop:8}}>
+    <button onClick={closeSignModal} style={empBtnS}>Annuler</button>
+    <button onClick={signSave} style={empBtnP(C.accent)}>✓ Valider la signature</button>
+  </div>
+</div>
+</Mod>}
 {tab==='heures'&&<React.Fragment>
 {(()=>{const statusLbl=status==='on'?'En activite':status==='pause'?'En pause':'Debauche';const statusCol=status==='on'?C.green:status==='pause'?C.orange:C.muted;const todayWorked=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+(status==='on'&&lastEntry&&lastEntry.startTime?Math.max(0,(new Date().getHours()*60+new Date().getMinutes())-(()=>{const[h,m]=lastEntry.startTime.split(':').map(Number);return h*60+m})()):0);return(
 <div style={{background:C.card,borderRadius:14,padding:16,border:'1px solid '+C.border,marginBottom:16,boxShadow:'0 2px 8px rgba(0,0,0,.04)'}}>
@@ -2775,7 +2819,7 @@ return(
 <div key={j.id} style={{background:j.ack?'#dcfce7':isDepot?'#f8fafc':C.card,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(isDepot?'#64748b':m?MC[m.type]||C.accent:C.muted)}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
 <div style={{fontWeight:700,fontSize:16}}>{isDepot?<span style={{color:'#64748b'}}>{depotObj?depotObj.name:'Depot'} — {j.depotActivity||'Depot'}{j.depotDescription?' ('+j.depotDescription+')':''}</span>:(cl?cl.name:'Pas de client')}{!isDepot&&j.agencyName?' - '+j.agencyName:''}</div>
-{!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>}
+{!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}><span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>{!isDepot&&(j.signature?<span title={'Signe par '+j.signature.signedBy+' le '+new Date(j.signature.signedAt).toLocaleString('fr-FR')} style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:C.accent+'20',color:C.accent,cursor:'help'}}>✓ Signe</span>:<button onClick={()=>openSignModal(j)} style={{padding:'6px 12px',borderRadius:6,fontSize:13,fontWeight:700,background:'#fff',border:'2px solid '+C.accent,color:C.accent,cursor:'pointer'}}>✍️ Faire signer le chef</button>)}</div>}
 </div>
 <div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
 {j.siteManager&&<div style={{color:C.dim,fontSize:14,marginTop:2}}>{j.siteManager} {j.siteManagerPhone&&<a href={'tel:'+j.siteManagerPhone} style={{color:C.accent}}>{j.siteManagerPhone}</a>}</div>}
