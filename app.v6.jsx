@@ -244,7 +244,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.27-4</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.27-5</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -2369,6 +2369,8 @@ const[showEquip,setShowEquip]=useState(false);
 // Signature chef de chantier
 const[signJob,setSignJob]=useState(null);
 const[signName,setSignName]=useState('');
+const[signPhone,setSignPhone]=useState('');
+const[signEmail,setSignEmail]=useState('');
 const[signForfait,setSignForfait]=useState(null);
 const signCanvas=useRef(null);const signCtx=useRef(null);const signDrawing=useRef(false);const signHasInk=useRef(false);
 useEffect(()=>{if(!signJob||!signCanvas.current)return;const c=signCanvas.current;const dpr=window.devicePixelRatio||1;const rect=c.getBoundingClientRect();c.width=rect.width*dpr;c.height=rect.height*dpr;const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#0f172a';ctx.lineWidth=2.5;signCtx.current=ctx;signHasInk.current=false},[signJob]);
@@ -2379,6 +2381,11 @@ const signEnd=()=>{signDrawing.current=false};
 const signClear=()=>{if(!signCanvas.current||!signCtx.current)return;const c=signCanvas.current;signCtx.current.clearRect(0,0,c.width,c.height);signHasInk.current=false};
 const openSignModal=(j)=>{
   setSignJob(j);setSignName(j.siteManager||'');
+  // Pre-remplit telephone / email depuis le siteManager du client si deja connu
+  const _cl=(data.clients||[]).find(c=>c.id===j.clientId);
+  const _sm=_cl&&_cl.siteManagers?(_cl.siteManagers.find(s=>s.name===j.siteManager&&(s.agency||'')===(j.agencyName||''))||_cl.siteManagers.find(s=>s.name===j.siteManager)):null;
+  setSignPhone((_sm&&_sm.phone)||j.siteManagerPhone||'');
+  setSignEmail((_sm&&_sm.email)||j.siteManagerEmail||'');
   // Calcul du forfait au moment de l'ouverture (visible avant signature)
   const _toM=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
   const billStart=_toM(j.billingStart);
@@ -2395,11 +2402,17 @@ const openSignModal=(j)=>{
   else{if(durH<=2)label='2h';else if(durH<=4)label='4h';else if(durH<=6)label='6h';else label='8h'}
   setSignForfait({label,durMin:dur,pauseDeducted,endHHmm:String(Math.floor((endMin%1440)/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0')});
 };
-const closeSignModal=()=>{setSignJob(null);setSignName('');setSignForfait(null)};
+const closeSignModal=()=>{setSignJob(null);setSignName('');setSignPhone('');setSignEmail('');setSignForfait(null)};
 const signSave=()=>{if(!signJob)return;if(!signHasInk.current){alert('La signature est vide');return}if(!signName.trim()){alert('Nom du chef requis');return}const dataUrl=signCanvas.current.toDataURL('image/png');const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===signJob.id);if(!jj){closeSignModal();return}
 // Applique le forfait pre-calcule (visible dans la modal)
 if(signForfait&&signForfait.label){jj.forfaitType=signForfait.label;const m=(nd.machines||[]).find(mm=>mm.id===jj.machineId);const p=getForfaitPrice(nd,jj.clientId,m,signForfait.label,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}
-jj.signature={dataUrl,signedBy:signName.trim(),signedAt:new Date().toISOString(),autoForfait:signForfait?signForfait.label:null,durationMin:signForfait?signForfait.durMin:null,pauseDeducted:signForfait?signForfait.pauseDeducted:0};
+// Met a jour le chantier
+jj.siteManager=signName.trim();
+jj.siteManagerPhone=signPhone.trim();
+jj.siteManagerEmail=signEmail.trim();
+// Met a jour ou cree le siteManager dans le client (avec agence si renseignee)
+if(jj.clientId){const _cl=nd.clients.find(c=>c.id===jj.clientId);if(_cl){if(!_cl.siteManagers)_cl.siteManagers=[];const _existing=_cl.siteManagers.find(s=>s.name===signName.trim()&&(s.agency||'')===(jj.agencyName||''));if(_existing){if(signPhone.trim())_existing.phone=signPhone.trim();if(signEmail.trim())_existing.email=signEmail.trim()}else{_cl.siteManagers.push({name:signName.trim(),phone:signPhone.trim(),email:signEmail.trim(),agency:jj.agencyName||''})}}}
+jj.signature={dataUrl,signedBy:signName.trim(),signedAt:new Date().toISOString(),autoForfait:signForfait?signForfait.label:null,durationMin:signForfait?signForfait.durMin:null,pauseDeducted:signForfait?signForfait.pauseDeducted:0,phone:signPhone.trim(),email:signEmail.trim()};
 save(nd);closeSignModal();alert('✓ Signature enregistree !')};
 const selectedMachine=(data.machines||[]).find(m=>m.id===selectedMachineId)||null;
 const submitEntFait=()=>{if(!selectedMachineId||!entFaitDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.interventions)nd.interventions=[];nd.interventions.push({id:uid(),date:fmtDateISO(new Date()),machineId:selectedMachineId,type:'entretien',description:entFaitDesc,employeeId:empId,partsUsed:[],laborHours:0,laborCost:0,totalCost:0,status:'done',notes:'Declare par chauffeur'});save(nd);setShowEntFait(false);setEntFaitDesc('');alert('Entretien enregistre !')};
@@ -2722,6 +2735,10 @@ return(
   <div>
     <label style={empLabelS}>👤 Nom du chef de chantier</label>
     <input style={empInputS} value={signName} onChange={e=>setSignName(e.target.value)} placeholder="Nom et prenom"/>
+  </div>
+  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+    <div><label style={empLabelS}>📞 Telephone</label><input type="tel" style={empInputS} value={signPhone} onChange={e=>setSignPhone(e.target.value)} placeholder="06 12 34 56 78"/></div>
+    <div><label style={empLabelS}>📧 Email facture</label><input type="email" style={empInputS} value={signEmail} onChange={e=>setSignEmail(e.target.value)} placeholder="contact@..."/></div>
   </div>
   <div>
     <label style={empLabelS}>✍️ Signature (utilisez le doigt ou la souris)</label>
