@@ -246,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.28-1</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.28-2</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -4229,6 +4229,7 @@ const App=()=>{
 const savedSession=(()=>{try{const s=localStorage.getItem('rm-session');return s?JSON.parse(s):null}catch(e){return null}})();
 const[screen,setScreen]=useState(savedSession?savedSession.screen:'login');const[data,setData]=useState(null);const[empId,setEmpId]=useState(savedSession?savedSession.empId:null);
 const savingRef=useRef(false);
+const savesInProgress=useRef(0);
 const undoStack=useRef([]);
 const dataRef=useRef(data);
 useEffect(()=>{dataRef.current=data},[data]);
@@ -4246,8 +4247,8 @@ teQueueFlush().catch(()=>{});
 const pollId=setInterval(()=>{if(savingRef.current)return;loadData().then(d=>{if(!d)return;setData(prev=>{if(!prev)return d;const merged={...d};merged.timeEntries=mergeArraysById(prev.timeEntries,d.timeEntries);merged.panneReports=mergeArraysById(prev.panneReports,d.panneReports);return merged})}).catch(()=>{})},30000);
 return()=>{unsub();unsubTE();clearInterval(pollId)};
 },[]);
-const doSave=useCallback(async nd=>{savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);await teSyncChanges(data,nd);await saveData(nd);setTimeout(()=>{savingRef.current=false},2000)},[data]);
-const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savingRef.current=true;setData(prevData);await saveData(prevData);setTimeout(()=>{savingRef.current=false},2000)},[]);
+const doSave=useCallback(async nd=>{savesInProgress.current++;savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);try{await teSyncChanges(data,nd);await saveData(nd)}catch(e){console.warn('save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},2000)}},[data]);
+const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savesInProgress.current++;savingRef.current=true;setData(prevData);try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},2000)}},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
 if(!data)return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh'}}><div style={{fontSize:48}}>&#128679;</div></div>);
