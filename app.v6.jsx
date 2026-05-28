@@ -59,6 +59,8 @@ const easterDate=(y)=>{const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4
 const getFrenchHoliday=(dateStr)=>{if(!dateStr)return null;const d=new Date(dateStr);if(isNaN(d))return null;const y=d.getFullYear();const md=String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');const fixed={'01-01':'Jour de l\'An','05-01':'Fete du Travail','05-08':'Victoire 1945','07-14':'Fete nationale','08-15':'Assomption','11-01':'Toussaint','11-11':'Armistice','12-25':'Noel'};if(fixed[md])return fixed[md];const eDay=Math.floor(easterDate(y).getTime()/86400000);const dDay=Math.floor(d.getTime()/86400000);if(dDay===eDay+1)return'Lundi de Paques';if(dDay===eDay+39)return'Ascension';if(dDay===eDay+50)return'Lundi de Pentecote';return null};
 // Heures de référence selon le jour de la semaine : lun-jeu = 8h, ven = 7h, sam/dim = 0
 const getDayRefHours=(dateStr)=>{if(!dateStr)return 0;const d=new Date(dateStr);if(isNaN(d))return 0;const dow=d.getDay();if(dow===0||dow===6)return 0;if(dow===5)return 7;return 8};
+// Compression image : redimensionne (largeur max) + JPEG qualité → dataUrl base64
+const compressImage=(file,maxW=1280,quality=0.75)=>new Promise((resolve,reject)=>{if(!file)return reject('no file');const reader=new FileReader();reader.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;if(w>maxW){h=h*maxW/w;w=maxW}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);try{resolve(c.toDataURL('image/jpeg',quality))}catch(e){reject(e)}};img.onerror=reject;img.src=reader.result};reader.onerror=reject;reader.readAsDataURL(file)});
 const calcDiffMin=(start,end)=>{if(!start||!end)return 0;const[sh,sm]=start.split(':').map(Number);const[eh,em]=end.split(':').map(Number);let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=24*60;return m};
 const parseCoords=s=>{if(!s)return null;const p=String(s).split(',').map(Number);return p.length===2&&!isNaN(p[0])&&!isNaN(p[1])?p:null};
 const haversine=(a,b)=>{const R=6371,toR=n=>n*Math.PI/180;const dLat=toR(b[0]-a[0]),dLon=toR(b[1]-a[1]);const x=Math.sin(dLat/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))};
@@ -244,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.27-5</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.28-1</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -841,7 +843,7 @@ const[viewDetail,setViewDetail]=useState(null);
 const[showForm,setShowForm]=useState(false);
 const[formJob,setFormJob]=useState(null);
 const[formEmpId,setFormEmpId]=useState('');
-const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);const[showPlanMap,setShowPlanMap]=useState(false);const[planMapShowVeille,setPlanMapShowVeille]=useState(false);const[planMapShowSurlend,setPlanMapShowSurlend]=useState(false);
+const[showDepotForm,setShowDepotForm]=useState(false);const[openDetails,setOpenDetails]=useState({});const[dupJobId,setDupJobId]=useState(null);const[dupDays,setDupDays]=useState(1);const[addEmpOpen,setAddEmpOpen]=useState(null);const[mapModal,setMapModal]=useState(null);const[showPlanMap,setShowPlanMap]=useState(false);const[planMapShowVeille,setPlanMapShowVeille]=useState(false);const[planMapShowSurlend,setPlanMapShowSurlend]=useState(false);const[photoLightbox,setPhotoLightbox]=useState(null);
 // Autocomplete géocodage Nominatim — déclenché en live (debounce 400ms) au fil de la frappe
 // Les résultats sont biaisés sur la zone des dépôts SONECO (priorité aux lieux proches) et triés
 // par distance au dépôt le plus proche. Coordonnées stockées en _geocodedGps (champ caché).
@@ -1269,6 +1271,7 @@ return null;
 <button onClick={()=>{setDupJobId(j.id);setDupDays(1)}} style={{background:'none',border:'2px solid #d97706',borderRadius:6,fontSize:12,cursor:'pointer',padding:'3px 6px',color:'#d97706',fontWeight:600}} title="Dupliquer sur plusieurs jours">D</button>
 <button onClick={e=>{e.stopPropagation();setWirtgenTargetMach(grp.m?grp.m.name:'');if(wirtgenRef.current)wirtgenRef.current.click()}} title="Importer ZIP Wirtgen pour ce chantier" style={{background:'#fff7ed',color:'#9a3412',border:'2px solid #f97316',borderRadius:6,padding:'3px 7px',cursor:'pointer',fontSize:13,fontWeight:700}}>📥</button>
 <button onClick={e=>{e.stopPropagation();const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const machName=m?m.name:(grp.m?grp.m.name:'');const mr=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(machName)&&r.date===j.date);const emp2=(data.employees||[]).find(x=>x.id===j.employeeId);const exp={exportedAt:new Date().toISOString(),chantier:j,client:cl||null,machine:m||grp.m||null,chauffeur:emp2?{id:emp2.id,name:emp2.name}:null,rapportWirtgen:mr||null};const blob=new Blob([JSON.stringify(exp,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='rapport_'+(machName||'chantier').replace(/\s/g,'_')+'_'+j.date+'.json';a.click();URL.revokeObjectURL(url)}} title="Exporter ce chantier + son rapport Wirtgen en JSON" style={{background:'none',border:'2px solid #0891b2',borderRadius:6,fontSize:13,cursor:'pointer',padding:'3px 7px',color:'#0891b2',fontWeight:700}}>📤</button>
+<label style={{background:'none',border:'2px solid #ea580c',borderRadius:6,fontSize:13,cursor:'pointer',padding:'3px 7px',color:'#ea580c',fontWeight:700,position:'relative'}} title={'Ajouter des photos pour ce chantier'+(j.photos&&j.photos.length?' ('+j.photos.length+' deja)':'')}>📷{j.photos&&j.photos.length>0&&<span style={{position:'absolute',top:-6,right:-6,background:'#ea580c',color:'#fff',borderRadius:'50%',minWidth:16,height:16,fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{j.photos.length}</span>}<input type="file" accept="image/*" multiple style={{display:'none'}} onChange={async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;try{const dataUrls=await Promise.all(files.map(f=>compressImage(f,1280,0.75)));const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){if(!jj.photos)jj.photos=[];dataUrls.forEach(u=>{jj.photos.push({dataUrl:u,addedAt:new Date().toISOString()})});save(nd);alert('✓ '+dataUrls.length+' photo(s) ajoutee(s)')}}catch(err){alert('Erreur upload : '+err)}e.target.value=''}}/></label>
 <button onClick={()=>toggleDetail(j.id)} style={{background:'none',border:'2px solid '+C.border,borderRadius:6,fontSize:14,cursor:'pointer',padding:'4px 8px',color:C.dim,fontWeight:600}}>{openDetails[j.id]?'▲':'▼'}</button>
 <button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:C.red,fontWeight:700}}>×</button>
 </div>
@@ -1575,6 +1578,15 @@ return(<div style={{padding:'4px 8px',display:'flex',alignItems:'center',gap:5,f
 <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:12,fontWeight:600}}>🏠 Affecter au depot</button>
 </div>
+{j.photos&&j.photos.length>0&&<div style={{marginTop:8,background:'#fff7ed',border:'2px solid #fdba74',borderRadius:10,padding:10}}>
+<div style={{fontWeight:800,color:'#9a3412',fontSize:13,marginBottom:8}}>📷 Photos du chantier ({j.photos.length})</div>
+<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8}}>
+{j.photos.map((ph,pi)=>(<div key={pi} style={{position:'relative'}}>
+<img src={ph.dataUrl} alt="" style={{width:'100%',height:90,objectFit:'cover',borderRadius:8,cursor:'pointer',border:'1px solid '+C.border}} onClick={()=>setPhotoLightbox(ph.dataUrl)}/>
+<button onClick={()=>{if(confirm('Supprimer cette photo ?')){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&jj.photos){jj.photos.splice(pi,1);save(nd)}}}} style={{position:'absolute',top:4,right:4,background:'#fff',border:'1px solid #ef4444',color:'#dc2626',borderRadius:6,padding:'2px 6px',cursor:'pointer',fontSize:10,fontWeight:700,lineHeight:1}}>🗑</button>
+</div>))}
+</div>
+</div>}
 {j.signature&&j.signature.dataUrl&&<div style={{marginTop:8,background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:10}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:8}}>
 <div>
@@ -1618,6 +1630,7 @@ return(
 </div>
 {showForm&&<MissionForm data={data} save={save} job={formJob} onClose={()=>setShowForm(false)} selectedDate={selDate} selectedEmpId={formEmpId}/>}
 {mapModal&&<MapModal {...mapModal} onClose={()=>setMapModal(null)}/>}
+{photoLightbox&&<div onClick={()=>setPhotoLightbox(null)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.92)',zIndex:5000,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}><img src={photoLightbox} alt="" style={{maxWidth:'95vw',maxHeight:'95vh',objectFit:'contain'}}/><button onClick={e=>{e.stopPropagation();setPhotoLightbox(null)}} style={{position:'absolute',top:20,right:20,background:'#fff',border:'none',borderRadius:'50%',width:44,height:44,fontSize:22,cursor:'pointer',fontWeight:700,boxShadow:'0 2px 10px rgba(0,0,0,.3)'}}>×</button></div>}
 {geocodeAuto&&geocodeAuto.anchorRect&&(()=>{
   const ar=geocodeAuto.anchorRect;
   // Position du popup juste sous l'input ; si pas assez de place en bas, on remonte
@@ -2366,6 +2379,7 @@ const[entFaitDesc,setEntFaitDesc]=useState('');
 const[showEntFaire,setShowEntFaire]=useState(false);
 const[entFaireDesc,setEntFaireDesc]=useState('');
 const[showEquip,setShowEquip]=useState(false);
+const[empPhotoLightbox,setEmpPhotoLightbox]=useState(null);
 // Signature chef de chantier
 const[signJob,setSignJob]=useState(null);
 const[signName,setSignName]=useState('');
@@ -2716,6 +2730,7 @@ return(
   <button onClick={()=>setShowEquip(false)} style={{...empBtnP(C.accent),marginTop:12}}>Fermer</button>
 </div>
 </Mod>)})()}
+{empPhotoLightbox&&<div onClick={()=>setEmpPhotoLightbox(null)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.92)',zIndex:5000,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}><img src={empPhotoLightbox} alt="" style={{maxWidth:'95vw',maxHeight:'95vh',objectFit:'contain'}}/><button onClick={e=>{e.stopPropagation();setEmpPhotoLightbox(null)}} style={{position:'absolute',top:20,right:20,background:'#fff',border:'none',borderRadius:'50%',width:44,height:44,fontSize:22,cursor:'pointer',fontWeight:700,boxShadow:'0 2px 10px rgba(0,0,0,.3)'}}>×</button></div>}
 {signJob&&<Mod title="✍️ Signature du chef de chantier" onClose={closeSignModal} width={520}>
 <div style={{display:'flex',flexDirection:'column',gap:14}}>
   <div style={{background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:'10px 14px',fontSize:13,color:'#15803d'}}>
@@ -2881,6 +2896,12 @@ return(
 {arrN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrN}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
 </div>}
 {(()=>{const cols=(data.jobs||[]).filter(jj=>jj.id!==j.id&&jj.date===j.date&&jj.employeeId&&jj.employeeId!==empId&&j.location&&jj.location&&jj.location.trim().toLowerCase()===j.location.trim().toLowerCase());if(!cols.length)return null;return(<div style={{marginTop:6,padding:'6px 8px',background:'#f0f9ff',borderRadius:8,border:'1px solid #bae6fd'}}><div style={{fontSize:12,color:'#0369a1',fontWeight:700,marginBottom:4}}>{'👷 Equipe sur ce chantier :'}</div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{cols.map(jj=>{const ce=(data.employees||[]).find(e=>e.id===jj.employeeId);return ce?<span key={jj.id} style={{background:'#0891b2',borderRadius:6,padding:'3px 10px',fontSize:13,fontWeight:700,color:'#fff'}}>{ce.name}</span>:null})}</div></div>);})()}
+{j.photos&&j.photos.length>0&&<div style={{marginTop:8,padding:'8px 10px',background:'#fff7ed',borderRadius:10,border:'2px solid #fdba74'}}>
+<div style={{fontSize:12,color:'#9a3412',fontWeight:800,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.3px'}}>📷 Photos du chantier ({j.photos.length})</div>
+<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
+{j.photos.map((ph,pi)=>(<img key={pi} src={ph.dataUrl} alt="" style={{width:'100%',aspectRatio:'1/1',objectFit:'cover',borderRadius:8,cursor:'pointer',border:'1px solid #fdba74'}} onClick={()=>setEmpPhotoLightbox(ph.dataUrl)}/>))}
+</div>
+</div>}
 </div>)})}
 </div>
 </div>)})}
