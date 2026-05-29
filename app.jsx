@@ -246,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-3</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-4</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -3519,8 +3519,8 @@ const selStation=stations.find(s=>s.id===selStationId)||null;
 const stationProducts=products.filter(p=>p.stationId===selStationId);
 const addStation=()=>{if(!newStationName.trim()){alert('Nom requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stations)nd.stations=[];const id=uid();nd.stations.push({id,name:newStationName.trim(),type:newStationType,location:newStationLocation.trim(),createdAt:new Date().toISOString()});save(nd);setSelStationId(id);setShowAddStation(false);setNewStationName('');setNewStationLocation('');setNewStationType('station')};
 const delStation=()=>{if(!selStation||!confirm('Supprimer "'+selStation.name+'" et tous ses produits ?'))return;const nd=JSON.parse(JSON.stringify(data));nd.stations=(nd.stations||[]).filter(s=>s.id!==selStation.id);nd.stationProducts=(nd.stationProducts||[]).filter(p=>p.stationId!==selStation.id);nd.stationMovements=(nd.stationMovements||[]).filter(m=>m.stationId!==selStation.id);save(nd);const rest=(nd.stations||[]);setSelStationId(rest[0]?rest[0].id:'')};
-const addProductOpen=()=>setEditProduct({id:null,stationId:selStationId,name:'',unit:'L',quantity:0,unitPrice:0,minStock:1,supplier:''});
-const saveProduct=()=>{if(!editProduct.name.trim()){alert('Nom requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stationProducts)nd.stationProducts=[];if(editProduct.id){const idx=nd.stationProducts.findIndex(p=>p.id===editProduct.id);if(idx>=0)nd.stationProducts[idx]={...editProduct,name:editProduct.name.trim(),quantity:Number(editProduct.quantity)||0,unitPrice:Number(editProduct.unitPrice)||0,minStock:Number(editProduct.minStock)||0}}else{nd.stationProducts.push({...editProduct,id:uid(),name:editProduct.name.trim(),quantity:Number(editProduct.quantity)||0,unitPrice:Number(editProduct.unitPrice)||0,minStock:Number(editProduct.minStock)||0,history:[]})}save(nd);setEditProduct(null)};
+const addProductOpen=()=>setEditProduct({id:null,stationId:selStationId,name:'',unit:'L',category:'piste',quantity:0,unitPrice:0,minStock:1,supplier:''});
+const saveProduct=()=>{if(!editProduct.name.trim()){alert('Nom requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stationProducts)nd.stationProducts=[];if(editProduct.id){const idx=nd.stationProducts.findIndex(p=>p.id===editProduct.id);if(idx>=0)nd.stationProducts[idx]={...editProduct,name:editProduct.name.trim(),category:editProduct.category||'piste',quantity:Number(editProduct.quantity)||0,unitPrice:Number(editProduct.unitPrice)||0,minStock:Number(editProduct.minStock)||0}}else{nd.stationProducts.push({...editProduct,id:uid(),name:editProduct.name.trim(),category:editProduct.category||'piste',quantity:Number(editProduct.quantity)||0,unitPrice:Number(editProduct.unitPrice)||0,minStock:Number(editProduct.minStock)||0,history:[]})}save(nd);setEditProduct(null)};
 const delProduct=(pid)=>{if(!confirm('Supprimer ce produit ?'))return;const nd=JSON.parse(JSON.stringify(data));nd.stationProducts=(nd.stationProducts||[]).filter(p=>p.id!==pid);save(nd)};
 const moveStock=(p,type)=>{const qte=prompt((type==='in'?'Quantité à ajouter ?':'Quantité à retirer ?'));if(!qte)return;const n=Number(qte);if(!n||n<=0)return;if(type==='out'&&n>p.quantity){alert('Stock insuffisant');return}const nd=JSON.parse(JSON.stringify(data));const pp=nd.stationProducts.find(x=>x.id===p.id);if(pp){pp.quantity=type==='in'?(pp.quantity||0)+n:Math.max(0,(pp.quantity||0)-n);if(!nd.stationMovements)nd.stationMovements=[];nd.stationMovements.unshift({id:uid(),stationId:p.stationId,productId:p.id,type,qty:n,unitPrice:pp.unitPrice||0,date:new Date().toISOString(),userId:'admin',reason:''});nd.stationMovements=nd.stationMovements.slice(0,1000);save(nd)}};
 const totalValue=stationProducts.reduce((s,p)=>s+(p.quantity||0)*(p.unitPrice||0),0);
@@ -3556,19 +3556,7 @@ return(<div>
 <button onClick={delStation} style={{marginLeft:'auto',background:'#fff',color:C.red,border:'2px solid '+C.red,padding:'10px 14px',borderRadius:8,fontWeight:600,cursor:'pointer',fontSize:13}}>🗑 Supprimer cette station</button>
 </div>
 {/* Tableau produits */}
-{stationProducts.length===0?<div style={{padding:24,textAlign:'center',background:'#f8fafc',borderRadius:10,border:'1px dashed '+C.border,color:C.dim}}>Aucun produit dans cette station.<br/>Cliquez sur « + Produit » pour en ajouter.</div>:<div style={{background:'#fff',borderRadius:10,border:'1px solid '+C.border,overflow:'hidden'}}>
-<table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-<thead><tr style={{background:ELEPHANT_BLUE_BG}}>
-<th style={{padding:'10px',textAlign:'left',color:ELEPHANT_BLUE,fontWeight:800,fontSize:11,textTransform:'uppercase'}}>Produit</th>
-<th style={{padding:'10px',textAlign:'right',color:ELEPHANT_BLUE,fontWeight:800,fontSize:11,textTransform:'uppercase'}}>Stock</th>
-<th style={{padding:'10px',textAlign:'center',color:ELEPHANT_BLUE,fontWeight:800,fontSize:11,textTransform:'uppercase'}}>Unite</th>
-<th style={{padding:'10px',textAlign:'right',color:ELEPHANT_BLUE,fontWeight:800,fontSize:11,textTransform:'uppercase'}}>Prix U.</th>
-<th style={{padding:'10px',textAlign:'right',color:ELEPHANT_BLUE,fontWeight:800,fontSize:11,textTransform:'uppercase'}}>Valeur</th>
-<th style={{padding:'10px',textAlign:'right',color:ELEPHANT_BLUE,fontWeight:800,fontSize:11,textTransform:'uppercase'}}>Min</th>
-<th style={{padding:'10px',textAlign:'center',color:ELEPHANT_BLUE,fontWeight:800,fontSize:11,textTransform:'uppercase'}}>Actions</th>
-</tr></thead>
-<tbody>
-{stationProducts.map(p=>{const low=p.minStock>0&&p.quantity<=p.minStock;return(<tr key={p.id} style={{borderTop:'1px solid '+C.border,background:low?'#fef2f2':'#fff'}}>
+{stationProducts.length===0?<div style={{padding:24,textAlign:'center',background:'#f8fafc',borderRadius:10,border:'1px dashed '+C.border,color:C.dim}}>Aucun produit dans cette station.<br/>Cliquez sur « + Produit » pour en ajouter.</div>:(()=>{const cats=[{k:'piste',l:'🛣 Produits piste',color:'#0891b2'},{k:'rouleaux',l:'🌀 Produits rouleaux',color:'#7c3aed'}];const rowFor=p=>{const low=p.minStock>0&&p.quantity<=p.minStock;return(<tr key={p.id} style={{borderTop:'1px solid '+C.border,background:low?'#fef2f2':'#fff'}}>
 <td style={{padding:'10px',fontWeight:700}}>{p.name}{p.supplier?<div style={{fontSize:11,color:C.dim,fontWeight:400}}>{p.supplier}</div>:null}</td>
 <td style={{padding:'10px',textAlign:'right',fontWeight:800,color:low?C.red:ELEPHANT_BLUE,fontSize:15}}>{p.quantity}</td>
 <td style={{padding:'10px',textAlign:'center',color:C.dim}}>{p.unit}</td>
@@ -3578,10 +3566,29 @@ return(<div>
 <td style={{padding:'10px',textAlign:'center',whiteSpace:'nowrap'}}>
 <button onClick={()=>moveStock(p,'in')} style={{background:'#dcfce7',border:'1px solid #16a34a',color:'#15803d',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:13,marginRight:4}} title="Entree stock">+</button>
 <button onClick={()=>moveStock(p,'out')} style={{background:'#fee2e2',border:'1px solid #dc2626',color:'#991b1b',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:13,marginRight:4}} title="Sortie stock">−</button>
-<button onClick={()=>setEditProduct({...p})} style={{background:'#fff',border:'1px solid '+C.dim,color:C.dim,padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:11,marginRight:4}} title="Editer">✎</button>
+<button onClick={()=>setEditProduct({...p,category:p.category||'piste'})} style={{background:'#fff',border:'1px solid '+C.dim,color:C.dim,padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:11,marginRight:4}} title="Editer">✎</button>
 <button onClick={()=>delProduct(p.id)} style={{background:'#fff',border:'1px solid '+C.red,color:C.red,padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:11}} title="Supprimer">🗑</button>
-</td></tr>)})}
-</tbody></table></div>}
+</td></tr>)};
+return(<div style={{display:'flex',flexDirection:'column',gap:14}}>
+{cats.map(cat=>{const list=stationProducts.filter(p=>(p.category||'piste')===cat.k);if(list.length===0)return null;const catTotal=list.reduce((s,p)=>s+(p.quantity||0)*(p.unitPrice||0),0);return(<div key={cat.k} style={{background:'#fff',borderRadius:10,border:'2px solid '+cat.color+'40',overflow:'hidden'}}>
+<div style={{padding:'10px 14px',background:cat.color+'12',borderBottom:'1px solid '+cat.color+'30',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<div style={{color:cat.color,fontWeight:800,fontSize:14,textTransform:'uppercase',letterSpacing:'0.5px'}}>{cat.l}</div>
+<div style={{fontSize:12,color:C.dim,fontWeight:600}}>{list.length} produit(s) · <b style={{color:cat.color}}>{fmtMoney(catTotal)}</b></div>
+</div>
+<table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+<thead><tr style={{background:'#f8fafc'}}>
+<th style={{padding:'8px',textAlign:'left',color:C.dim,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Produit</th>
+<th style={{padding:'8px',textAlign:'right',color:C.dim,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Stock</th>
+<th style={{padding:'8px',textAlign:'center',color:C.dim,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Unite</th>
+<th style={{padding:'8px',textAlign:'right',color:C.dim,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Prix U.</th>
+<th style={{padding:'8px',textAlign:'right',color:C.dim,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Valeur</th>
+<th style={{padding:'8px',textAlign:'right',color:C.dim,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Min</th>
+<th style={{padding:'8px',textAlign:'center',color:C.dim,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Actions</th>
+</tr></thead>
+<tbody>{list.map(rowFor)}</tbody>
+</table></div>)})}
+{cats.every(cat=>stationProducts.filter(p=>(p.category||'piste')===cat.k).length===0)&&<div style={{padding:24,textAlign:'center',background:'#f8fafc',borderRadius:10,border:'1px dashed '+C.border,color:C.dim}}>Aucun produit dans cette station.</div>}
+</div>);})()}
 </div>}
 {selStation&&showMovements&&<div style={{background:'#fff',borderRadius:10,border:'1px solid '+C.border,overflow:'hidden'}}>
 <div style={{padding:'12px 16px',background:ELEPHANT_BLUE_BG,color:ELEPHANT_BLUE,fontWeight:800,fontSize:14}}>📜 Historique des mouvements — {selStation.name}</div>
@@ -3601,6 +3608,10 @@ return(<div>
 </Mod>}
 {/* Modal edit produit */}
 {editProduct&&<Mod title={editProduct.id?'✎ Modifier produit':'+ Nouveau produit'} onClose={()=>setEditProduct(null)} width={440}>
+<Fl label="Categorie"><div style={{display:'flex',gap:8}}>
+<button onClick={()=>setEditProduct({...editProduct,category:'piste'})} style={{flex:1,padding:'10px',borderRadius:8,border:'2px solid #0891b2',background:(editProduct.category||'piste')==='piste'?'#0891b2':'#fff',color:(editProduct.category||'piste')==='piste'?'#fff':'#0891b2',fontWeight:700,cursor:'pointer'}}>🛣 Piste</button>
+<button onClick={()=>setEditProduct({...editProduct,category:'rouleaux'})} style={{flex:1,padding:'10px',borderRadius:8,border:'2px solid #7c3aed',background:editProduct.category==='rouleaux'?'#7c3aed':'#fff',color:editProduct.category==='rouleaux'?'#fff':'#7c3aed',fontWeight:700,cursor:'pointer'}}>🌀 Rouleaux</button>
+</div></Fl>
 <Fl label="Nom du produit"><input style={inputStyle} value={editProduct.name} onChange={e=>setEditProduct({...editProduct,name:e.target.value})} placeholder="Ex: Shampoing carrosserie"/></Fl>
 <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10}}>
 <Fl label="Quantite actuelle"><input type="number" style={inputStyle} value={editProduct.quantity} onChange={e=>setEditProduct({...editProduct,quantity:e.target.value})}/></Fl>
