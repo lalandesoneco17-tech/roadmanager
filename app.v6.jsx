@@ -246,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-5</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-6</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -3513,11 +3513,12 @@ const[showAddStation,setShowAddStation]=useState(false);
 const[newStationName,setNewStationName]=useState('');
 const[newStationType,setNewStationType]=useState('station');
 const[newStationLocation,setNewStationLocation]=useState('');
+const[newStationCopyFrom,setNewStationCopyFrom]=useState('');
 const[editProduct,setEditProduct]=useState(null);
 const[showMovements,setShowMovements]=useState(false);
 const selStation=stations.find(s=>s.id===selStationId)||null;
 const stationProducts=products.filter(p=>p.stationId===selStationId);
-const addStation=()=>{if(!newStationName.trim()){alert('Nom requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stations)nd.stations=[];const id=uid();nd.stations.push({id,name:newStationName.trim(),type:newStationType,location:newStationLocation.trim(),createdAt:new Date().toISOString()});save(nd);setSelStationId(id);setShowAddStation(false);setNewStationName('');setNewStationLocation('');setNewStationType('station')};
+const addStation=()=>{if(!newStationName.trim()){alert('Nom requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stations)nd.stations=[];const id=uid();nd.stations.push({id,name:newStationName.trim(),type:newStationType,location:newStationLocation.trim(),createdAt:new Date().toISOString()});if(newStationCopyFrom){if(!nd.stationProducts)nd.stationProducts=[];const sourceProds=(nd.stationProducts||[]).filter(p=>p.stationId===newStationCopyFrom);sourceProds.forEach(sp=>{nd.stationProducts.push({...sp,id:uid(),stationId:id,quantity:0,history:[]})})}save(nd);setSelStationId(id);setShowAddStation(false);setNewStationName('');setNewStationLocation('');setNewStationType('station');setNewStationCopyFrom('')};
 const delStation=()=>{if(!selStation||!confirm('Supprimer "'+selStation.name+'" et tous ses produits ?'))return;const nd=JSON.parse(JSON.stringify(data));nd.stations=(nd.stations||[]).filter(s=>s.id!==selStation.id);nd.stationProducts=(nd.stationProducts||[]).filter(p=>p.stationId!==selStation.id);nd.stationMovements=(nd.stationMovements||[]).filter(m=>m.stationId!==selStation.id);save(nd);const rest=(nd.stations||[]);setSelStationId(rest[0]?rest[0].id:'')};
 const addProductOpen=()=>setEditProduct({id:null,stationId:selStationId,name:'',unit:'L',category:'piste',color:'#0891b2',quantity:0,unitPrice:0,minStock:1,supplier:''});
 const saveProduct=()=>{if(!editProduct.name.trim()){alert('Nom requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stationProducts)nd.stationProducts=[];if(editProduct.id){const idx=nd.stationProducts.findIndex(p=>p.id===editProduct.id);if(idx>=0)nd.stationProducts[idx]={...editProduct,name:editProduct.name.trim(),category:editProduct.category||'piste',quantity:Number(editProduct.quantity)||0,unitPrice:Number(editProduct.unitPrice)||0,minStock:Number(editProduct.minStock)||0}}else{nd.stationProducts.push({...editProduct,id:uid(),name:editProduct.name.trim(),category:editProduct.category||'piste',quantity:Number(editProduct.quantity)||0,unitPrice:Number(editProduct.unitPrice)||0,minStock:Number(editProduct.minStock)||0,history:[]})}save(nd);setEditProduct(null)};
@@ -3604,6 +3605,10 @@ return(<div style={{display:'flex',flexDirection:'column',gap:14}}>
 </div></Fl>
 <Fl label="Nom"><input style={inputStyle} value={newStationName} onChange={e=>setNewStationName(e.target.value)} placeholder={newStationType==='depot'?'Ex: Depot 16':'Ex: Station Cognac'}/></Fl>
 <Fl label="Localisation (optionnel)"><input style={inputStyle} value={newStationLocation} onChange={e=>setNewStationLocation(e.target.value)} placeholder="Adresse, ville..."/></Fl>
+{stations.length>0&&<Fl label="Copier les produits depuis (optionnel)"><select style={inputStyle} value={newStationCopyFrom} onChange={e=>setNewStationCopyFrom(e.target.value)}>
+<option value="">-- Aucun (station vide) --</option>
+{stations.map(s=>{const nb=products.filter(p=>p.stationId===s.id).length;return<option key={s.id} value={s.id} disabled={nb===0}>{s.type==='depot'?'🏭':'🚿'} {s.name} ({nb} produit{nb>1?'s':''}{nb===0?' — vide':''})</option>})}
+</select>{newStationCopyFrom&&<div style={{fontSize:12,color:'#15803d',marginTop:6,fontWeight:600}}>✓ Les produits seront copies avec quantite remise a 0</div>}</Fl>}
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={addStation} style={{flex:1,background:ELEPHANT_BLUE,color:'#fff',border:'none',padding:'12px',borderRadius:8,fontWeight:700,cursor:'pointer'}}>Creer</button><button onClick={()=>setShowAddStation(false)} style={{flex:1,background:'#fff',color:C.dim,border:'2px solid '+C.border,padding:'12px',borderRadius:8,fontWeight:600,cursor:'pointer'}}>Annuler</button></div>
 </Mod>}
 {/* Modal edit produit */}
