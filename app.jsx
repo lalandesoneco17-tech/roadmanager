@@ -246,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-9</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-10</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -3733,15 +3733,14 @@ return(<div style={{maxWidth:1000,margin:'0 auto',padding:14,fontSize:14}}>
 {myStations.map(s=>(<button key={s.id} onClick={()=>setSelStationId(s.id)} style={{background:selStationId===s.id?ELEPHANT_BLUE:ELEPHANT_BLUE_BG,color:selStationId===s.id?'#fff':ELEPHANT_BLUE,border:'2px solid '+ELEPHANT_BLUE,padding:'10px 16px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer'}}>{s.type==='depot'?'🏭':'🚿'} {s.name}</button>))}
 </div>
 {selStation&&!showMovements&&<div>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:14}}>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
 <div style={{background:'#fff',border:'2px solid '+ELEPHANT_BLUE_LIGHT,borderRadius:10,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',marginBottom:2}}>📦 Produits</div><div style={{fontSize:20,fontWeight:800,color:ELEPHANT_BLUE}}>{stationProducts.length}</div></div>
-<div style={{background:'#fff',border:'2px solid '+ELEPHANT_BLUE_LIGHT,borderRadius:10,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',marginBottom:2}}>💰 Valeur</div><div style={{fontSize:20,fontWeight:800,color:ELEPHANT_BLUE}}>{fmtMoney(totalValue)}</div></div>
 <div style={{background:'#fff',border:'2px solid '+(lowStock>0?'#dc2626':'#86efac'),borderRadius:10,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',marginBottom:2}}>⚠ Stock bas</div><div style={{fontSize:20,fontWeight:800,color:lowStock>0?'#dc2626':'#16a34a'}}>{lowStock}</div></div>
 </div>
-{cats.map(cat=>{const list=stationProducts.filter(p=>(p.category||'piste')===cat.k);if(list.length===0)return null;const catTotal=list.reduce((s,p)=>s+(p.quantity||0)*(p.unitPrice||0),0);return(<div key={cat.k} style={{background:'#fff',borderRadius:10,border:'2px solid '+cat.color+'40',overflow:'hidden',marginBottom:12}}>
+{cats.map(cat=>{const list=stationProducts.filter(p=>(p.category||'piste')===cat.k);if(list.length===0)return null;return(<div key={cat.k} style={{background:'#fff',borderRadius:10,border:'2px solid '+cat.color+'40',overflow:'hidden',marginBottom:12}}>
 <div style={{padding:'10px 14px',background:cat.color+'12',borderBottom:'1px solid '+cat.color+'30',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
 <div style={{color:cat.color,fontWeight:800,fontSize:14,textTransform:'uppercase',letterSpacing:'0.5px'}}>{cat.l}</div>
-<div style={{fontSize:12,color:C.dim,fontWeight:600}}>{list.length} produit(s) · <b style={{color:cat.color}}>{fmtMoney(catTotal)}</b></div>
+<div style={{fontSize:12,color:C.dim,fontWeight:600}}>{list.length} produit(s)</div>
 </div>
 <div style={{padding:0}}>{list.map(p=>{const low=p.minStock>0&&p.quantity<=p.minStock;return(<div key={p.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderBottom:'1px solid '+C.border,background:low?'#fef2f2':'#fff',flexWrap:'wrap'}}>
 {p.color&&<div style={{width:16,height:16,borderRadius:'50%',background:p.color,border:'2px solid #fff',boxShadow:'0 0 0 1px '+C.border,flexShrink:0}}/>}
