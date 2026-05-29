@@ -246,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-7</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-8</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -320,7 +320,7 @@ const CtBadge=({dateStr,label})=>{if(!dateStr)return null;const diff=Math.floor(
 
 const LoginScreen=({onLogin,data})=>{
 const[id,setId]=useState('');const[pw,setPw]=useState('');const[err,setErr]=useState('');
-const submit=()=>{if(id===(data.adminUser||'admin')&&pw===(data.adminPass||'admin')){onLogin('admin',null);return}const emp=(data.employees||[]).find(e=>e.login===id);if(emp&&(data.empPasswords||{})[emp.id]===pw){onLogin('employee',emp.id);return}setErr('Identifiant ou mot de passe incorrect')};
+const submit=()=>{if(id===(data.adminUser||'admin')&&pw===(data.adminPass||'admin')){onLogin('admin',null);return}const emp=(data.employees||[]).find(e=>e.login===id);if(emp&&(data.empPasswords||{})[emp.id]===pw){onLogin('employee',emp.id);return}const su=(data.stationUsers||[]).find(u=>u.login===id&&u.password===pw);if(su){onLogin('station',su.id);return}setErr('Identifiant ou mot de passe incorrect')};
 return(
 <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#004d3a,#008965)'}}>
 <div style={{background:'#fff',borderRadius:16,padding:40,width:380,maxWidth:'90vw',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
@@ -3519,6 +3519,11 @@ const[showMovements,setShowMovements]=useState(false);
 const[transferProduct,setTransferProduct]=useState(null);
 const[transferDest,setTransferDest]=useState('');
 const[transferQty,setTransferQty]=useState('');
+const[showUsers,setShowUsers]=useState(false);
+const[editUser,setEditUser]=useState(null);
+const stationUsers=data.stationUsers||[];
+const saveStationUser=()=>{if(!editUser.name.trim()||!editUser.login.trim()||!editUser.password.trim()){alert('Nom, login et mot de passe requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stationUsers)nd.stationUsers=[];const conflict=nd.stationUsers.find(u=>u.login===editUser.login.trim()&&u.id!==editUser.id);if(conflict){alert('Login deja utilise');return}if(editUser.id){const idx=nd.stationUsers.findIndex(u=>u.id===editUser.id);if(idx>=0)nd.stationUsers[idx]={...editUser,name:editUser.name.trim(),login:editUser.login.trim()}}else{nd.stationUsers.push({...editUser,id:uid(),name:editUser.name.trim(),login:editUser.login.trim(),createdAt:new Date().toISOString()})}save(nd);setEditUser(null)};
+const delStationUser=(id)=>{if(!confirm('Supprimer cet utilisateur ?'))return;const nd=JSON.parse(JSON.stringify(data));nd.stationUsers=(nd.stationUsers||[]).filter(u=>u.id!==id);save(nd)};
 const selStation=stations.find(s=>s.id===selStationId)||null;
 const stationProducts=products.filter(p=>p.stationId===selStationId);
 const addStation=()=>{if(!newStationName.trim()){alert('Nom requis');return}const nd=JSON.parse(JSON.stringify(data));if(!nd.stations)nd.stations=[];const id=uid();nd.stations.push({id,name:newStationName.trim(),type:newStationType,location:newStationLocation.trim(),createdAt:new Date().toISOString()});if(newStationCopyFrom){if(!nd.stationProducts)nd.stationProducts=[];const sourceProds=(nd.stationProducts||[]).filter(p=>p.stationId===newStationCopyFrom);sourceProds.forEach(sp=>{nd.stationProducts.push({...sp,id:uid(),stationId:id,quantity:0,history:[]})})}save(nd);setSelStationId(id);setShowAddStation(false);setNewStationName('');setNewStationLocation('');setNewStationType('station');setNewStationCopyFrom('')};
@@ -3542,14 +3547,15 @@ return(<div>
 </div>
 <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
 <button onClick={()=>setShowAddStation(true)} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>+ Nouvelle station</button>
-<button onClick={()=>setShowMovements(!showMovements)} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showMovements?'← Stock':'📜 Mouvements'}</button>
+<button onClick={()=>{setShowMovements(!showMovements);setShowUsers(false)}} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showMovements?'← Stock':'📜 Mouvements'}</button>
+<button onClick={()=>{setShowUsers(!showUsers);setShowMovements(false)}} style={{background:showUsers?'rgba(255,255,255,.4)':'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>👷 Utilisateurs ({stationUsers.length})</button>
 </div>
 </div>
 {/* Selecteur stations */}
 {stations.length>0?<div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
 {stations.map(s=>(<button key={s.id} onClick={()=>setSelStationId(s.id)} style={{background:selStationId===s.id?ELEPHANT_BLUE:ELEPHANT_BLUE_BG,color:selStationId===s.id?'#fff':ELEPHANT_BLUE,border:'2px solid '+ELEPHANT_BLUE,padding:'10px 16px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',boxShadow:selStationId===s.id?'0 2px 6px rgba(0,102,179,.3)':'none'}}>{s.type==='depot'?'🏭':'🚿'} {s.name}{s.location?' • '+s.location:''}</button>))}
 </div>:<div style={{padding:30,textAlign:'center',background:ELEPHANT_BLUE_BG,borderRadius:12,border:'2px dashed '+ELEPHANT_BLUE_LIGHT,color:ELEPHANT_BLUE,marginBottom:16}}><div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Aucune station configuree</div><div style={{fontSize:13,opacity:.8}}>Cliquez sur « + Nouvelle station » en haut a droite pour commencer.</div></div>}
-{selStation&&!showMovements&&<div>
+{selStation&&!showMovements&&!showUsers&&<div>
 {/* Stats station */}
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
 <div style={{background:'#fff',border:'2px solid '+ELEPHANT_BLUE_LIGHT,borderRadius:10,padding:'12px 14px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>📦 Produits</div><div style={{fontSize:22,fontWeight:800,color:ELEPHANT_BLUE}}>{stationProducts.length}</div></div>
@@ -3597,6 +3603,20 @@ return(<div style={{display:'flex',flexDirection:'column',gap:14}}>
 {cats.every(cat=>stationProducts.filter(p=>(p.category||'piste')===cat.k).length===0)&&<div style={{padding:24,textAlign:'center',background:'#f8fafc',borderRadius:10,border:'1px dashed '+C.border,color:C.dim}}>Aucun produit dans cette station.</div>}
 </div>);})()}
 </div>}
+{showUsers&&<div style={{background:'#fff',borderRadius:10,border:'1px solid '+C.border,overflow:'hidden'}}>
+<div style={{padding:'12px 16px',background:ELEPHANT_BLUE_BG,color:ELEPHANT_BLUE,fontWeight:800,fontSize:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<span>👷 Utilisateurs des stations</span>
+<button onClick={()=>setEditUser({id:null,name:'',login:'',password:'',stationIds:[]})} style={{background:ELEPHANT_BLUE,color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>+ Nouvel utilisateur</button>
+</div>
+{stationUsers.length===0?<div style={{padding:24,textAlign:'center',color:C.dim}}>Aucun utilisateur configure. Cliquez sur « + Nouvel utilisateur ».</div>:<table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+<thead><tr style={{background:'#f8fafc'}}><th style={{padding:'10px',textAlign:'left',fontSize:11,fontWeight:700,color:C.dim,textTransform:'uppercase'}}>Nom</th><th style={{padding:'10px',textAlign:'left',fontSize:11,fontWeight:700,color:C.dim,textTransform:'uppercase'}}>Login</th><th style={{padding:'10px',textAlign:'left',fontSize:11,fontWeight:700,color:C.dim,textTransform:'uppercase'}}>Stations affectees</th><th style={{padding:'10px',textAlign:'center',fontSize:11,fontWeight:700,color:C.dim,textTransform:'uppercase'}}>Actions</th></tr></thead>
+<tbody>{stationUsers.map(u=>{const userStations=stations.filter(s=>(u.stationIds||[]).includes(s.id));return(<tr key={u.id} style={{borderTop:'1px solid '+C.border}}>
+<td style={{padding:'10px',fontWeight:700}}>{u.name}</td>
+<td style={{padding:'10px',color:C.dim,fontFamily:'monospace'}}>{u.login}</td>
+<td style={{padding:'10px'}}>{userStations.length===0?<span style={{color:C.red,fontSize:12,fontWeight:600}}>⚠ Aucune station</span>:<div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{userStations.map(s=><span key={s.id} style={{background:ELEPHANT_BLUE_BG,color:ELEPHANT_BLUE,padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700}}>{s.type==='depot'?'🏭':'🚿'} {s.name}</span>)}</div>}</td>
+<td style={{padding:'10px',textAlign:'center',whiteSpace:'nowrap'}}><button onClick={()=>setEditUser({...u,stationIds:[...(u.stationIds||[])]})} style={{background:'#fff',border:'1px solid '+C.dim,color:C.dim,padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:12,marginRight:6,fontWeight:700}}>✎ Modifier</button><button onClick={()=>delStationUser(u.id)} style={{background:'#fff',border:'1px solid '+C.red,color:C.red,padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700}}>🗑</button></td>
+</tr>)})}</tbody></table>}
+</div>}
 {selStation&&showMovements&&<div style={{background:'#fff',borderRadius:10,border:'1px solid '+C.border,overflow:'hidden'}}>
 <div style={{padding:'12px 16px',background:ELEPHANT_BLUE_BG,color:ELEPHANT_BLUE,fontWeight:800,fontSize:14}}>📜 Historique des mouvements — {selStation.name}</div>
 {stationMovs.length===0?<div style={{padding:24,textAlign:'center',color:C.dim}}>Aucun mouvement enregistre.</div>:<table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
@@ -3641,6 +3661,22 @@ return(<div style={{display:'flex',flexDirection:'column',gap:14}}>
 <Fl label="Fournisseur (optionnel)"><input style={inputStyle} value={editProduct.supplier||''} onChange={e=>setEditProduct({...editProduct,supplier:e.target.value})}/></Fl>
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveProduct} style={{flex:1,background:ELEPHANT_BLUE,color:'#fff',border:'none',padding:'12px',borderRadius:8,fontWeight:700,cursor:'pointer'}}>Enregistrer</button><button onClick={()=>setEditProduct(null)} style={{flex:1,background:'#fff',color:C.dim,border:'2px solid '+C.border,padding:'12px',borderRadius:8,fontWeight:600,cursor:'pointer'}}>Annuler</button></div>
 </Mod>}
+{editUser&&<Mod title={editUser.id?'✎ Modifier utilisateur':'+ Nouvel utilisateur station'} onClose={()=>setEditUser(null)} width={460}>
+<Fl label="Nom complet"><input style={inputStyle} value={editUser.name} onChange={e=>setEditUser({...editUser,name:e.target.value})} placeholder="Ex: Jean Dupont"/></Fl>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+<Fl label="Login (identifiant)"><input style={inputStyle} value={editUser.login} onChange={e=>setEditUser({...editUser,login:e.target.value.toLowerCase().replace(/[^a-z0-9]/g,'')})} placeholder="jean.dupont"/></Fl>
+<Fl label="Mot de passe"><input style={inputStyle} value={editUser.password} onChange={e=>setEditUser({...editUser,password:e.target.value})} placeholder="********"/></Fl>
+</div>
+<Fl label="Stations affectees (cocher celles que l'utilisateur peut gerer)">
+{stations.length===0?<div style={{color:C.dim,fontSize:13,padding:10}}>Aucune station configuree. Creez d'abord les stations.</div>:<div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:220,overflow:'auto',border:'1px solid '+C.border,borderRadius:8,padding:8,background:'#fafbfc'}}>
+{stations.map(s=>{const checked=(editUser.stationIds||[]).includes(s.id);return(<label key={s.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:checked?ELEPHANT_BLUE_BG:'#fff',border:'1px solid '+(checked?ELEPHANT_BLUE:C.border),borderRadius:8,cursor:'pointer',fontWeight:600,fontSize:13}}>
+<input type="checkbox" checked={checked} onChange={e=>{const ids=new Set(editUser.stationIds||[]);if(e.target.checked)ids.add(s.id);else ids.delete(s.id);setEditUser({...editUser,stationIds:[...ids]})}}/>
+<span>{s.type==='depot'?'🏭':'🚿'} {s.name}{s.location?' • '+s.location:''}</span>
+</label>)})}
+</div>}
+</Fl>
+<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={saveStationUser} style={{flex:1,background:ELEPHANT_BLUE,color:'#fff',border:'none',padding:'12px',borderRadius:8,fontWeight:700,cursor:'pointer'}}>Enregistrer</button><button onClick={()=>setEditUser(null)} style={{flex:1,background:'#fff',color:C.dim,border:'2px solid '+C.border,padding:'12px',borderRadius:8,fontWeight:600,cursor:'pointer'}}>Annuler</button></div>
+</Mod>}
 {transferProduct&&<Mod title="↗ Transfert de stock" onClose={()=>setTransferProduct(null)} width={440}>
 <div style={{background:ELEPHANT_BLUE_BG,border:'2px solid '+ELEPHANT_BLUE,borderRadius:10,padding:'12px 16px',marginBottom:14}}>
 <div style={{fontSize:10,fontWeight:800,color:ELEPHANT_BLUE,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>📦 Source</div>
@@ -3652,6 +3688,93 @@ return(<div style={{display:'flex',flexDirection:'column',gap:14}}>
 {stations.filter(s=>s.id!==selStationId).map(s=><option key={s.id} value={s.id}>{s.type==='depot'?'🏭':'🚿'} {s.name}{s.location?' • '+s.location:''}</option>)}
 </select>{transferDest&&(()=>{const dst=stations.find(s=>s.id===transferDest);const existing=(products||[]).find(p=>p.stationId===transferDest&&p.name.toLowerCase()===transferProduct.name.toLowerCase()&&(p.category||'piste')===(transferProduct.category||'piste')&&(p.unit||'')===(transferProduct.unit||''));return<div style={{fontSize:12,marginTop:6,padding:'6px 10px',background:existing?'#dbeafe':'#dcfce7',borderRadius:6,color:existing?'#1e40af':'#15803d',fontWeight:600}}>{existing?'✓ Produit deja present chez '+dst.name+' (stock actuel '+existing.quantity+' '+(existing.unit||'')+') — la quantite sera ajoutee':'✨ Le produit sera cree chez '+dst.name+' avec la quantite transferee'}</div>})()}</Fl>
 <Fl label={'Quantite a transferer ('+transferProduct.unit+')'}><input type="number" style={inputStyle} value={transferQty} onChange={e=>setTransferQty(e.target.value)} min="1" max={transferProduct.quantity} placeholder={'Max '+transferProduct.quantity}/></Fl>
+<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={doTransfer} style={{flex:1,background:ELEPHANT_BLUE,color:'#fff',border:'none',padding:'12px',borderRadius:8,fontWeight:700,cursor:'pointer'}}>↗ Transferer</button><button onClick={()=>setTransferProduct(null)} style={{flex:1,background:'#fff',color:C.dim,border:'2px solid '+C.border,padding:'12px',borderRadius:8,fontWeight:600,cursor:'pointer'}}>Annuler</button></div>
+</Mod>}
+</div>);
+};
+
+// ======== STATION USER VIEW (laveur) ========
+const StationUserView=({data,save,userId,onLogout})=>{
+const ELEPHANT_BLUE='#0066B3';const ELEPHANT_BLUE_LIGHT='#3399D6';const ELEPHANT_BLUE_BG='#E6F2FB';
+const user=(data.stationUsers||[]).find(u=>u.id===userId);
+const allStations=data.stations||[];
+const products=data.stationProducts||[];
+const movements=data.stationMovements||[];
+const myStations=user?allStations.filter(s=>(user.stationIds||[]).includes(s.id)):[];
+const[selStationId,setSelStationId]=useState(myStations[0]?myStations[0].id:'');
+const[transferProduct,setTransferProduct]=useState(null);
+const[transferDest,setTransferDest]=useState('');
+const[transferQty,setTransferQty]=useState('');
+const[showMovements,setShowMovements]=useState(false);
+const selStation=myStations.find(s=>s.id===selStationId)||null;
+const stationProducts=products.filter(p=>p.stationId===selStationId);
+const stationMovs=movements.filter(m=>m.stationId===selStationId).slice(0,50);
+const moveStock=(p,type)=>{const qte=prompt(type==='in'?'Quantite a ajouter ?':'Quantite a retirer ?');if(!qte)return;const n=Number(qte);if(!n||n<=0)return;if(type==='out'&&n>p.quantity){alert('Stock insuffisant');return}const nd=JSON.parse(JSON.stringify(data));const pp=nd.stationProducts.find(x=>x.id===p.id);if(pp){pp.quantity=type==='in'?(pp.quantity||0)+n:Math.max(0,(pp.quantity||0)-n);if(!nd.stationMovements)nd.stationMovements=[];nd.stationMovements.unshift({id:uid(),stationId:p.stationId,productId:p.id,type,qty:n,unitPrice:pp.unitPrice||0,date:new Date().toISOString(),userId:user.id});nd.stationMovements=nd.stationMovements.slice(0,1000);save(nd)}};
+const openTransfer=(p)=>{setTransferProduct(p);setTransferDest('');setTransferQty('')};
+const doTransfer=()=>{if(!transferProduct||!transferDest){alert('Choisir une destination');return}const n=Number(transferQty);if(!n||n<=0){alert('Quantite invalide');return}if(n>transferProduct.quantity){alert('Stock insuffisant');return}const nd=JSON.parse(JSON.stringify(data));const srcP=nd.stationProducts.find(p=>p.id===transferProduct.id);if(!srcP)return;srcP.quantity=Math.max(0,(srcP.quantity||0)-n);const destProd=(nd.stationProducts||[]).find(p=>p.stationId===transferDest&&p.name.toLowerCase()===transferProduct.name.toLowerCase()&&(p.category||'piste')===(transferProduct.category||'piste')&&(p.unit||'')===(transferProduct.unit||''));let destProductId;if(destProd){destProd.quantity=(destProd.quantity||0)+n;destProductId=destProd.id}else{const newId=uid();nd.stationProducts.push({...transferProduct,id:newId,stationId:transferDest,quantity:n,history:[]});destProductId=newId}if(!nd.stationMovements)nd.stationMovements=[];const now=new Date().toISOString();nd.stationMovements.unshift({id:uid(),stationId:transferProduct.stationId,productId:transferProduct.id,type:'transfer_out',qty:n,unitPrice:transferProduct.unitPrice||0,destStationId:transferDest,date:now,userId:user.id});nd.stationMovements.unshift({id:uid(),stationId:transferDest,productId:destProductId,type:'transfer_in',qty:n,unitPrice:transferProduct.unitPrice||0,sourceStationId:transferProduct.stationId,date:now,userId:user.id});nd.stationMovements=nd.stationMovements.slice(0,1000);save(nd);setTransferProduct(null);setTransferDest('');setTransferQty('')};
+const totalValue=stationProducts.reduce((s,p)=>s+(p.quantity||0)*(p.unitPrice||0),0);
+const lowStock=stationProducts.filter(p=>p.minStock>0&&p.quantity<=p.minStock).length;
+if(!user)return(<div style={{padding:40,textAlign:'center'}}><div style={{fontSize:48,marginBottom:12}}>❌</div><div style={{fontSize:16,marginBottom:12}}>Utilisateur introuvable</div><button onClick={onLogout} style={{padding:'10px 20px',background:C.accent,color:'#fff',border:'none',borderRadius:8,cursor:'pointer'}}>Retour</button></div>);
+const cats=[{k:'piste',l:'🛣 Produits piste',color:'#0891b2'},{k:'rouleaux',l:'🌀 Produits rouleaux',color:'#7c3aed'}];
+return(<div style={{maxWidth:1000,margin:'0 auto',padding:14,fontSize:14}}>
+<div style={{background:'linear-gradient(135deg, '+ELEPHANT_BLUE+' 0%, '+ELEPHANT_BLUE_LIGHT+' 100%)',color:'#fff',borderRadius:14,padding:'14px 18px',marginBottom:14,boxShadow:'0 4px 16px rgba(0,102,179,.25)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+<div style={{fontSize:42,lineHeight:1}}>🐘</div>
+<div style={{flex:1,minWidth:160}}>
+<div style={{fontWeight:800,fontSize:20,letterSpacing:'0.5px'}}>Elephant Bleu</div>
+<div style={{fontSize:13,opacity:.95}}>{user.name} • Gestion du stock</div>
+</div>
+<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+<button onClick={()=>setShowMovements(!showMovements)} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 14px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showMovements?'← Stock':'📜 Mouvements'}</button>
+<button onClick={onLogout} title="Deconnexion" style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 14px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:16}}>🚪</button>
+</div>
+</div>
+{myStations.length===0?<div style={{padding:30,textAlign:'center',background:ELEPHANT_BLUE_BG,borderRadius:12,border:'2px dashed '+ELEPHANT_BLUE_LIGHT,color:ELEPHANT_BLUE}}><div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Aucune station affectee</div><div style={{fontSize:13,opacity:.8}}>Contactez l'administrateur pour qu'il vous affecte des stations.</div></div>:<div>
+<div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+{myStations.map(s=>(<button key={s.id} onClick={()=>setSelStationId(s.id)} style={{background:selStationId===s.id?ELEPHANT_BLUE:ELEPHANT_BLUE_BG,color:selStationId===s.id?'#fff':ELEPHANT_BLUE,border:'2px solid '+ELEPHANT_BLUE,padding:'10px 16px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer'}}>{s.type==='depot'?'🏭':'🚿'} {s.name}</button>))}
+</div>
+{selStation&&!showMovements&&<div>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:14}}>
+<div style={{background:'#fff',border:'2px solid '+ELEPHANT_BLUE_LIGHT,borderRadius:10,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',marginBottom:2}}>📦 Produits</div><div style={{fontSize:20,fontWeight:800,color:ELEPHANT_BLUE}}>{stationProducts.length}</div></div>
+<div style={{background:'#fff',border:'2px solid '+ELEPHANT_BLUE_LIGHT,borderRadius:10,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',marginBottom:2}}>💰 Valeur</div><div style={{fontSize:20,fontWeight:800,color:ELEPHANT_BLUE}}>{fmtMoney(totalValue)}</div></div>
+<div style={{background:'#fff',border:'2px solid '+(lowStock>0?'#dc2626':'#86efac'),borderRadius:10,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',marginBottom:2}}>⚠ Stock bas</div><div style={{fontSize:20,fontWeight:800,color:lowStock>0?'#dc2626':'#16a34a'}}>{lowStock}</div></div>
+</div>
+{cats.map(cat=>{const list=stationProducts.filter(p=>(p.category||'piste')===cat.k);if(list.length===0)return null;const catTotal=list.reduce((s,p)=>s+(p.quantity||0)*(p.unitPrice||0),0);return(<div key={cat.k} style={{background:'#fff',borderRadius:10,border:'2px solid '+cat.color+'40',overflow:'hidden',marginBottom:12}}>
+<div style={{padding:'10px 14px',background:cat.color+'12',borderBottom:'1px solid '+cat.color+'30',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<div style={{color:cat.color,fontWeight:800,fontSize:14,textTransform:'uppercase',letterSpacing:'0.5px'}}>{cat.l}</div>
+<div style={{fontSize:12,color:C.dim,fontWeight:600}}>{list.length} produit(s) · <b style={{color:cat.color}}>{fmtMoney(catTotal)}</b></div>
+</div>
+<div style={{padding:0}}>{list.map(p=>{const low=p.minStock>0&&p.quantity<=p.minStock;return(<div key={p.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderBottom:'1px solid '+C.border,background:low?'#fef2f2':'#fff',flexWrap:'wrap'}}>
+{p.color&&<div style={{width:16,height:16,borderRadius:'50%',background:p.color,border:'2px solid #fff',boxShadow:'0 0 0 1px '+C.border,flexShrink:0}}/>}
+<div style={{flex:1,minWidth:140}}>
+<div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
+<div style={{fontSize:12,color:C.dim}}>Stock min : {p.minStock||'-'} {p.unit}</div>
+</div>
+<div style={{display:'flex',flexDirection:'column',alignItems:'center'}}><div style={{fontSize:22,fontWeight:800,color:low?C.red:ELEPHANT_BLUE,lineHeight:1}}>{p.quantity}</div><div style={{fontSize:10,color:C.dim,marginTop:2,textTransform:'uppercase'}}>{p.unit}</div></div>
+<div style={{display:'flex',gap:6}}>
+<button onClick={()=>moveStock(p,'in')} style={{background:'#dcfce7',border:'2px solid #16a34a',color:'#15803d',padding:'10px 16px',borderRadius:8,cursor:'pointer',fontWeight:800,fontSize:18}} title="Entree stock">+</button>
+<button onClick={()=>moveStock(p,'out')} style={{background:'#fee2e2',border:'2px solid #dc2626',color:'#991b1b',padding:'10px 16px',borderRadius:8,cursor:'pointer',fontWeight:800,fontSize:18}} title="Sortie stock">−</button>
+{myStations.length>1&&<button onClick={()=>openTransfer(p)} style={{background:'#eff6ff',border:'2px solid '+ELEPHANT_BLUE,color:ELEPHANT_BLUE,padding:'10px 14px',borderRadius:8,cursor:'pointer',fontWeight:800,fontSize:14}} title="Transferer">↗</button>}
+</div>
+</div>)})}</div>
+</div>)})}
+{stationProducts.length===0&&<div style={{padding:30,textAlign:'center',background:'#f8fafc',borderRadius:10,border:'1px dashed '+C.border,color:C.dim}}>Aucun produit dans cette station.<br/>Contactez l'administrateur.</div>}
+</div>}
+{selStation&&showMovements&&<div style={{background:'#fff',borderRadius:10,border:'1px solid '+C.border,overflow:'hidden'}}>
+<div style={{padding:'12px 16px',background:ELEPHANT_BLUE_BG,color:ELEPHANT_BLUE,fontWeight:800,fontSize:14}}>📜 Mouvements — {selStation.name}</div>
+{stationMovs.length===0?<div style={{padding:24,textAlign:'center',color:C.dim}}>Aucun mouvement.</div>:<div style={{maxHeight:'60vh',overflow:'auto'}}>{stationMovs.map(m=>{const prod=products.find(p=>p.id===m.productId);const otherSta=allStations.find(s=>s.id===(m.type==='transfer_out'?m.destStationId:m.sourceStationId));let label,bg,fg,sign;if(m.type==='in'){label='+ Entree';bg='#dcfce7';fg='#15803d';sign='+'}else if(m.type==='out'){label='− Sortie';bg='#fee2e2';fg='#991b1b';sign='-'}else if(m.type==='transfer_out'){label='↗ → '+(otherSta?otherSta.name:'?');bg='#fef3c7';fg='#9a3412';sign='-'}else if(m.type==='transfer_in'){label='↘ ← '+(otherSta?otherSta.name:'?');bg='#dbeafe';fg='#1d4ed8';sign='+'}else{label=m.type;bg='#f1f5f9';fg=C.dim;sign=''}return(<div key={m.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',borderBottom:'1px solid '+C.border,flexWrap:'wrap',gap:8}}><div style={{flex:1,minWidth:140}}><div style={{fontWeight:700}}>{prod?prod.name:'(supprime)'}</div><div style={{fontSize:11,color:C.dim}}>{new Date(m.date).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</div></div><span style={{background:bg,color:fg,padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap'}}>{label}</span><div style={{fontSize:16,fontWeight:800,color:fg,minWidth:50,textAlign:'right'}}>{sign}{m.qty}</div></div>)})}</div>}
+</div>}
+</div>}
+{transferProduct&&<Mod title="↗ Transfert de stock" onClose={()=>setTransferProduct(null)} width={420}>
+<div style={{background:ELEPHANT_BLUE_BG,border:'2px solid '+ELEPHANT_BLUE,borderRadius:10,padding:'12px 16px',marginBottom:14}}>
+<div style={{fontSize:10,fontWeight:800,color:ELEPHANT_BLUE,textTransform:'uppercase',marginBottom:4}}>📦 Source</div>
+<div style={{fontWeight:800,fontSize:15}}>{transferProduct.name}</div>
+<div style={{fontSize:12,color:C.dim,marginTop:4}}>{selStation?selStation.name:''} • Stock : <b style={{color:ELEPHANT_BLUE}}>{transferProduct.quantity} {transferProduct.unit}</b></div>
+</div>
+<Fl label="Destination"><select style={inputStyle} value={transferDest} onChange={e=>setTransferDest(e.target.value)}>
+<option value="">-- Choisir --</option>
+{myStations.filter(s=>s.id!==selStationId).map(s=><option key={s.id} value={s.id}>{s.type==='depot'?'🏭':'🚿'} {s.name}</option>)}
+</select></Fl>
+<Fl label={'Quantite ('+transferProduct.unit+')'}><input type="number" style={inputStyle} value={transferQty} onChange={e=>setTransferQty(e.target.value)} min="1" max={transferProduct.quantity} placeholder={'Max '+transferProduct.quantity}/></Fl>
 <div style={{display:'flex',gap:8,marginTop:12}}><button onClick={doTransfer} style={{flex:1,background:ELEPHANT_BLUE,color:'#fff',border:'none',padding:'12px',borderRadius:8,fontWeight:700,cursor:'pointer'}}>↗ Transferer</button><button onClick={()=>setTransferProduct(null)} style={{flex:1,background:'#fff',color:C.dim,border:'2px solid '+C.border,padding:'12px',borderRadius:8,fontWeight:600,cursor:'pointer'}}>Annuler</button></div>
 </Mod>}
 </div>);
@@ -4407,12 +4530,13 @@ return()=>{unsub();unsubTE();clearInterval(pollId)};
 },[]);
 const doSave=useCallback(async nd=>{savesInProgress.current++;savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);try{await teSyncChanges(data,nd);await saveData(nd)}catch(e){console.warn('save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},2000)}},[data]);
 const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savesInProgress.current++;savingRef.current=true;setData(prevData);try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},2000)}},[]);
-const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
+const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else if(type==='station'){setScreen('station')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
 if(!data)return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh'}}><div style={{fontSize:48}}>&#128679;</div></div>);
 if(screen==='login')return(<LoginScreen data={data} onLogin={onLogin}/>);
 if(screen==='mechanic')return(<MechanicView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
 if(screen==='employee')return(<EmployeeView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
+if(screen==='station')return(<StationUserView data={data} save={doSave} userId={empId} onLogout={onLogout}/>);
 return(<AdminPanel data={data} save={doSave} onLogout={onLogout} onUndo={doUndo}/>);
 };
 
