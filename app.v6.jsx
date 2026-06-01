@@ -1,7 +1,7 @@
 ﻿const {useState,useEffect,useRef,useCallback,useMemo}=React;
 const C={bg:'#334155',card:'#fff',border:'#cbd5e1',accent:'#008965',green:'#16a34a',red:'#dc2626',orange:'#d97706',purple:'#9333ea',cyan:'#0891b2',text:'#1e293b',dim:'#64748b',muted:'#94a3b8'};
 const MC={Raboteuse:'#008965',Balayeuse:'#16a34a',Citerne:'#0891b2'};
-const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','Transfert':'#9333ea','Demi-journee':'#d97706','Journee':'#16a34a'};
+const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','10h':'#dc2626','Transfert':'#9333ea','Demi-journee':'#d97706','Journee':'#16a34a'};
 const SKEY='roadmanager-v5';
 if(!window.storage||typeof window.storage.get!=='function'){window.storage={get:function(k){try{return Promise.resolve(localStorage.getItem(k))}catch(e){return Promise.resolve(null)}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve()}};}
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
@@ -75,7 +75,7 @@ const getFuelPrice=(data,ft,did)=>{if(did){const d=(data.depots||[]).find(x=>x.i
 const getForfaitKey=(data,cid,machine)=>{const cl=(data.clients||[]).find(x=>x.id===cid);const p=(cl&&cl.forfaitType==='specific')?cid:'standard';if(!machine)return null;if(machine.type==='Raboteuse')return p+'_rab_'+(machine.width||'');if(machine.type==='Balayeuse')return p+'_bal';if(machine.type==='Citerne')return p+'_cit';return null};
 const getForfaitPrice=(data,cid,machine,ft,citOpt,isNight)=>{let k=getForfaitKey(data,cid,machine);if(!k)return 0;if(machine&&machine.type==='Citerne'&&citOpt)k+='_'+citOpt;const g=data.forfaits[k];if(!g)return 0;let pr=g[ft]||0;if(isNight)pr=pr*(1+(data.nightPct||30)/100);return Math.round(pr*100)/100};
 const getTransferPrice=(data,cid,machine,citOpt,isNight)=>getForfaitPrice(data,cid,machine,'Transfert',citOpt,isNight);
-const forfaitHours=f=>({'2h':2,'4h':4,'6h':6,'8h':8,'Demi-journee':4,'Journee':8}[f]||4);
+const forfaitHours=f=>({'2h':2,'4h':4,'6h':6,'8h':8,'10h':10,'Demi-journee':4,'Journee':8}[f]||4);
 
 const TEMPS_PLUS_DEPART=25;
 const TEMPS_PLUS_ARRIVEE=30;
@@ -246,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.01-1</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.01-2</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -382,7 +382,7 @@ const selDep=departOpts.find(o=>o.id===startFrom);
 const selArr=arriveeOpts.find(o=>o.id===endAt);
 const kmA=selDep?selDep.km:0;const minA=selDep?selDep.min:0;
 const kmR=selArr?selArr.km:0;const minR=selArr?selArr.min:0;
-const forfaits=mach&&mach.type==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h'];
+const forfaits=mach&&mach.type==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h','10h'];
 const handleSave=()=>{let nd=JSON.parse(JSON.stringify(data));if(!nd.jobs)nd.jobs=[];let cId=clientId;if(newClient&&!clientId){const nc={id:uid(),name:newClient,forfaitType:'standard',agencies:[],siteManagers:[]};if(!nd.clients)nd.clients=[];nd.clients.push(nc);cId=nc.id}if(siteMgr&&cId){const cl=(nd.clients||[]).find(c=>c.id===cId);if(cl&&!(cl.siteManagers||[]).find(s=>s.name===siteMgr)){if(!cl.siteManagers)cl.siteManagers=[];cl.siteManagers.push({name:siteMgr,phone:siteMgrPh})}}const jb={id:job?job.id:uid(),date:dateStr,employeeId:empId,machineId:machId,clientId:cId,agencyName:agency,siteManager:siteMgr,siteManagerPhone:siteMgrPh,location,gps,forfaitType:forfait,citOption:mach&&mach.type==='Citerne'?citOpt:undefined,priceForfait:Number(price),isNight,hasTransfer,transferPrice:Number(transferPr),billingStart:billStart,startFrom,endAt,machineFuelL:Number(fuelL),machineFuelDepot:fuelDepot,kmAller:kmA,kmRetour:kmR,travelMinAller:minA,travelMinRetour:minR,distanceKm:kmA+kmR,travelMin:minA+minR,sent:job?job.sent:false};const idx=nd.jobs.findIndex(j=>j.id===jb.id);if(idx>=0)nd.jobs[idx]=jb;else nd.jobs.push(jb);save(nd);onClose()};
 const selField=(label,val,setVal,opts,ph)=>(<Fl label={label}><select style={inputStyle} value={val} onChange={e=>setVal(e.target.value)}><option value="">{ph||'--'}</option>{opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></Fl>);
 const RouteCard=({opt,selected,isShortest,onClick})=>{const noGps=!opt.hasCoords;const noData=opt.hasCoords&&opt.km===0&&!parseCoords(gps);const isSel=selected;const isShort=!isSel&&isShortest;const bdr=isSel?'2px solid #008965':isShort?'2px solid #16a34a':noGps?'2px solid #e2e8f0':'2px solid '+C.border;const bg=isSel?'#00896508':isShort?'#16a34a08':noGps?'#f1f5f9':'transparent';const clr=isSel?'#008965':isShort?'#16a34a':noGps?C.muted:C.dim;return(<div onClick={noGps?undefined:onClick} style={{border:bdr,background:bg,borderRadius:8,padding:'8px 12px',cursor:noGps?'not-allowed':'pointer',textAlign:'center',minWidth:90,opacity:noGps?0.5:1,flex:'1 1 auto'}}><div style={{fontSize:13,fontWeight:500,color:clr}}>{opt.name}</div>{noGps?<div style={{fontSize:9,color:C.muted}}>Pas de GPS</div>:!parseCoords(gps)?<div style={{fontSize:16,fontWeight:500,color:clr}}>— km</div>:<React.Fragment><div style={{fontSize:16,fontWeight:700,color:clr}}>{opt.km} km</div><div style={{fontSize:9,color:clr}}>{fmtDuration(opt.min)}</div></React.Fragment>}</div>)};
@@ -1024,7 +1024,7 @@ return(<React.Fragment>
 </select>
 </React.Fragment>)})()}
 <select value={uj.forfaitType||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj&&ujM){jj.forfaitType=e.target.value;const p=getForfaitPrice(nd,uj.clientId,ujM,e.target.value,uj.citOption,uj.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'2px solid '+(uj.forfaitType?FC[uj.forfaitType]||C.accent:C.border),background:uj.forfaitType?(FC[uj.forfaitType]||C.accent)+'15':'#fff',color:uj.forfaitType?FC[uj.forfaitType]||C.accent:C.dim,fontWeight:uj.forfaitType?700:400,minWidth:40}}>
-<option value="">F</option>{(ujMt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=><option key={f} value={f}>{f}</option>)}
+<option value="">F</option>{(ujMt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h','10h']).map(f=><option key={f} value={f}>{f}</option>)}
 </select>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===uj.id);if(jj&&ujM){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,uj.clientId,ujM,uj.citOption,uj.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'4px 8px',borderRadius:6,fontSize:14,border:'2px solid '+(uj.hasTransfer?C.purple:C.muted),background:uj.hasTransfer?C.purple+'20':'transparent',color:uj.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:uj.hasTransfer?700:400}}>{uj.hasTransfer?'T ✓':'+T'}</button>
 <div style={{marginLeft:'auto',display:'flex',gap:4,alignItems:'center'}}>
@@ -1261,7 +1261,7 @@ setTimeout(()=>{const nd2=JSON.parse(JSON.stringify(data));const jj2=nd2.jobs.fi
 return null;
 })()}
 <select value={j.forfaitType||''} onChange={e=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.forfaitType=e.target.value;const p=getForfaitPrice(nd,j.clientId,m,e.target.value,j.citOption,j.isNight);if(p)jj.priceForfait=p;save(nd)}}} style={{fontSize:15,padding:'4px 6px',borderRadius:6,border:'2px solid '+(j.invoiced?'#eab308':j.forfaitType?FC[j.forfaitType]||C.accent:C.border),background:j.invoiced?'#fef9c3':j.forfaitType?(FC[j.forfaitType]||C.accent)+'15':'#fff',color:j.invoiced?'#713f12':j.forfaitType?FC[j.forfaitType]||C.accent:C.dim,fontWeight:j.forfaitType?700:400,minWidth:40}}>
-<option value="">F</option>{(mt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h']).map(f=><option key={f} value={f}>{f}</option>)}
+<option value="">F</option>{(mt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h','10h']).map(f=><option key={f} value={f}>{f}</option>)}
 </select>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj&&m){jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice){const tp=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight);jj.transferPrice=tp||0}save(nd)}}} style={{padding:'4px 8px',borderRadius:6,fontSize:14,border:'2px solid '+(j.invoiced&&j.hasTransfer?'#eab308':j.hasTransfer?C.purple:C.muted),background:j.invoiced&&j.hasTransfer?'#fef9c3':j.hasTransfer?C.purple+'20':'transparent',color:j.invoiced&&j.hasTransfer?'#713f12':j.hasTransfer?C.purple:C.dim,cursor:'pointer',fontWeight:j.hasTransfer?700:400}}>{j.hasTransfer?'T ✓':'+T'}</button>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.invoiced=!jj.invoiced;save(nd)}}} title={j.invoiced?'Facture envoyee':'Marquer facture envoyee'} style={{width:24,height:24,borderRadius:6,border:'2px solid '+(j.invoiced?'#eab308':C.muted),background:j.invoiced?'#eab308':'transparent',color:'#fff',cursor:'pointer',fontSize:14,fontWeight:800,padding:0,lineHeight:1,flexShrink:0}}>{j.invoiced?'✓':''}</button>
@@ -2423,7 +2423,7 @@ const openSignModal=(j)=>{
   const m=(data.machines||[]).find(mm=>mm.id===j.machineId);
   let label=null;
   if(m&&m.type==='Citerne')label=durH<=4?'Demi-journee':'Journee';
-  else{if(durH<=2)label='2h';else if(durH<=4)label='4h';else if(durH<=6)label='6h';else label='8h'}
+  else{if(durH<=2)label='2h';else if(durH<=4)label='4h';else if(durH<=6)label='6h';else if(durH<=8)label='8h';else label='10h'}
   setSignForfait({label,durMin:dur,pauseDeducted,endHHmm:String(Math.floor((endMin%1440)/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0')});
 };
 const closeSignModal=()=>{setSignJob(null);setSignName('');setSignPhone('');setSignEmail('');setSignForfait(null)};
