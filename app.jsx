@@ -246,7 +246,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.05.29-11</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.01-1</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -1595,9 +1595,16 @@ return(<div style={{padding:'4px 8px',display:'flex',alignItems:'center',gap:5,f
 <div>
 <div style={{fontWeight:800,color:'#15803d',fontSize:14}}>✍️ Signature chef de chantier</div>
 <div style={{fontSize:12,color:'#166534',marginTop:2}}>Par <b>{j.signature.signedBy}</b> le {new Date(j.signature.signedAt).toLocaleString('fr-FR')}</div>
+{j.signature.phone&&<div style={{fontSize:12,color:'#166534',marginTop:1}}>📞 <a href={'tel:'+j.signature.phone} style={{color:'#166534'}}>{j.signature.phone}</a></div>}
+{j.signature.email&&<div style={{fontSize:12,color:'#166534',marginTop:1}}>📧 <a href={'mailto:'+j.signature.email} style={{color:'#166534'}}>{j.signature.email}</a></div>}
 </div>
 <button onClick={()=>{if(confirm('Supprimer la signature ?')){const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){delete jj.signature;save(nd)}}}} style={{background:'#fff',border:'1px solid #ef4444',color:'#dc2626',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700}}>🗑 Supprimer</button>
 </div>
+{(j.signature.durationMin!=null||j.signature.autoForfait)&&<div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',padding:'8px 10px',background:'#fff',borderRadius:8,border:'1px solid #86efac'}}>
+{j.signature.durationMin!=null&&<div style={{flex:1,minWidth:90}}><div style={{fontSize:9,fontWeight:800,color:'#166534',textTransform:'uppercase',letterSpacing:'0.4px'}}>⏱ Temps passe</div><div style={{fontSize:16,fontWeight:800,color:'#15803d',lineHeight:1.1}}>{Math.floor(j.signature.durationMin/60)}h{String(j.signature.durationMin%60).padStart(2,'0')}</div></div>}
+{j.signature.pauseDeducted>0&&<div style={{flex:1,minWidth:90}}><div style={{fontSize:9,fontWeight:800,color:'#9a3412',textTransform:'uppercase',letterSpacing:'0.4px'}}>⏸ Pause deduite</div><div style={{fontSize:16,fontWeight:800,color:'#c2410c',lineHeight:1.1}}>{j.signature.pauseDeducted} min</div></div>}
+{j.signature.autoForfait&&<div style={{flex:1,minWidth:90}}><div style={{fontSize:9,fontWeight:800,color:'#1d4ed8',textTransform:'uppercase',letterSpacing:'0.4px'}}>💰 Forfait calcule</div><div style={{fontSize:16,fontWeight:800,color:'#1d4ed8',lineHeight:1.1}}>{j.signature.autoForfait}</div></div>}
+</div>}
 <img src={j.signature.dataUrl} alt="Signature" style={{maxWidth:'100%',background:'#fff',border:'1px solid '+C.border,borderRadius:8,padding:6,display:'block'}}/>
 </div>}
 </div>}
@@ -2888,7 +2895,7 @@ return(
 <div style={{fontWeight:700,fontSize:16}}>{isDepot?<span style={{color:'#64748b'}}>{depotObj?depotObj.name:'Depot'} — {j.depotActivity||'Depot'}{j.depotDescription?' ('+j.depotDescription+')':''}</span>:(cl?cl.name:'Pas de client')}{!isDepot&&j.agencyName?' - '+j.agencyName:''}</div>
 <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
 {!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>}
-{!isDepot&&(j.signature?<span title={'Signe par '+j.signature.signedBy+' le '+new Date(j.signature.signedAt).toLocaleString('fr-FR')} style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:C.accent+'20',color:C.accent,cursor:'help'}}>✓ Signe</span>:<button onClick={()=>openSignModal(j)} style={{padding:'6px 12px',borderRadius:6,fontSize:13,fontWeight:700,background:'#fff',border:'2px solid '+C.accent,color:C.accent,cursor:'pointer'}}>✍️ Faire signer le chef</button>)}
+{!isDepot&&(j.signature?<span title={'Signe par '+j.signature.signedBy+' le '+new Date(j.signature.signedAt).toLocaleString('fr-FR')+(j.signature.durationMin!=null?'\n⏱ Temps passe : '+Math.floor(j.signature.durationMin/60)+'h'+String(j.signature.durationMin%60).padStart(2,'0'):'')+(j.signature.pauseDeducted>0?'\n⏸ Pause deduite : '+j.signature.pauseDeducted+' min':'')+(j.signature.autoForfait?'\n💰 Forfait : '+j.signature.autoForfait:'')} style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:C.accent+'20',color:C.accent,cursor:'help'}}>✓ Signe</span>:<button onClick={()=>openSignModal(j)} style={{padding:'6px 12px',borderRadius:6,fontSize:13,fontWeight:700,background:'#fff',border:'2px solid '+C.accent,color:C.accent,cursor:'pointer'}}>✍️ Faire signer le chef</button>)}
 </div>
 </div>
 <div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
@@ -2899,6 +2906,15 @@ return(
 {arrN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrN}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
 </div>}
 {(()=>{const cols=(data.jobs||[]).filter(jj=>jj.id!==j.id&&jj.date===j.date&&jj.employeeId&&jj.employeeId!==empId&&j.location&&jj.location&&jj.location.trim().toLowerCase()===j.location.trim().toLowerCase());if(!cols.length)return null;return(<div style={{marginTop:6,padding:'6px 8px',background:'#f0f9ff',borderRadius:8,border:'1px solid #bae6fd'}}><div style={{fontSize:12,color:'#0369a1',fontWeight:700,marginBottom:4}}>{'👷 Equipe sur ce chantier :'}</div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{cols.map(jj=>{const ce=(data.employees||[]).find(e=>e.id===jj.employeeId);return ce?<span key={jj.id} style={{background:'#0891b2',borderRadius:6,padding:'3px 10px',fontSize:13,fontWeight:700,color:'#fff'}}>{ce.name}</span>:null})}</div></div>);})()}
+{j.signature&&j.signature.signedBy&&<div style={{marginTop:8,padding:'8px 10px',background:'#f0fdf4',borderRadius:10,border:'2px solid #86efac'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}}>
+<div><div style={{fontSize:12,color:'#15803d',fontWeight:800,textTransform:'uppercase',letterSpacing:'0.3px'}}>✍️ Signe par {j.signature.signedBy}</div><div style={{fontSize:11,color:'#166534',marginTop:2}}>{new Date(j.signature.signedAt).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</div></div>
+{(j.signature.durationMin!=null||j.signature.autoForfait)&&<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+{j.signature.durationMin!=null&&<div style={{padding:'4px 10px',background:'#fff',borderRadius:6,border:'1px solid #86efac',fontSize:12,fontWeight:700,color:'#15803d'}}>⏱ {Math.floor(j.signature.durationMin/60)}h{String(j.signature.durationMin%60).padStart(2,'0')}{j.signature.pauseDeducted>0?<span style={{color:'#c2410c',fontSize:10,marginLeft:4}}>(−{j.signature.pauseDeducted}min pause)</span>:null}</div>}
+{j.signature.autoForfait&&<div style={{padding:'4px 10px',background:'#fff',borderRadius:6,border:'1px solid '+C.accent,fontSize:12,fontWeight:700,color:C.accent}}>💰 {j.signature.autoForfait}</div>}
+</div>}
+</div>
+</div>}
 {j.photos&&j.photos.length>0&&<div style={{marginTop:8,padding:'8px 10px',background:'#fff7ed',borderRadius:10,border:'2px solid #fdba74'}}>
 <div style={{fontSize:12,color:'#9a3412',fontWeight:800,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.3px'}}>📷 Photos du chantier ({j.photos.length})</div>
 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
