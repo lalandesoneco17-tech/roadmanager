@@ -256,7 +256,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.03-3</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.04-1</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -3836,7 +3836,7 @@ return(
 // ======== CHATBOT IA ========
 // Extrait un JSON de proposition d'action d'une reponse Claude.
 // Claude doit envelopper l'action dans un bloc ```json {...} ``` avec un champ "action" parmi : send_message, create_job, update_job, delete_job, fix_time_entry.
-const PROPOSAL_ACTIONS=['send_message','create_job','update_job','delete_job','fix_time_entry'];
+const PROPOSAL_ACTIONS=['send_message','create_job','update_job','delete_job','fix_time_entry','append_company_context'];
 const parseProposal=(text)=>{
 if(!text)return null;
 const m=text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
@@ -3849,6 +3849,7 @@ if(obj.action==='create_job'&&(!obj.data||typeof obj.data!=='object'))return nul
 if(obj.action==='update_job'&&(!obj.jobId||!obj.changes||typeof obj.changes!=='object'))return null;
 if(obj.action==='delete_job'&&!obj.jobId)return null;
 if(obj.action==='fix_time_entry'&&(!obj.entryId||!obj.changes||typeof obj.changes!=='object'))return null;
+if(obj.action==='append_company_context'&&(!obj.text||!String(obj.text).trim()))return null;
 const intro=text.slice(0,m.index).trim();
 return{intro,proposal:obj};
 }catch(e){}
@@ -4200,7 +4201,7 @@ if(anom.length>40)ctx+=`  ... et ${anom.length-40} autres anomalies non listees\
 ctx+=`\n=== CE QUE TU PEUX FAIRE ===
 1. REPONDRE A DES QUESTIONS en lecture seule sur les donnees (planning, CA, employes, machines, pointages, anomalies, etc.)
 2. SIGNALER LES ANOMALIES proactivement ou sur demande
-3. PROPOSER UNE ACTION via un bloc JSON. Actions disponibles : send_message, create_job, update_job, delete_job, fix_time_entry.
+3. PROPOSER UNE ACTION via un bloc JSON. Actions disponibles : send_message, create_job, update_job, delete_job, fix_time_entry, append_company_context.
 
 === REGLE D'OR ===
 Tu ne fais JAMAIS d'action toi-meme. Tu PROPOSES uniquement, sous forme d'un bloc JSON. L'admin clique sur "Valider" pour declencher l'action. Si tu ne peux pas formuler une proposition propre (donnee manquante, ambiguite), demande une clarification au lieu de generer un JSON incomplet ou hasardeux. Ne JAMAIS dire "c'est fait" ou "je l'ai cree" — dis "je te propose...".
@@ -4249,6 +4250,13 @@ Pour corriger un pointage. ID visible avant chaque pointage dans la section POIN
 {"action":"fix_time_entry","entryId":"<id_existant>","changes":{"startTime":"HH:MM","endTime":"HH:MM","pauseMin":60, ...}}
 \`\`\`
 Champs modifiables : startTime, endTime, pauseMin, breakStart, breakEnd, mealType, absenceType, nightHours, requestedEndTime.
+
+=== ACTION 6 : append_company_context ===
+Pour ajouter du texte a la fin du contexte entreprise (cette description meme que l'admin t'a fournie). A utiliser quand l'admin t'apprend une info utile pour les futures conversations : un chauffeur a une specificite, un client a une regle particuliere, un changement de tarif, une habitude operationnelle, etc.
+\`\`\`json
+{"action":"append_company_context","text":"<phrase a ajouter, complete, sans guillemets superflus>"}
+\`\`\`
+Le texte est ajoute tel quel a la fin de l'existant (precede d'un saut de ligne). NE PAS reecrire tout le contexte, juste ce qu'il y a a ajouter. Garde les phrases concises et autonomes (lisibles hors contexte). Ne propose cette action que si l'admin t'a clairement transmis une info perenne.
 
 === REGLES COMMUNES ===
 - IDs : copie-colle EXACT depuis les sections de donnees ci-dessus. Pas d'inventions.
@@ -4386,6 +4394,12 @@ if(tIdx<0){alert('Pointage introuvable: '+p.entryId);return}
 nd.timeEntries[tIdx]={...nd.timeEntries[tIdx],...p.changes};
 resultText=`Pointage corrige (${Object.keys(p.changes).length} champ(s))`;
 }
+else if(p.action==='append_company_context'){
+const cur=(nd.companyContext||'').replace(/\s+$/,'');
+const add=String(p.text||'').trim();
+if(!add){resultText='Texte vide, rien ajoute';}
+else{nd.companyContext=(cur?cur+'\n':'')+add;resultText='Contexte entreprise mis a jour (+'+add.length+' caracteres)';}
+}
 }catch(e){alert('Erreur: '+e.message);return}
 save(nd);
 setMsgs(prev=>prev.map((x,i)=>i===msgIdx?{...x,proposalStatus:'sent',resultText}:x));
@@ -4462,8 +4476,8 @@ return(
 {m.proposal&&(()=>{
 const p=m.proposal;
 const accent=p.action==='delete_job'?(C.red||'#ef4444'):C.accent;
-const headers={send_message:'📨 Message a '+getEmpName(p.toEmpId),create_job:'🆕 Creation chantier',update_job:'✏️ Modification chantier',delete_job:'🗑️ Suppression chantier',fix_time_entry:'⏱️ Correction pointage'};
-const verbs={send_message:'Envoyer',create_job:'Creer',update_job:'Modifier',delete_job:'Supprimer',fix_time_entry:'Corriger'};
+const headers={send_message:'📨 Message a '+getEmpName(p.toEmpId),create_job:'🆕 Creation chantier',update_job:'✏️ Modification chantier',delete_job:'🗑️ Suppression chantier',fix_time_entry:'⏱️ Correction pointage',append_company_context:'📝 Ajout au contexte entreprise'};
+const verbs={send_message:'Envoyer',create_job:'Creer',update_job:'Modifier',delete_job:'Supprimer',fix_time_entry:'Corriger',append_company_context:'Ajouter au contexte'};
 const findJob=jid=>(data.jobs||[]).find(j=>j.id===jid);
 const findTE=tid=>(data.timeEntries||[]).find(t=>t.id===tid);
 const fmtJobSummary=(j)=>j?`${getEmpName(j.employeeId)} | ${(data.machines||[]).find(m=>m.id===j.machineId)?.name||'?'} | ${(data.clients||[]).find(c=>c.id===j.clientId)?.name||'?'} | ${j.date} ${j.billingStart||''} | ${j.forfaitType||'?'}`:'(introuvable)';
@@ -4503,6 +4517,7 @@ return(
 {t&&Object.entries(p.changes||{}).map(([k,v])=>(<div key={k}><b>{k} :</b> <span style={{color:C.red||'#ef4444',textDecoration:'line-through'}}>{String(t[k]??'(vide)')}</span> → <span style={{color:C.green||'#16a34a',fontWeight:600}}>{String(v)}</span></div>))}
 </div>
 )})()}
+{p.action==='append_company_context'&&(m.proposalStatus==='pending'?<textarea value={p.text||''} onChange={e=>setMsgs(prev=>prev.map((x,j)=>j===i?{...x,proposal:{...x.proposal,text:e.target.value}}:x))} rows={4} style={{width:'100%',padding:6,borderRadius:6,border:'1px solid '+C.border,fontSize:12,fontFamily:'inherit',resize:'vertical',marginBottom:6,outline:'none',whiteSpace:'pre-wrap'}}/>:<div style={{fontSize:12,padding:6,background:'#f8fafc',borderRadius:6,whiteSpace:'pre-wrap',marginBottom:6}}>{p.text}</div>)}
 {m.proposalStatus==='pending'&&(
 <div style={{display:'flex',gap:6}}>
 <button onClick={()=>validateProposal(i)} style={{flex:1,background:p.action==='delete_job'?(C.red||'#ef4444'):(C.green||'#16a34a'),color:'#fff',border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontWeight:700,fontSize:12}}>✓ {verbs[p.action]||'Valider'}</button>
