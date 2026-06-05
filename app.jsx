@@ -106,8 +106,13 @@ const getStartCoords=(data,job)=>job.startFrom==='home'?getEmpCoords(data,job.em
 const getEndCoords=(data,job)=>job.endAt==='home'?getEmpCoords(data,job.employeeId):getDepotCoords(data,job.endAt);
 const getMachineFuelType=(data,mid)=>{const m=(data.machines||[]).find(x=>x.id===mid);return m&&m.type==='Raboteuse'?'gazole':'gnr'};
 const getFuelPrice=(data,ft,did)=>{if(did){const d=(data.depots||[]).find(x=>x.id===did);if(d){if(ft==='gnr'&&d.gnrPrice>0)return d.gnrPrice;if(ft==='gazole'&&d.gazolePrice>0)return d.gazolePrice;}}for(const d of(data.depots||[])){if(ft==='gnr'&&d.gnrPrice>0)return d.gnrPrice;if(ft==='gazole'&&d.gazolePrice>0)return d.gazolePrice;}return data.fuelPrice||1.72};
-const getForfaitKey=(data,cid,machine)=>{const cl=(data.clients||[]).find(x=>x.id===cid);const p=(cl&&cl.forfaitType==='specific')?cid:'standard';if(!machine)return null;if(machine.type==='Raboteuse')return p+'_rab_'+(machine.width||'');if(machine.type==='Balayeuse')return p+'_bal';if(machine.type==='Citerne')return p+'_cit';return null};
-const getForfaitPrice=(data,cid,machine,ft,citOpt,isNight)=>{let k=getForfaitKey(data,cid,machine);if(!k)return 0;if(machine&&machine.type==='Citerne'&&citOpt)k+='_'+citOpt;const g=data.forfaits[k];if(!g)return 0;let pr=g[ft]||0;if(isNight)pr=pr*(1+(data.nightPct||30)/100);return Math.round(pr*100)/100};
+// Extrait la largeur numerique d'une raboteuse : priorite m.width puis m.name (ex: '130 CFI2' -> '130', '' + nom 'CFI2 200' -> '200')
+const getMachineWidth=m=>{if(!m)return'';const w=String(m.width||'').match(/\d+/);if(w)return w[0];const n=String(m.name||'').match(/\d+/);if(n)return n[0];return''};
+const getForfaitKey=(data,cid,machine)=>{const cl=(data.clients||[]).find(x=>x.id===cid);const p=(cl&&cl.forfaitType==='specific')?cid:'standard';if(!machine)return null;if(machine.type==='Raboteuse')return p+'_rab_'+getMachineWidth(machine);if(machine.type==='Balayeuse')return p+'_bal';if(machine.type==='Citerne')return p+'_cit';return null};
+const getForfaitPrice=(data,cid,machine,ft,citOpt,isNight)=>{let k=getForfaitKey(data,cid,machine);if(!k)return 0;if(machine&&machine.type==='Citerne'&&citOpt)k+='_'+citOpt;let g=data.forfaits[k];
+// Fallback retro-compat : si pas de tarif a la cle normalisee, essayer la cle brute (avant normalisation width) ou variantes citerne sans option
+if(!g&&machine){const cl=(data.clients||[]).find(x=>x.id===cid);const p=(cl&&cl.forfaitType==='specific')?cid:'standard';if(machine.type==='Raboteuse'){g=data.forfaits[p+'_rab_'+(machine.width||'')]}if(!g&&machine.type==='Citerne'){const candKeys=Object.keys(data.forfaits||{}).filter(kk=>kk.startsWith(p+'_cit'));if(candKeys.length===1)g=data.forfaits[candKeys[0]]}}
+if(!g)return 0;let pr=g[ft]||0;if(isNight)pr=pr*(1+(data.nightPct||30)/100);return Math.round(pr*100)/100};
 const getTransferPrice=(data,cid,machine,citOpt,isNight)=>getForfaitPrice(data,cid,machine,'Transfert',citOpt,isNight);
 const forfaitHours=f=>({'2h':2,'4h':4,'6h':6,'8h':8,'10h':10,'Demi-journee':4,'Journee':8}[f]||4);
 
@@ -280,7 +285,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.05-4</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.05-5</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -2206,7 +2211,7 @@ return(
 const ForfaitsPage=({data,save})=>{
 const clients=(data.clients||[]).filter(c=>c.forfaitType==='specific');
 const[tab,setTab]=useState('standard');
-const rabWidths=[...new Set((data.machines||[]).filter(m=>m.type==='Raboteuse').map(m=>m.width||'').filter(Boolean))];
+const rabWidths=[...new Set((data.machines||[]).filter(m=>m.type==='Raboteuse').map(m=>getMachineWidth(m)).filter(Boolean))].sort((a,b)=>Number(b)-Number(a));
 if(rabWidths.length===0)rabWidths.push('');
 const rabDurees=['2h','4h','6h','8h','Transfert'];
 const balDurees=['2h','4h','6h','8h','Transfert'];
