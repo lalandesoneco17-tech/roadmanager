@@ -16,31 +16,41 @@ const localSave=(d)=>{try{localStorage.setItem(SKEY,JSON.stringify(d));localStor
 const localTs=()=>{try{return Number(localStorage.getItem(SKEY+'_ts'))||0}catch(e){return 0}};
 // Supabase load/save with localStorage fallback
 const loadData=async()=>{if(sb){try{const{data:row,error}=await sb.from('app_data').select('data').eq('id','main').single();if(!error&&row&&row.data&&Object.keys(row.data).length>0){const merged={...defaultData(),...row.data};localSave(merged);console.log('Loaded from Supabase');return merged}}catch(e){console.warn('Supabase load failed, fallback localStorage',e)}}const local=localLoad();if(local){if(sb){try{await saveData(local);console.log('Migrated localStorage to Supabase')}catch(e){console.warn('Migration to Supabase failed',e)}}return local}return defaultData()};
-const mergeArraysById=(local,remote)=>{if(!remote||!remote.length)return local||[];if(!local||!local.length)return remote;const map=new Map();remote.forEach(item=>{if(item&&item.id)map.set(item.id,item)});local.forEach(item=>{if(item&&item.id)map.set(item.id,item)});return[...map.values()]};
+// Filtre les items dont l'id est dans tombstones (marqueurs de suppression)
+const filterTombstones=(arr,ts)=>{if(!ts)return arr;return(arr||[]).filter(it=>!it||!it.id||!ts[it.id])};
+const mergeArraysById=(local,remote,ts)=>{if(!remote||!remote.length)return filterTombstones(local,ts);if(!local||!local.length)return filterTombstones(remote,ts);const map=new Map();remote.forEach(item=>{if(item&&item.id)map.set(item.id,item)});local.forEach(item=>{if(item&&item.id)map.set(item.id,item)});return filterTombstones([...map.values()],ts)};
 const mergeKeepLocal=(local,remote)=>{if(!remote||!remote.length)return local||[];if(!local)return[];const localIds=new Set((local||[]).filter(x=>x&&x.id).map(x=>x.id));const merged=new Map();(local||[]).forEach(item=>{if(item&&item.id)merged.set(item.id,item)});(remote||[]).forEach(item=>{if(item&&item.id&&!merged.has(item.id)&&!localIds.has(item.id)){/* item deleted locally, skip */}else if(item&&item.id&&!merged.has(item.id)){merged.set(item.id,item)}});return[...merged.values()]};
 // Merge by id avec last-write-wins via _updatedAt (item plus recent gagne)
-const mergeByUpdatedAt=(localArr,remoteArr)=>{const result=new Map();(remoteArr||[]).forEach(r=>{if(r&&r.id)result.set(r.id,r)});(localArr||[]).forEach(l=>{if(!l||!l.id)return;const r=result.get(l.id);if(!r){result.set(l.id,l);return}const lTs=l._updatedAt||0;const rTs=r._updatedAt||0;result.set(l.id,lTs>=rTs?l:r)});return[...result.values()]};
+const mergeByUpdatedAt=(localArr,remoteArr,ts)=>{const result=new Map();(remoteArr||[]).forEach(r=>{if(r&&r.id)result.set(r.id,r)});(localArr||[]).forEach(l=>{if(!l||!l.id)return;const r=result.get(l.id);if(!r){result.set(l.id,l);return}const lTs=l._updatedAt||0;const rTs=r._updatedAt||0;result.set(l.id,lTs>=rTs?l:r)});return filterTombstones([...result.values()],ts)};
 // Merge append-only by id : concat sans doublons (le plus recent reste)
-const mergeAppendById=(localArr,remoteArr)=>{const seen=new Set();const result=[];(localArr||[]).forEach(l=>{if(l&&l.id&&!seen.has(l.id)){seen.add(l.id);result.push(l)}});(remoteArr||[]).forEach(r=>{if(r&&r.id&&!seen.has(r.id)){seen.add(r.id);result.push(r)}});return result};
-const saveData=async(d)=>{localSave(d);if(sb){try{const{data:row}=await sb.from('app_data').select('data').eq('id','main').single();if(row&&row.data){const remote=row.data;const merged={...d};merged.timeEntries=d.timeEntries||[];merged.panneReports=mergeArraysById(d.panneReports,remote.panneReports);merged.interventions=mergeKeepLocal(d.interventions,remote.interventions);merged.parts=mergeKeepLocal(d.parts,remote.parts);
+const mergeAppendById=(localArr,remoteArr,ts)=>{const seen=new Set();const result=[];(localArr||[]).forEach(l=>{if(l&&l.id&&!seen.has(l.id)){seen.add(l.id);result.push(l)}});(remoteArr||[]).forEach(r=>{if(r&&r.id&&!seen.has(r.id)){seen.add(r.id);result.push(r)}});return filterTombstones(result,ts)};
+// Tombstones : marqueurs de suppression propages entre sessions/devices pour eviter qu'un merge ne re-injecte un item supprime
+const mergeTombstones=(loc,rem)=>{const out={};const keys=new Set([...Object.keys(loc||{}),...Object.keys(rem||{})]);keys.forEach(k=>{const l=(loc||{})[k]||{};const r=(rem||{})[k]||{};const m={...r};Object.keys(l).forEach(id=>{if(!m[id]||l[id]>m[id])m[id]=l[id]});out[k]=m});return out};
+const tombstone=(d,type,id)=>{d._tombstones=d._tombstones||{};d._tombstones[type]=d._tombstones[type]||{};d._tombstones[type][id]=Date.now()};
+const saveData=async(d)=>{localSave(d);if(sb){try{const{data:row}=await sb.from('app_data').select('data').eq('id','main').single();if(row&&row.data){const remote=row.data;const merged={...d};merged.timeEntries=d.timeEntries||[];
+// Tombstones : union des suppressions locales + Supabase, propagees au merge des arrays
+merged._tombstones=mergeTombstones(d._tombstones,remote._tombstones);
+const ts=merged._tombstones||{};
+merged.panneReports=mergeArraysById(d.panneReports,remote.panneReports,ts.panneReports);merged.interventions=mergeKeepLocal(d.interventions,remote.interventions);merged.parts=mergeKeepLocal(d.parts,remote.parts);
 // Tables critiques (jobs, clients, machineReports, depots, employees, machines, trucks, cars, jdReports) :
 // merge by id (local prioritaire) pour preserver les ajouts depuis d'autres sessions/devices.
-merged.jobs=mergeArraysById(d.jobs,remote.jobs);
-merged.clients=mergeArraysById(d.clients,remote.clients);
-merged.depots=mergeArraysById(d.depots,remote.depots);
-merged.employees=mergeArraysById(d.employees,remote.employees);
-merged.machines=mergeArraysById(d.machines,remote.machines);
-merged.trucks=mergeArraysById(d.trucks,remote.trucks);
-merged.cars=mergeArraysById(d.cars,remote.cars);
-merged.machineReports=mergeArraysById(d.machineReports,remote.machineReports);
-merged.jdReports=mergeArraysById(d.jdReports,remote.jdReports);
-merged.messages=mergeArraysById(d.messages,remote.messages);
-merged.maintenanceRequests=mergeArraysById(d.maintenanceRequests,remote.maintenanceRequests);
+// Tombstones appliques en filtre final pour eviter qu'un item supprime localement ne soit re-injecte par le remote.
+merged.jobs=mergeArraysById(d.jobs,remote.jobs,ts.jobs);
+merged.clients=mergeArraysById(d.clients,remote.clients,ts.clients);
+merged.depots=mergeArraysById(d.depots,remote.depots,ts.depots);
+merged.employees=mergeArraysById(d.employees,remote.employees,ts.employees);
+merged.machines=mergeArraysById(d.machines,remote.machines,ts.machines);
+merged.trucks=mergeArraysById(d.trucks,remote.trucks,ts.trucks);
+merged.cars=mergeArraysById(d.cars,remote.cars,ts.cars);
+merged.machineReports=mergeArraysById(d.machineReports,remote.machineReports,ts.machineReports);
+merged.jdReports=mergeArraysById(d.jdReports,remote.jdReports,ts.jdReports);
+merged.messages=mergeArraysById(d.messages,remote.messages,ts.messages);
+merged.maintenanceRequests=mergeArraysById(d.maintenanceRequests,remote.maintenanceRequests,ts.maintenanceRequests);
 // Stations : merge intelligent par id avec last-write-wins sur _updatedAt
-merged.stations=mergeByUpdatedAt(d.stations,remote.stations);
-merged.stationProducts=mergeByUpdatedAt(d.stationProducts,remote.stationProducts);
-merged.stationUsers=mergeByUpdatedAt(d.stationUsers,remote.stationUsers);
-merged.stationMovements=mergeAppendById(d.stationMovements,remote.stationMovements).slice(0,1000);
+merged.stations=mergeByUpdatedAt(d.stations,remote.stations,ts.stations);
+merged.stationProducts=mergeByUpdatedAt(d.stationProducts,remote.stationProducts,ts.stationProducts);
+merged.stationUsers=mergeByUpdatedAt(d.stationUsers,remote.stationUsers,ts.stationUsers);
+merged.stationMovements=mergeAppendById(d.stationMovements,remote.stationMovements,ts.stationMovements).slice(0,1000);
 const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else{localSave(merged);console.log('Saved to Supabase (merged)')}}else{const{error}=await sb.from('app_data').upsert({id:'main',data:d,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else console.log('Saved to Supabase')}}catch(e){console.warn('Supabase save failed',e)}}};
 const subscribeToChanges=(callback,getCurrentData)=>{if(!sb)return()=>{};const channel=sb.channel('app_data_changes').on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_data',filter:'id=eq.main'},(payload)=>{if(payload.new&&payload.new.data){const remote={...defaultData(),...payload.new.data};const current=getCurrentData?getCurrentData():null;if(!current){localSave(remote);callback(remote);return}const merged={...remote};merged.timeEntries=mergeArraysById(current.timeEntries,remote.timeEntries);merged.panneReports=mergeArraysById(current.panneReports,remote.panneReports);localSave(merged);callback(merged)}}).subscribe();return()=>{sb.removeChannel(channel)}};
 
@@ -270,7 +280,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.05-3</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.05-4</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -453,7 +463,7 @@ return(
 </div>
 <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:8}}>
 <button onClick={onClose} style={btnStyle(C.dim)}>Annuler</button>
-{job&&<button onClick={()=>{if(!confirm('Supprimer cette mission ?'))return;const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(j=>j.id!==job.id);save(nd);onClose()}} style={btnStyle(C.red)}>Supprimer</button>}
+{job&&<button onClick={()=>{if(!confirm('Supprimer cette mission ?'))return;const nd=JSON.parse(JSON.stringify(data));tombstone(nd,'jobs',job.id);nd.jobs=nd.jobs.filter(j=>j.id!==job.id);save(nd);onClose()}} style={btnStyle(C.red)}>Supprimer</button>}
 <button onClick={handleSave} style={btnStyle(C.accent,true)}>Enregistrer</button>
 </div></Mod>);};
 
@@ -1057,7 +1067,7 @@ return(<React.Fragment>
 <button onClick={()=>{setDupJobId(uj.id);setDupDays(1)}} style={{background:'none',border:'2px solid #d97706',borderRadius:6,fontSize:12,cursor:'pointer',padding:'3px 6px',color:'#d97706',fontWeight:600}} title="Dupliquer">D</button>
 <button onClick={()=>toggleDetail(uj.id)} style={{background:'none',border:'2px solid '+C.border,borderRadius:6,fontSize:14,cursor:'pointer',padding:'4px 8px',color:C.dim,fontWeight:600}}>{openDetails[uj.id]?'▲':'▼'}</button>
 <button onClick={e=>{e.stopPropagation();const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const machName=ujM?ujM.name:'';const mr=(data.machineReports||[]).find(r=>mNorm(r.machineName)===mNorm(machName)&&r.date===uj.date);const exp={exportedAt:new Date().toISOString(),chantier:uj,client:ujCl||null,machine:ujM||null,chauffeur:null,rapportWirtgen:mr||null};const blob=new Blob([JSON.stringify(exp,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='rapport_'+(machName||'chantier').replace(/\s/g,'_')+'_'+uj.date+'.json';a.click();URL.revokeObjectURL(url)}} title="Exporter ce chantier + son rapport Wirtgen en JSON" style={{background:'none',border:'2px solid #0891b2',borderRadius:6,fontSize:13,cursor:'pointer',padding:'3px 6px',color:'#0891b2',fontWeight:700}}>📤</button>
-<button onClick={()=>{if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==uj.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button>
+<button onClick={()=>{if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));tombstone(nd,'jobs',uj.id);nd.jobs=nd.jobs.filter(x=>x.id!==uj.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button>
 </div>
 </div>
 </div>)})}
@@ -1151,7 +1161,7 @@ return(
 <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
 <span style={{fontSize:15,fontWeight:700,color:'#64748b'}}>&#127959; {emp.name} — {dep?dep.name:'Depot'} — {dj.depotActivity||'Depot'}</span>
 {dj.depotDescription&&<span style={{fontSize:14,color:C.dim}}>({dj.depotDescription})</span>}
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
+<button onClick={()=>{const nd=JSON.parse(JSON.stringify(data));tombstone(nd,'jobs',dj.id);nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
 </div>
 <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:4,fontSize:13}}>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:'--:--'}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:'--:--'}</span>
@@ -1291,7 +1301,7 @@ return null;
 <option value="">F</option>{(mt==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h','10h']).map(f=><option key={f} value={f}>{f}</option>)}
 </select>
 <button onClick={()=>toggleDetail(j.id)} style={{background:'none',border:'2px solid '+C.border,borderRadius:6,fontSize:14,cursor:'pointer',padding:'4px 8px',color:C.dim,fontWeight:600}}>{openDetails[j.id]?'▲':'▼'}</button>
-<button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:C.red,fontWeight:700}}>×</button>
+<button onClick={e=>{e.stopPropagation();if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(data));tombstone(nd,'jobs',j.id);nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:C.red,fontWeight:700}}>×</button>
 </div>
 </div>
 {/* Wirtgen timeline par chantier (cache sauf details ouverts) */}
@@ -4399,6 +4409,7 @@ resultText=`Chantier modifie (${Object.keys(p.changes).length} champ(s))`;
 else if(p.action==='delete_job'){
 const dIdx=(nd.jobs||[]).findIndex(j=>j.id===p.jobId);
 if(dIdx<0){alert('Chantier introuvable: '+p.jobId);return}
+tombstone(nd,'jobs',p.jobId);
 nd.jobs.splice(dIdx,1);
 resultText='Chantier supprime';
 }
