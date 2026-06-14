@@ -10,6 +10,8 @@ const PART_CATS=['pneu','filtre','courroie','dent','roulement','electrique','hyd
 const INTER_TYPES=['reparation','entretien','changement_piece','panne'];
 const SEVERITIES=['urgent','normal','mineur'];
 const sb=window.supabaseClient;
+// ID de session local : permet d'ignorer notre propre echo Supabase quand on recoit un UPDATE qu'on vient d'envoyer
+const _localSessionId=Math.random().toString(36).slice(2)+Date.now().toString(36);
 // localStorage helpers
 const localLoad=()=>{try{for(const k of[SKEY,'roadmanager-v4','roadmanager-v3','roadmanager-v2','roadmanager-data']){const raw=localStorage.getItem(k);if(raw){const d=JSON.parse(raw);if(k!==SKEY)localStorage.setItem(SKEY,JSON.stringify(d));return{...defaultData(),...d};}}}catch(e){}return null};
 const localSave=(d)=>{try{localStorage.setItem(SKEY,JSON.stringify(d));localStorage.setItem(SKEY+'_ts',String(Date.now()))}catch(e){}};
@@ -27,32 +29,45 @@ const mergeAppendById=(localArr,remoteArr,ts)=>{const seen=new Set();const resul
 // Tombstones : marqueurs de suppression propages entre sessions/devices pour eviter qu'un merge ne re-injecte un item supprime
 const mergeTombstones=(loc,rem)=>{const out={};const keys=new Set([...Object.keys(loc||{}),...Object.keys(rem||{})]);keys.forEach(k=>{const l=(loc||{})[k]||{};const r=(rem||{})[k]||{};const m={...r};Object.keys(l).forEach(id=>{if(!m[id]||l[id]>m[id])m[id]=l[id]});out[k]=m});return out};
 const tombstone=(d,type,id)=>{d._tombstones=d._tombstones||{};d._tombstones[type]=d._tombstones[type]||{};d._tombstones[type][id]=Date.now()};
-const saveData=async(d)=>{localSave(d);if(sb){try{const{data:row}=await sb.from('app_data').select('data').eq('id','main').single();if(row&&row.data){const remote=row.data;const merged={...d};merged.timeEntries=d.timeEntries||[];
-// Tombstones : union des suppressions locales + Supabase, propagees au merge des arrays
-merged._tombstones=mergeTombstones(d._tombstones,remote._tombstones);
-const ts=merged._tombstones||{};
-merged.panneReports=mergeArraysById(d.panneReports,remote.panneReports,ts.panneReports);merged.interventions=mergeKeepLocal(d.interventions,remote.interventions);merged.parts=mergeKeepLocal(d.parts,remote.parts);
-// Tables critiques (jobs, clients, machineReports, depots, employees, machines, trucks, cars, jdReports) :
-// merge by id (local prioritaire) pour preserver les ajouts depuis d'autres sessions/devices.
-// Tombstones appliques en filtre final pour eviter qu'un item supprime localement ne soit re-injecte par le remote.
-merged.jobs=mergeArraysById(d.jobs,remote.jobs,ts.jobs);
-merged.clients=mergeArraysById(d.clients,remote.clients,ts.clients);
-merged.depots=mergeArraysById(d.depots,remote.depots,ts.depots);
-merged.employees=mergeArraysById(d.employees,remote.employees,ts.employees);
-merged.machines=mergeArraysById(d.machines,remote.machines,ts.machines);
-merged.trucks=mergeArraysById(d.trucks,remote.trucks,ts.trucks);
-merged.cars=mergeArraysById(d.cars,remote.cars,ts.cars);
-merged.machineReports=mergeArraysById(d.machineReports,remote.machineReports,ts.machineReports);
-merged.jdReports=mergeArraysById(d.jdReports,remote.jdReports,ts.jdReports);
-merged.messages=mergeArraysById(d.messages,remote.messages,ts.messages);
-merged.maintenanceRequests=mergeArraysById(d.maintenanceRequests,remote.maintenanceRequests,ts.maintenanceRequests);
-// Stations : merge intelligent par id avec last-write-wins sur _updatedAt
-merged.stations=mergeByUpdatedAt(d.stations,remote.stations,ts.stations);
-merged.stationProducts=mergeByUpdatedAt(d.stationProducts,remote.stationProducts,ts.stationProducts);
-merged.stationUsers=mergeByUpdatedAt(d.stationUsers,remote.stationUsers,ts.stationUsers);
-merged.stationMovements=mergeAppendById(d.stationMovements,remote.stationMovements,ts.stationMovements).slice(0,1000);
-const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else{localSave(merged);console.log('Saved to Supabase (merged)')}}else{const{error}=await sb.from('app_data').upsert({id:'main',data:d,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else console.log('Saved to Supabase')}}catch(e){console.warn('Supabase save failed',e)}}};
-const subscribeToChanges=(callback,getCurrentData)=>{if(!sb)return()=>{};const channel=sb.channel('app_data_changes').on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_data',filter:'id=eq.main'},(payload)=>{if(payload.new&&payload.new.data){const remote={...defaultData(),...payload.new.data};const current=getCurrentData?getCurrentData():null;if(!current){localSave(remote);callback(remote);return}const merged={...remote};merged.timeEntries=mergeArraysById(current.timeEntries,remote.timeEntries);merged.panneReports=mergeArraysById(current.panneReports,remote.panneReports);localSave(merged);callback(merged)}}).subscribe();return()=>{sb.removeChannel(channel)}};
+// MERGE COMPLET : fusionne tous les arrays critiques avec tombstones. Utilise par saveData, polling et subscribe pour eviter
+// que des modifs locales en cours ne soient ecrasees par une lecture/notification Supabase pas encore a jour.
+// Settings/scalaires : on prend remote (changent rarement, evite divergence inter-devices). Modifs locales en cours
+// sur les settings : prefere passer par l'UI dediee qui appelle save() immediatement.
+const mergeFullData=(local,remote)=>{if(!remote)return local;if(!local)return remote;
+const tombstones=mergeTombstones(local._tombstones,remote._tombstones);const ts=tombstones||{};
+const merged={...remote};merged._tombstones=tombstones;
+merged.timeEntries=mergeArraysById(local.timeEntries,remote.timeEntries,ts.timeEntries);
+merged.panneReports=mergeArraysById(local.panneReports,remote.panneReports,ts.panneReports);
+merged.interventions=mergeKeepLocal(local.interventions,remote.interventions);
+merged.parts=mergeKeepLocal(local.parts,remote.parts);
+merged.jobs=mergeArraysById(local.jobs,remote.jobs,ts.jobs);
+merged.clients=mergeArraysById(local.clients,remote.clients,ts.clients);
+merged.depots=mergeArraysById(local.depots,remote.depots,ts.depots);
+merged.employees=mergeArraysById(local.employees,remote.employees,ts.employees);
+merged.machines=mergeArraysById(local.machines,remote.machines,ts.machines);
+merged.trucks=mergeArraysById(local.trucks,remote.trucks,ts.trucks);
+merged.cars=mergeArraysById(local.cars,remote.cars,ts.cars);
+merged.machineReports=mergeArraysById(local.machineReports,remote.machineReports,ts.machineReports);
+merged.jdReports=mergeArraysById(local.jdReports,remote.jdReports,ts.jdReports);
+merged.messages=mergeArraysById(local.messages,remote.messages,ts.messages);
+merged.maintenanceRequests=mergeArraysById(local.maintenanceRequests,remote.maintenanceRequests,ts.maintenanceRequests);
+merged.stations=mergeByUpdatedAt(local.stations,remote.stations,ts.stations);
+merged.stationProducts=mergeByUpdatedAt(local.stationProducts,remote.stationProducts,ts.stationProducts);
+merged.stationUsers=mergeByUpdatedAt(local.stationUsers,remote.stationUsers,ts.stationUsers);
+merged.stationMovements=mergeAppendById(local.stationMovements,remote.stationMovements,ts.stationMovements).slice(0,1000);
+return merged};
+const saveData=async(d)=>{localSave(d);if(sb){try{const{data:row}=await sb.from('app_data').select('data').eq('id','main').single();let merged;if(row&&row.data){merged=mergeFullData(d,row.data);
+// Mais on veut que LOCAL gagne sur remote pour timeEntries (le local vient de modifier) : timeEntries gere par teSyncChanges, donc on ecrase brutalement
+merged.timeEntries=d.timeEntries||[]}else{merged={...d}}
+// Tague avec notre session ID -> permet a subscribeToChanges d'ignorer notre propre echo
+merged._lastSaver=_localSessionId;merged._lastSaveAt=Date.now();
+const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else{localSave(merged);console.log('Saved to Supabase (merged)')}}catch(e){console.warn('Supabase save failed',e)}}};
+const subscribeToChanges=(callback,getCurrentData)=>{if(!sb)return()=>{};const channel=sb.channel('app_data_changes').on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_data',filter:'id=eq.main'},(payload)=>{if(!payload.new||!payload.new.data)return;
+// Ignore notre propre echo : c'est nous qui venons d'envoyer ce save, donc notre state local est deja a jour (et potentiellement plus frais si l'utilisateur a fait une modif entre temps)
+if(payload.new.data._lastSaver===_localSessionId)return;
+const remote={...defaultData(),...payload.new.data};const current=getCurrentData?getCurrentData():null;if(!current){localSave(remote);callback(remote);return}
+// Merge intelligent : preserve les modifs locales en cours qui ne sont pas encore dans le remote
+const merged=mergeFullData(current,remote);localSave(merged);callback(merged)}).subscribe();return()=>{sb.removeChannel(channel)}};
 
 // ========== POINTAGE FIABLE (tables dediees time_entries / time_entries_validated) ==========
 // Chaque pointage = une ligne Supabase independante -> zero race condition entre salaries.
@@ -288,7 +303,7 @@ const surlendCount=(markers||[]).filter(m=>m.dayOffset===1).length;
 return(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:2000}} onClick={onClose}>
 <div onClick={e=>e.stopPropagation()} style={{background:'#fff',padding:10,width:'100vw',height:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.05-7</span></h3>
+<h3 style={{margin:0,fontSize:16}}>🗺 Carte planning — {selDate} · {todayCount} chantier(s) <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.06.14-1</span></h3>
 <div style={{display:'flex',gap:6,alignItems:'center'}}>
 <button onClick={onToggleVeille} title={'Afficher / masquer les chantiers de la veille ('+veilleISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showVeille?'dashed':'solid')+' '+(showVeille?C.accent:C.muted),background:showVeille?C.accent+'18':'#fff',color:showVeille?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showVeille?'✓ ':''}← Veille {fmtDDMM(veilleISO)}{showVeille?' ('+veilleCount+')':''}</button>
 <button onClick={onToggleSurlend} title={'Afficher / masquer les chantiers du lendemain ('+surlendISO+')'} style={{padding:'5px 10px',borderRadius:6,border:'2px '+(showSurlend?'dotted':'solid')+' '+(showSurlend?C.accent:C.muted),background:showSurlend?C.accent+'18':'#fff',color:showSurlend?C.accent:C.dim,cursor:'pointer',fontSize:12,fontWeight:700}}>{showSurlend?'✓ ':''}{fmtDDMM(surlendISO)} Surlend. →{showSurlend?' ('+surlendCount+')':''}</button>
@@ -4604,11 +4619,14 @@ const unsubTE=teSubscribe(async(table)=>{if(savingRef.current)return;const key=t
 // Flush les pointages en attente (si reseau coupe au precedent usage, ils partent maintenant)
 teQueueFlush().catch(()=>{});
 // Polling fallback toutes les 30s : si le realtime Supabase n'est pas actif, on rattrape ici
-const pollId=setInterval(()=>{if(savingRef.current)return;loadData().then(d=>{if(!d)return;setData(prev=>{if(!prev)return d;const merged={...d};merged.timeEntries=mergeArraysById(prev.timeEntries,d.timeEntries);merged.panneReports=mergeArraysById(prev.panneReports,d.panneReports);return merged})}).catch(()=>{})},30000);
+const pollId=setInterval(()=>{if(savingRef.current)return;loadData().then(d=>{if(!d)return;setData(prev=>{if(!prev)return d;return mergeFullData(prev,d)})}).catch(()=>{})},30000);
 return()=>{unsub();unsubTE();clearInterval(pollId)};
 },[]);
-const doSave=useCallback(async nd=>{savesInProgress.current++;savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(data)];setData(nd);try{await teSyncChanges(data,nd);await saveData(nd)}catch(e){console.warn('save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},2000)}},[data]);
-const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savesInProgress.current++;savingRef.current=true;setData(prevData);try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},2000)}},[]);
+// doSave : pas de deps [data] -> evite le stale closure (clicks rapides du user pouvaient capturer un data perime).
+// dataRef.current est toujours a jour (sync dans useEffect ligne 4610). On sync aussi dataRef.current=nd dans le save pour que le prochain doSave ait l'etat post-save sans attendre le re-render.
+// savingRef reste true 5s apres la fin du save -> evite que le polling/subscribe applique un payload Supabase potentiellement pas encore propage.
+const doSave=useCallback(async nd=>{const prev=dataRef.current;savesInProgress.current++;savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(prev)];setData(nd);dataRef.current=nd;try{await teSyncChanges(prev,nd);await saveData(nd)}catch(e){console.warn('save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},5000)}},[]);
+const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);savesInProgress.current++;savingRef.current=true;setData(prevData);dataRef.current=prevData;try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},5000)}},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else if(type==='station'){setScreen('station')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
 if(!data)return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh'}}><div style={{fontSize:48}}>&#128679;</div></div>);
