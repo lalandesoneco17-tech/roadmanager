@@ -61,7 +61,12 @@ merged.stationMovements=mergeAppendById(local.stationMovements,remote.stationMov
 return merged};
 const saveData=async(d)=>{localSave(d);if(sb){try{const{data:row}=await sb.from('app_data').select('data').eq('id','main').single();let merged;if(row&&row.data){merged=mergeFullData(d,row.data);
 // Mais on veut que LOCAL gagne sur remote pour timeEntries (le local vient de modifier) : timeEntries gere par teSyncChanges, donc on ecrase brutalement
-merged.timeEntries=d.timeEntries||[]}else{merged={...d}}
+merged.timeEntries=d.timeEntries||[];
+// La sauvegarde locale fait foi pour TOUS les reglages/scalaires (token Telegram, tarifs, forfaits, equipements, etc.) :
+// mergeFullData prend ceux du remote (utile pour le merge live recu), mais ICI l'utilisateur vient justement de les modifier.
+// On ne preserve depuis le merge que les arrays fusionnes par id (sinon on ecraserait les ajouts d'un autre appareil).
+const _mergedArrays={timeEntries:1,timeEntriesValidated:1,panneReports:1,interventions:1,parts:1,jobs:1,clients:1,depots:1,employees:1,machines:1,trucks:1,cars:1,machineReports:1,jdReports:1,messages:1,maintenanceRequests:1,stations:1,stationProducts:1,stationUsers:1,stationMovements:1,_tombstones:1};
+Object.keys(d||{}).forEach(k=>{if(!_mergedArrays[k])merged[k]=d[k]})}else{merged={...d}}
 // Tague avec notre session ID -> permet a subscribeToChanges d'ignorer notre propre echo
 merged._lastSaver=_localSessionId;merged._lastSaveAt=Date.now();
 const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else{localSave(merged);console.log('Saved to Supabase (merged)')}}catch(e){console.warn('Supabase save failed',e)}}};
