@@ -113,7 +113,9 @@ Deno.serve(async (req) => {
     if (cq && typeof cq.data === "string") {
       const parts = cq.data.split(":");
       const action = parts[0];
-      const empId = parts[1];
+      const isR = action === "r";
+      const dest = isR ? parts[1] : null;       // id de depot ou "home"
+      const empId = isR ? parts[2] : parts[1];
       const name = empName(data, empId);
       const link = (data.telegramEmpChats || {})[empId];
       if (!link || !link.chatId) {
@@ -124,7 +126,15 @@ Deno.serve(async (req) => {
         });
         return new Response("ok");
       }
-      if (action === "rentrer") {
+      if (isR) {
+        let destLabel = "à la maison";
+        if (dest !== "home") {
+          const dp = (data.depots || []).find((x: any) => x.id === dest);
+          destLabel = "au " + (dp ? dp.name : "dépôt");
+        }
+        await tg("sendMessage", { chat_id: link.chatId, text: "✅ Tu peux rentrer " + destLabel + ".\n\n" + nextDayPlan(data, empId) });
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
+      } else if (action === "rentrer") {
         await tg("sendMessage", { chat_id: link.chatId, text: "✅ Tu peux rentrer au dépôt.\n\n" + nextDayPlan(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "plan") {
