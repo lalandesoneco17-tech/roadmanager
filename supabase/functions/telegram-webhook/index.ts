@@ -53,6 +53,19 @@ function adminChatList(data: any): string[] {
   return [...s];
 }
 
+function parseCoordsF(s: any): number[] | null {
+  if (!s) return null;
+  const p = String(s).split(",").map(Number);
+  return p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]) ? p : null;
+}
+
+function jobLineF(data: any, job: any): string {
+  const c = (data.clients || []).find((x: any) => x.id === job.clientId);
+  const m = (data.machines || []).find((x: any) => x.id === job.machineId);
+  return (job.billingStart || "") + " " + (job.location || (c ? c.name : "chantier")) +
+    (c && job.location ? " (" + c.name + ")" : "") + (m ? " [" + m.name + "]" : "");
+}
+
 function empName(data: any, empId: string): string {
   const e = (data.employees || []).find((x: any) => x.id === empId);
   return e ? e.name : "le salarié";
@@ -163,8 +176,10 @@ Deno.serve(async (req) => {
       const parts = cq.data.split(":");
       const action = parts[0];
       const isR = action === "r";
+      const threePart = isR || action === "next";
       const dest = isR ? parts[1] : null;       // id de depot ou "home"
-      const empId = isR ? parts[2] : parts[1];
+      const arg = action === "next" ? parts[1] : null; // id du chantier
+      const empId = threePart ? parts[2] : parts[1];
       const name = empName(data, empId);
       const link = (data.telegramEmpChats || {})[empId];
       if (!link || !link.chatId) {
@@ -182,6 +197,14 @@ Deno.serve(async (req) => {
           destLabel = "au " + (dp ? dp.name : "dépôt");
         }
         await tg("sendMessage", { chat_id: link.chatId, text: "✅ Tu peux rentrer " + destLabel + ".\n\n" + nextDayPlan(data, empId) });
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
+      } else if (action === "next") {
+        const job = (data.jobs || []).find((x: any) => x.id === arg);
+        if (!job) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Chantier introuvable" }); return new Response("ok"); }
+        let txt = "➡️ Tu peux aller sur le prochain chantier :\n• " + jobLineF(data, job);
+        const coords = parseCoordsF(job.gps || job._geocodedGps);
+        if (coords) txt += "\n🗺 https://www.google.com/maps?q=" + coords[0] + "," + coords[1];
+        await tg("sendMessage", { chat_id: link.chatId, text: txt });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "rentrer") {
         await tg("sendMessage", { chat_id: link.chatId, text: "✅ Tu peux rentrer au dépôt.\n\n" + nextDayPlan(data, empId) });
