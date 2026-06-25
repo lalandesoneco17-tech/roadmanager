@@ -1196,19 +1196,19 @@ jobCalcs.forEach(c=>{c.marginPct=dMarginPct;c.benefAffiche=dBenefAffiche});
 const allMissions=[...jobCalcs];
 return(
 <React.Fragment key={eId}>
-{depotJobs.map(dj=>{const dep=getDepot(dj.depotId);return(
-<div key={dj.id} style={{background:'#f8fafc',borderRadius:8,marginBottom:8,border:'1px solid '+C.border,borderLeft:'4px solid #64748b',padding:'8px 12px'}}>
+{depotJobs.map(dj=>{const dep=getDepot(dj.depotId);const isRest=dj.rest||dj.depotActivity==='Repos';return(
+<div key={dj.id} style={{background:isRest?'#fee2e2':'#f8fafc',borderRadius:8,marginBottom:8,border:isRest?'2px solid '+C.red:'1px solid '+C.border,borderLeft:isRest?'6px solid '+C.red:'4px solid #64748b',padding:'8px 12px'}}>
 <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-<span style={{fontSize:15,fontWeight:700,color:'#64748b'}}>&#127959; {emp.name} — {dep?dep.name:'Depot'} — {dj.depotActivity||'Depot'}</span>
-{dj.depotDescription&&<span style={{fontSize:14,color:C.dim}}>({dj.depotDescription})</span>}
+<span style={{fontSize:15,fontWeight:700,color:isRest?C.red:'#64748b'}}>{isRest?'\u{1F634} '+emp.name+' — REPOS':<>&#127959; {emp.name} — {dep?dep.name:'Depot'} — {dj.depotActivity||'Depot'}</>}</span>
+{!isRest&&dj.depotDescription&&<span style={{fontSize:14,color:C.dim}}>({dj.depotDescription})</span>}
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'jobs',dj.id);nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>x</button>
 </div>
-<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:4,fontSize:13}}>
+{!isRest&&<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:4,fontSize:13}}>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:'--:--'}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:'--:--'}</span>
 {workMin>0&&<span style={{fontWeight:700,color:C.accent}}>{fmtDuration(workMin)}</span>}
 {mainTE&&mainTE.requestedEndTime&&<span title={mainTE.requestedEndMotif?'Motif : '+mainTE.requestedEndMotif:'RDV / debauche demandee'} style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:'#d9770630',color:'#d97706',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}}>Deb. {mainTE.requestedEndTime}{mainTE.requestedEndMotif?' · '+mainTE.requestedEndMotif:''}</span>}
 {mainTE&&mainTE.absenceType&&<span title={mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?'Motif : '+mainTE.requestedEndMotif:mainTE.absenceType} style={{padding:'1px 6px',borderRadius:10,fontSize:11,fontWeight:700,background:C.red+'20',color:C.red,maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}}>{mainTE.absenceType}{mainTE.requestedEndMotif&&mainTE.requestedEndMotif!==mainTE.absenceType?' · '+mainTE.requestedEndMotif:''}</span>}
-</div>
+</div>}
 </div>)})}
 {allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);const machColor2=defMach?widthColor(defMach):C.muted;
 const createJobForEmp=(field,value)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
@@ -1231,6 +1231,7 @@ return(
 <input placeholder="Lieu / adresse" onKeyDown={e=>{if(e.key==='Enter'&&e.target.value){createJobForEmp('location',e.target.value);e.target.value=''}}} style={{fontSize:15,padding:'4px 8px',borderRadius:6,border:'1px solid '+C.border,minWidth:100,flex:1,maxWidth:220,background:'#fff'}}/>
 <input type="time" disabled value="08:00" style={{fontSize:15,padding:'4px 4px',borderRadius:6,border:'2px solid '+C.orange+'40',background:C.orange+'08',color:C.orange,fontWeight:700,width:75,opacity:0.5}}/>
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:4,padding:'4px 10px',cursor:'pointer',fontSize:13,marginLeft:'auto'}}>Dépôt</button>
+<button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,type:'depot',depotActivity:'Repos',rest:true});save(nd)}} style={{background:C.red,color:'#fff',border:'none',borderRadius:4,padding:'4px 10px',cursor:'pointer',fontSize:13}}>Repos</button>
 </div>
 {(te.length>0)&&<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',padding:'4px 10px',fontSize:13,borderTop:'1px solid '+C.border,background:'#fafbfc'}}>
 <span style={{color:C.dim}}>reel {mainTE&&mainTE.startTime?<b style={{color:C.accent}}>{mainTE.startTime}</b>:'--:--'}{'→'}{mainTE&&mainTE.endTime?<b style={{color:C.accent}}>{mainTE.endTime}</b>:'--:--'}</span>
