@@ -5,7 +5,7 @@ const FC={'2h':'#6b7280','4h':'#008965','6h':'#d97706','8h':'#16a34a','10h':'#dc
 const SKEY='roadmanager-v5';
 if(!window.storage||typeof window.storage.get!=='function'){window.storage={get:function(k){try{return Promise.resolve(localStorage.getItem(k))}catch(e){return Promise.resolve(null)}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve()}};}
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,nightStart:'21:00',nightEnd:'06:00',paniersPrice:12,restoPrice:15,anthropicApiKey:'',telegramBotToken:'',telegramAdminChatId:'',telegramAdminChats:[],tgNotifyStart:true,tgNotifyPause:true,tgNotifyResume:true,tgNotifyDone:true,tgNotifySign:true,tgNotifyStock:true,tgNotifyPresence:true,telegramEmpChats:{},machineReports:[],equipmentLists:{Raboteuse:[],Balayeuse:[],Citerne:[]},machineEquipmentStatus:{},maintenanceRequests:[],stations:[],stationProducts:[],stationMovements:[],stationUsers:[]});
+const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,nightStart:'21:00',nightEnd:'06:00',paniersPrice:12,restoPrice:15,anthropicApiKey:'',telegramBotToken:'',telegramAdminChatId:'',telegramAdminChats:[],tgNotifyStart:true,tgNotifyPause:true,tgNotifyResume:true,tgNotifyDone:true,tgNotifySign:true,tgNotifyStock:true,tgNotifyPresence:true,tgNotifyCbTickets:true,telegramEmpChats:{},machineReports:[],equipmentLists:{Raboteuse:[],Balayeuse:[],Citerne:[]},machineEquipmentStatus:{},maintenanceRequests:[],stations:[],stationProducts:[],stationMovements:[],stationUsers:[]});
 const PART_CATS=['pneu','filtre','courroie','dent','roulement','electrique','hydraulique','autre'];
 const INTER_TYPES=['reparation','entretien','changement_piece','panne'];
 const SEVERITIES=['urgent','normal','mineur'];
@@ -1664,22 +1664,22 @@ return(<div style={{padding:'4px 8px',display:'flex',alignItems:'center',gap:5,f
 </div>))}
 </div>
 </div>}
-{j.signature&&j.signature.dataUrl&&<div style={{marginTop:8,background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:10}}>
+{j.signature&&(j.signature.dataUrl||j.signature.durationMin!=null)&&<div style={{marginTop:8,background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:10}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:8}}>
 <div>
-<div style={{fontWeight:800,color:'#15803d',fontSize:14}}>✍️ Signature chef de chantier</div>
-<div style={{fontSize:12,color:'#166534',marginTop:2}}>Par <b>{j.signature.signedBy}</b> le {new Date(j.signature.signedAt).toLocaleString('fr-FR')}</div>
+<div style={{fontWeight:800,color:'#15803d',fontSize:14}}>🏁 Fin de chantier</div>
+<div style={{fontSize:12,color:'#166534',marginTop:2}}>{j.signature.signedBy?<span>Par <b>{j.signature.signedBy}</b> </span>:null}le {new Date(j.signature.signedAt).toLocaleString('fr-FR')}</div>
 {j.signature.phone&&<div style={{fontSize:12,color:'#166534',marginTop:1}}>📞 <a href={'tel:'+j.signature.phone} style={{color:'#166534'}}>{j.signature.phone}</a></div>}
 {j.signature.email&&<div style={{fontSize:12,color:'#166534',marginTop:1}}>📧 <a href={'mailto:'+j.signature.email} style={{color:'#166534'}}>{j.signature.email}</a></div>}
 </div>
-<button onClick={()=>{if(confirm('Supprimer la signature ?')){const nd=JSON.parse(JSON.stringify(_liveData||data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){delete jj.signature;save(nd)}}}} style={{background:'#fff',border:'1px solid #ef4444',color:'#dc2626',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700}}>🗑 Supprimer</button>
+<button onClick={()=>{if(confirm('Supprimer la fin de chantier ?')){const nd=JSON.parse(JSON.stringify(_liveData||data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){delete jj.signature;save(nd)}}}} style={{background:'#fff',border:'1px solid #ef4444',color:'#dc2626',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700}}>🗑 Supprimer</button>
 </div>
 {(j.signature.durationMin!=null||j.signature.autoForfait)&&<div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',padding:'8px 10px',background:'#fff',borderRadius:8,border:'1px solid #86efac'}}>
 {j.signature.durationMin!=null&&<div style={{flex:1,minWidth:90}}><div style={{fontSize:9,fontWeight:800,color:'#166534',textTransform:'uppercase',letterSpacing:'0.4px'}}>⏱ Temps passe</div><div style={{fontSize:16,fontWeight:800,color:'#15803d',lineHeight:1.1}}>{Math.floor(j.signature.durationMin/60)}h{String(j.signature.durationMin%60).padStart(2,'0')}</div></div>}
 {j.signature.pauseDeducted>0&&<div style={{flex:1,minWidth:90}}><div style={{fontSize:9,fontWeight:800,color:'#9a3412',textTransform:'uppercase',letterSpacing:'0.4px'}}>⏸ Pause deduite</div><div style={{fontSize:16,fontWeight:800,color:'#c2410c',lineHeight:1.1}}>{j.signature.pauseDeducted} min</div></div>}
 {j.signature.autoForfait&&<div style={{flex:1,minWidth:90}}><div style={{fontSize:9,fontWeight:800,color:'#1d4ed8',textTransform:'uppercase',letterSpacing:'0.4px'}}>💰 Forfait calcule</div><div style={{fontSize:16,fontWeight:800,color:'#1d4ed8',lineHeight:1.1}}>{j.signature.autoForfait}</div></div>}
 </div>}
-<img src={j.signature.dataUrl} alt="Signature" style={{maxWidth:'100%',background:'#fff',border:'1px solid '+C.border,borderRadius:8,padding:6,display:'block'}}/>
+{j.signature.dataUrl&&<img src={j.signature.dataUrl} alt="Signature" style={{maxWidth:'100%',background:'#fff',border:'1px solid '+C.border,borderRadius:8,padding:6,display:'block'}}/>}
 </div>}
 </div>}
 </div>)})}
@@ -2322,7 +2322,8 @@ const[tgDone,setTgDone]=useState(data.tgNotifyDone!==false);
 const[tgSign,setTgSign]=useState(data.tgNotifySign!==false);
 const[tgStock,setTgStock]=useState(data.tgNotifyStock!==false);
 const[tgPresence,setTgPresence]=useState(data.tgNotifyPresence!==false);
-const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),nightStart:nStart||'21:00',nightEnd:nEnd||'06:00',tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP),anthropicApiKey:apiKey,companyContext:companyCtx,telegramBotToken:tgToken,telegramAdminChatId:tgChatId,tgNotifyStart:tgStart,tgNotifyPause:tgPause,tgNotifyResume:tgResume,tgNotifyDone:tgDone,tgNotifySign:tgSign,tgNotifyStock:tgStock,tgNotifyPresence:tgPresence});alert('Enregistre')};
+const[tgCb,setTgCb]=useState(data.tgNotifyCbTickets!==false);
+const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),nightStart:nStart||'21:00',nightEnd:nEnd||'06:00',tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP),anthropicApiKey:apiKey,companyContext:companyCtx,telegramBotToken:tgToken,telegramAdminChatId:tgChatId,tgNotifyStart:tgStart,tgNotifyPause:tgPause,tgNotifyResume:tgResume,tgNotifyDone:tgDone,tgNotifySign:tgSign,tgNotifyStock:tgStock,tgNotifyPresence:tgPresence,tgNotifyCbTickets:tgCb});alert('Enregistre')};
 const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,'');
 return(
 <div>
@@ -2407,6 +2408,8 @@ Suggestions de ce que tu peux ecrire :<br/>
 <label style={{display:'block',marginBottom:5,cursor:'pointer'}}><input type="checkbox" checked={tgSign} onChange={e=>setTgSign(e.target.checked)} style={{marginRight:8}}/>✍️ fait signer un chantier (nom + temps passe)</label>
 <label style={{display:'block',marginBottom:5,cursor:'pointer'}}><input type="checkbox" checked={tgStock} onChange={e=>setTgStock(e.target.checked)} style={{marginRight:8}}/>📦 stock d'un produit station tombe à zéro</label>
 <label style={{display:'block',marginBottom:5,cursor:'pointer'}}><input type="checkbox" checked={tgPresence} onChange={e=>setTgPresence(e.target.checked)} style={{marginRight:8}}/>🌅 employé de station sans présence le matin (8h)</label>
+<div style={{fontWeight:600,color:C.dim,margin:'8px 0 4px'}}>Aux salariés :</div>
+<label style={{display:'block',marginBottom:5,cursor:'pointer'}}><input type="checkbox" checked={tgCb} onChange={e=>setTgCb(e.target.checked)} style={{marginRight:8}}/>💳 rappel « tickets carte bleue » le dernier jour du mois</label>
 <div style={{fontSize:11,color:C.muted,marginTop:4}}>Pense a cliquer Enregistrer en bas apres modification.</div>
 </div>
 </div>
@@ -2503,57 +2506,28 @@ const[showEntFaire,setShowEntFaire]=useState(false);
 const[entFaireDesc,setEntFaireDesc]=useState('');
 const[showEquip,setShowEquip]=useState(false);
 const[empPhotoLightbox,setEmpPhotoLightbox]=useState(null);
-// Signature chef de chantier
-const[signJob,setSignJob]=useState(null);
-const[signName,setSignName]=useState('');
-const[signPhone,setSignPhone]=useState('');
-const[signEmail,setSignEmail]=useState('');
-const[signForfait,setSignForfait]=useState(null);
-const signCanvas=useRef(null);const signCtx=useRef(null);const signDrawing=useRef(false);const signHasInk=useRef(false);
-useEffect(()=>{if(!signJob||!signCanvas.current)return;const c=signCanvas.current;const dpr=window.devicePixelRatio||1;const rect=c.getBoundingClientRect();c.width=rect.width*dpr;c.height=rect.height*dpr;const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#0f172a';ctx.lineWidth=2.5;signCtx.current=ctx;signHasInk.current=false},[signJob]);
-const _signPos=e=>{const c=signCanvas.current;if(!c)return null;const r=c.getBoundingClientRect();const t=e.touches&&e.touches[0]?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}};
-const signStart=e=>{e.preventDefault();const p=_signPos(e);if(!p||!signCtx.current)return;signDrawing.current=true;signCtx.current.beginPath();signCtx.current.moveTo(p.x,p.y)};
-const signMove=e=>{if(!signDrawing.current)return;e.preventDefault();const p=_signPos(e);if(!p||!signCtx.current)return;signCtx.current.lineTo(p.x,p.y);signCtx.current.stroke();signHasInk.current=true};
-const signEnd=()=>{signDrawing.current=false};
-const signClear=()=>{if(!signCanvas.current||!signCtx.current)return;const c=signCanvas.current;signCtx.current.clearRect(0,0,c.width,c.height);signHasInk.current=false};
-const openSignModal=(j)=>{
-  setSignJob(j);setSignName(j.siteManager||'');
-  // Pre-remplit telephone / email depuis le siteManager du client si deja connu
-  const _cl=(data.clients||[]).find(c=>c.id===j.clientId);
-  const _sm=_cl&&_cl.siteManagers?(_cl.siteManagers.find(s=>s.name===j.siteManager&&(s.agency||'')===(j.agencyName||''))||_cl.siteManagers.find(s=>s.name===j.siteManager)):null;
-  setSignPhone((_sm&&_sm.phone)||j.siteManagerPhone||'');
-  setSignEmail((_sm&&_sm.email)||j.siteManagerEmail||'');
-  // Calcul du forfait au moment de l'ouverture (visible avant signature)
+// Fin de chantier : calcule juste le temps passe (sans signature ni forfait)
+const endJob=(j)=>{
+  if(!confirm('Terminer ce chantier ? Le temps passe sera calcule.'))return;
   const _toM=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
+  const nd=JSON.parse(JSON.stringify(_liveData||data));
+  const jj=nd.jobs.find(x=>x.id===j.id);
+  if(!jj)return;
   const billStart=_toM(j.billingStart);
-  if(billStart==null){setSignForfait(null);return}
-  const now=new Date();let endMin=now.getHours()*60+now.getMinutes();if(endMin<billStart)endMin+=1440;
-  let dur=endMin-billStart;
-  let pauseDeducted=0;
-  const te=(data.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&(t.breakStart||t.pauseStart||t.pauseMin));
-  if(te){const pS=_toM(te.breakStart||te.pauseStart);const pE=_toM(te.breakEnd||te.pauseEnd);const pM=(pS!=null&&pE!=null&&pE>pS)?(pE-pS):(te.pauseMin?Number(te.pauseMin):0);if(pS!=null&&pS>=billStart&&pM>0){dur-=pM;pauseDeducted=pM}}
-  dur=Math.max(0,dur);const durH=dur/60;
-  const m=(data.machines||[]).find(mm=>mm.id===j.machineId);
-  let label=null;
-  if(m&&m.type==='Citerne')label=durH<=4?'Demi-journee':'Journee';
-  else{if(durH<=2)label='2h';else if(durH<=4)label='4h';else if(durH<=6)label='6h';else if(durH<=8)label='8h';else label='10h'}
-  setSignForfait({label,durMin:dur,pauseDeducted,endHHmm:String(Math.floor((endMin%1440)/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0')});
+  let dur=null,pauseDeducted=0;
+  if(billStart!=null){
+    const now=new Date();let endMin=now.getHours()*60+now.getMinutes();if(endMin<billStart)endMin+=1440;
+    dur=endMin-billStart;
+    const te=(nd.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&(t.breakStart||t.pauseStart||t.pauseMin));
+    if(te){const pS=_toM(te.breakStart||te.pauseStart);const pE=_toM(te.breakEnd||te.pauseEnd);const pM=(pS!=null&&pE!=null&&pE>pS)?(pE-pS):(te.pauseMin?Number(te.pauseMin):0);if(pS!=null&&pS>=billStart&&pM>0){dur-=pM;pauseDeducted=pM}}
+    dur=Math.max(0,dur);
+  }
+  jj.signature={signedBy:(emp&&emp.name)||'',signedAt:new Date().toISOString(),durationMin:dur,pauseDeducted,autoForfait:null,endedBy:'employee'};
+  save(nd);
+  // Notification Telegram a l'admin : fin de chantier + temps de route (depot/domicile) + planning du lendemain (sans forfait)
+  (async()=>{try{const cfg=_liveData||data;const tok=cfg.telegramBotToken;if(!tok||cfg.tgNotifySign===false)return;const who=(emp&&emp.name)||'Un salarie';const loc=j.location||jj.location||'chantier';const cln=jj.clientId?((nd.clients.find(c=>c.id===jj.clientId)||{}).name||''):'';const dm=jj.signature.durationMin;const durTxt=dm!=null?Math.floor(dm/60)+'h'+String(dm%60).padStart(2,'0'):'—';const lines=['🏁 '+who+' — fin de chantier','📍 '+loc+(cln?' ('+cln+')':''),'⏱ Temps passé : '+durTxt];const eta=min=>{const a=new Date(Date.now()+min*60000);return pad2(a.getHours())+'h'+pad2(a.getMinutes())};const depC=d=>d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null;const jc=parseCoords(j.gps||j._geocodedGps);const hc=getEmpCoords(cfg,empId);const dests=[];(cfg.depots||[]).forEach(d=>dests.push({label:d.name||'Dépôt',coords:depC(d),emoji:'🏭'}));dests.push({label:'Domicile',coords:hc,emoji:'🏠'});if(jc){lines.push('','🚗 Retour depuis le chantier :');for(const ds of dests){if(ds.coords){const r=await osmRoute(jc,ds.coords);lines.push(ds.emoji+' '+ds.label+' : '+r.min+' min → arrivée ~'+eta(r.min)+' ('+r.km+' km)')}else{lines.push(ds.emoji+' '+ds.label+' : (adresse non renseignée)')}}}else{lines.push('','🚗 (pas de GPS sur le chantier — temps de route indisponibles)')}const tmr=new Date();tmr.setDate(tmr.getDate()+1);const tISO=fmtDateISO(tmr);const next=(cfg.jobs||[]).filter(nj=>nj.employeeId===empId&&nj.date===tISO);if(next.length){lines.push('','📅 Demain :');next.forEach(nj=>{const c=(cfg.clients||[]).find(x=>x.id===nj.clientId);const mc=(cfg.machines||[]).find(x=>x.id===nj.machineId);lines.push('• '+(nj.billingStart||'')+' '+(nj.location||(c?c.name:'chantier'))+(c&&nj.location?' ('+c.name+')':'')+(mc?' ['+mc.name+']':''))});const ncoo=parseCoords(next[0].gps||next[0]._geocodedGps);if(ncoo){let bestD=null;dests.forEach(ds=>{if(ds.coords){const km=haversine(ncoo,ds.coords);if(!bestD||km<bestD.km)bestD={label:ds.label,km:Math.round(km)}}});if(bestD)lines.push('→ Le plus proche du chantier de demain : '+bestD.label+' (~'+bestD.km+' km)')}}else{lines.push('','📅 Demain : rien de prévu')}const kb=[];(cfg.depots||[]).forEach(d=>kb.push([{text:'🏭 Rentre à '+(d.name||'dépôt'),callback_data:'r:'+d.id+':'+empId}]));kb.push([{text:'🏠 Rentre à la maison',callback_data:'r:home:'+empId}]);kb.push([{text:'📅 Lui envoyer son planning de demain',callback_data:'plan:'+empId}]);tgSendAdmins(cfg,lines.join('\n'),{reply_markup:{inline_keyboard:kb}})}catch(e){}})();
+  alert('✓ Fin de chantier enregistree !');
 };
-const closeSignModal=()=>{setSignJob(null);setSignName('');setSignPhone('');setSignEmail('');setSignForfait(null)};
-const signSave=()=>{if(!signJob)return;if(!signHasInk.current){alert('La signature est vide');return}if(!signName.trim()){alert('Nom du chef requis');return}const dataUrl=signCanvas.current.toDataURL('image/png');const nd=JSON.parse(JSON.stringify(_liveData||data));const jj=nd.jobs.find(x=>x.id===signJob.id);if(!jj){closeSignModal();return}
-// Applique le forfait pre-calcule (visible dans la modal)
-if(signForfait&&signForfait.label){jj.forfaitType=signForfait.label;const m=(nd.machines||[]).find(mm=>mm.id===jj.machineId);const p=getForfaitPrice(nd,jj.clientId,m,signForfait.label,jj.citOption,jj.isNight);if(p)jj.priceForfait=p}
-// Met a jour le chantier
-jj.siteManager=signName.trim();
-jj.siteManagerPhone=signPhone.trim();
-jj.siteManagerEmail=signEmail.trim();
-// Met a jour ou cree le siteManager dans le client (avec agence si renseignee)
-if(jj.clientId){const _cl=nd.clients.find(c=>c.id===jj.clientId);if(_cl){if(!_cl.siteManagers)_cl.siteManagers=[];const _existing=_cl.siteManagers.find(s=>s.name===signName.trim()&&(s.agency||'')===(jj.agencyName||''));if(_existing){if(signPhone.trim())_existing.phone=signPhone.trim();if(signEmail.trim())_existing.email=signEmail.trim()}else{_cl.siteManagers.push({name:signName.trim(),phone:signPhone.trim(),email:signEmail.trim(),agency:jj.agencyName||''})}}}
-jj.signature={dataUrl,signedBy:signName.trim(),signedAt:new Date().toISOString(),autoForfait:signForfait?signForfait.label:null,durationMin:signForfait?signForfait.durMin:null,pauseDeducted:signForfait?signForfait.pauseDeducted:0,phone:signPhone.trim(),email:signEmail.trim()};
-save(nd);
-// Notification Telegram a l'admin : chantier signe + temps de route (depot/domicile) + planning du lendemain
-(async()=>{try{const cfg=_liveData||data;const tok=cfg.telegramBotToken;if(!tok||cfg.tgNotifySign===false)return;const who=(emp&&emp.name)||'Un salarie';const loc=signJob.location||jj.location||'chantier';const cln=jj.clientId?((nd.clients.find(c=>c.id===jj.clientId)||{}).name||''):'';const dm=jj.signature.durationMin;const dur=dm!=null?Math.floor(dm/60)+'h'+String(dm%60).padStart(2,'0'):'—';const ff=jj.signature.autoForfait?(' • Forfait '+jj.signature.autoForfait):'';const lines=['✍️ '+who+' — signature validée','📍 '+loc+(cln?' ('+cln+')':''),'⏱ Temps passé : '+dur+ff];const eta=min=>{const a=new Date(Date.now()+min*60000);return pad2(a.getHours())+'h'+pad2(a.getMinutes())};const depC=d=>d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null;const jc=parseCoords(signJob.gps||signJob._geocodedGps);const hc=getEmpCoords(cfg,empId);const dests=[];(cfg.depots||[]).forEach(d=>dests.push({label:d.name||'Dépôt',coords:depC(d),emoji:'🏭'}));dests.push({label:'Domicile',coords:hc,emoji:'🏠'});if(jc){lines.push('','🚗 Retour depuis le chantier :');for(const ds of dests){if(ds.coords){const r=await osmRoute(jc,ds.coords);lines.push(ds.emoji+' '+ds.label+' : '+r.min+' min → arrivée ~'+eta(r.min)+' ('+r.km+' km)')}else{lines.push(ds.emoji+' '+ds.label+' : (adresse non renseignée)')}}}else{lines.push('','🚗 (pas de GPS sur le chantier — temps de route indisponibles)')}const tmr=new Date();tmr.setDate(tmr.getDate()+1);const tISO=fmtDateISO(tmr);const next=(cfg.jobs||[]).filter(j=>j.employeeId===empId&&j.date===tISO);if(next.length){lines.push('','📅 Demain :');next.forEach(j=>{const c=(cfg.clients||[]).find(x=>x.id===j.clientId);const mc=(cfg.machines||[]).find(x=>x.id===j.machineId);lines.push('• '+(j.billingStart||'')+' '+(j.location||(c?c.name:'chantier'))+(c&&j.location?' ('+c.name+')':'')+(mc?' ['+mc.name+']':''))});const ncoo=parseCoords(next[0].gps||next[0]._geocodedGps);if(ncoo){let bestD=null;dests.forEach(ds=>{if(ds.coords){const km=haversine(ncoo,ds.coords);if(!bestD||km<bestD.km)bestD={label:ds.label,km:Math.round(km)}}});if(bestD)lines.push('→ Le plus proche du chantier de demain : '+bestD.label+' (~'+bestD.km+' km)')}}else{lines.push('','📅 Demain : rien de prévu')}const kb=[];(cfg.depots||[]).forEach(d=>kb.push([{text:'🏭 Rentre à '+(d.name||'dépôt'),callback_data:'r:'+d.id+':'+empId}]));kb.push([{text:'🏠 Rentre à la maison',callback_data:'r:home:'+empId}]);kb.push([{text:'📅 Lui envoyer son planning de demain',callback_data:'plan:'+empId}]);tgSendAdmins(cfg,lines.join('\n'),{reply_markup:{inline_keyboard:kb}})}catch(e){}})();
-closeSignModal();alert('✓ Signature enregistree !')};
 const selectedMachine=(data.machines||[]).find(m=>m.id===selectedMachineId)||null;
 const submitEntFait=()=>{if(!selectedMachineId||!entFaitDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.interventions)nd.interventions=[];nd.interventions.push({id:uid(),date:fmtDateISO(new Date()),machineId:selectedMachineId,type:'entretien',description:entFaitDesc,employeeId:empId,partsUsed:[],laborHours:0,laborCost:0,totalCost:0,status:'done',notes:'Declare par chauffeur'});save(nd);setShowEntFait(false);setEntFaitDesc('');alert('Entretien enregistre !')};
 const submitEntFaire=()=>{if(!selectedMachineId||!entFaireDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.maintenanceRequests)nd.maintenanceRequests=[];nd.maintenanceRequests.push({id:uid(),date:fmtDateISO(new Date()),reportedBy:empId,machineId:selectedMachineId,description:entFaireDesc,status:'new'});save(nd);setShowEntFaire(false);setEntFaireDesc('');alert('Demande envoyee !')};
@@ -2858,41 +2832,6 @@ return(
 </div>
 </Mod>)})()}
 {empPhotoLightbox&&<div onClick={()=>setEmpPhotoLightbox(null)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.92)',zIndex:5000,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}><img src={empPhotoLightbox} alt="" style={{maxWidth:'95vw',maxHeight:'95vh',objectFit:'contain'}}/><button onClick={e=>{e.stopPropagation();setEmpPhotoLightbox(null)}} style={{position:'absolute',top:20,right:20,background:'#fff',border:'none',borderRadius:'50%',width:44,height:44,fontSize:22,cursor:'pointer',fontWeight:700,boxShadow:'0 2px 10px rgba(0,0,0,.3)'}}>×</button></div>}
-{signJob&&<Mod title="✍️ Signature du chef de chantier" onClose={closeSignModal} width={520}>
-<div style={{display:'flex',flexDirection:'column',gap:14}}>
-  <div style={{background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:'10px 14px',fontSize:13,color:'#15803d'}}>
-    <div style={{fontWeight:700,marginBottom:4}}>📋 Chantier termine</div>
-    <div style={{fontSize:12,color:'#166534'}}>{signJob.location||'Sans lieu'}{signJob.billingStart?' • Debut '+signJob.billingStart:''}{signForfait?' • Fin '+signForfait.endHHmm:''}</div>
-  </div>
-  {signForfait&&<div style={{background:'#eff6ff',border:'2px solid #93c5fd',borderRadius:10,padding:'12px 14px'}}>
-    <div style={{fontSize:11,fontWeight:800,color:'#1d4ed8',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>💰 Forfait calcule automatiquement</div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
-      <div style={{fontSize:28,fontWeight:800,color:'#1d4ed8',lineHeight:1}}>{signForfait.label}</div>
-      <div style={{fontSize:12,color:'#1e40af',textAlign:'right'}}>
-        <div>Duree : <b>{Math.floor(signForfait.durMin/60)}h{String(signForfait.durMin%60).padStart(2,'0')}</b></div>
-        {signForfait.pauseDeducted>0&&<div style={{color:'#d97706'}}>(pause {signForfait.pauseDeducted}min deduite)</div>}
-      </div>
-    </div>
-  </div>}
-  <div>
-    <label style={empLabelS}>👤 Nom du chef de chantier</label>
-    <input style={empInputS} value={signName} onChange={e=>setSignName(e.target.value)} placeholder="Nom et prenom"/>
-  </div>
-  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-    <div><label style={empLabelS}>📞 Telephone</label><input type="tel" style={empInputS} value={signPhone} onChange={e=>setSignPhone(e.target.value)} placeholder="06 12 34 56 78"/></div>
-    <div><label style={empLabelS}>📧 Email facture</label><input type="email" style={empInputS} value={signEmail} onChange={e=>setSignEmail(e.target.value)} placeholder="contact@..."/></div>
-  </div>
-  <div>
-    <label style={empLabelS}>✍️ Signature (utilisez le doigt ou la souris)</label>
-    <canvas ref={signCanvas} style={{width:'100%',height:200,background:'#fff',border:'2px dashed #cbd5e1',borderRadius:10,touchAction:'none',cursor:'crosshair',display:'block'}} onMouseDown={signStart} onMouseMove={signMove} onMouseUp={signEnd} onMouseLeave={signEnd} onTouchStart={signStart} onTouchMove={signMove} onTouchEnd={signEnd}/>
-    <button onClick={signClear} style={{marginTop:8,padding:'8px 14px',fontSize:13,fontWeight:600,borderRadius:8,border:'2px solid #cbd5e1',background:'#fff',color:'#475569',cursor:'pointer'}}>🗑 Effacer la signature</button>
-  </div>
-  <div style={{display:'flex',gap:10,marginTop:8}}>
-    <button onClick={closeSignModal} style={empBtnS}>Annuler</button>
-    <button onClick={signSave} style={empBtnP(C.accent)}>✓ Valider la signature</button>
-  </div>
-</div>
-</Mod>}
 {tab==='heures'&&<React.Fragment>
 {(()=>{const statusLbl=status==='on'?'En activite':status==='pause'?'En pause':'Debauche';const statusCol=status==='on'?C.green:status==='pause'?C.orange:C.muted;const todayWorked=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+(status==='on'&&lastEntry&&lastEntry.startTime?Math.max(0,(new Date().getHours()*60+new Date().getMinutes())-(()=>{const[h,m]=lastEntry.startTime.split(':').map(Number);return h*60+m})()):0);return(
 <div style={{background:C.card,borderRadius:14,padding:16,border:'1px solid '+C.border,marginBottom:16,boxShadow:'0 2px 8px rgba(0,0,0,.04)'}}>
@@ -3012,7 +2951,7 @@ return(
 <div style={{fontWeight:700,fontSize:16}}>{isDepot?<span style={{color:'#64748b'}}>{depotObj?depotObj.name:'Depot'} — {j.depotActivity||'Depot'}{j.depotDescription?' ('+j.depotDescription+')':''}</span>:(cl?cl.name:'Pas de client')}{!isDepot&&j.agencyName?' - '+j.agencyName:''}</div>
 <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
 {!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>}
-{!isDepot&&(j.signature?<span title={'Signe par '+j.signature.signedBy+' le '+new Date(j.signature.signedAt).toLocaleString('fr-FR')+(j.signature.durationMin!=null?'\n⏱ Temps passe : '+Math.floor(j.signature.durationMin/60)+'h'+String(j.signature.durationMin%60).padStart(2,'0'):'')+(j.signature.pauseDeducted>0?'\n⏸ Pause deduite : '+j.signature.pauseDeducted+' min':'')+(j.signature.autoForfait?'\n💰 Forfait : '+j.signature.autoForfait:'')} style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:C.accent+'20',color:C.accent,cursor:'help'}}>✓ Signe</span>:<button onClick={()=>openSignModal(j)} style={{padding:'6px 12px',borderRadius:6,fontSize:13,fontWeight:700,background:'#fff',border:'2px solid '+C.accent,color:C.accent,cursor:'pointer'}}>✍️ Faire signer le chef</button>)}
+{!isDepot&&(j.signature?<span title={'Chantier termine'+(j.signature.durationMin!=null?' • '+Math.floor(j.signature.durationMin/60)+'h'+String(j.signature.durationMin%60).padStart(2,'0'):'')+(j.signature.pauseDeducted>0?' (pause '+j.signature.pauseDeducted+' min deduite)':'')} style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:C.accent+'20',color:C.accent,cursor:'help'}}>✓ Termine</span>:<button onClick={()=>endJob(j)} style={{padding:'6px 12px',borderRadius:6,fontSize:13,fontWeight:700,background:'#fff',border:'2px solid '+C.accent,color:C.accent,cursor:'pointer'}}>🏁 Fin de chantier</button>)}
 </div>
 </div>
 <div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
@@ -3023,9 +2962,9 @@ return(
 {arrN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrN}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
 </div>}
 {(()=>{const cols=(data.jobs||[]).filter(jj=>jj.id!==j.id&&jj.date===j.date&&jj.employeeId&&jj.employeeId!==empId&&j.location&&jj.location&&jj.location.trim().toLowerCase()===j.location.trim().toLowerCase());if(!cols.length)return null;return(<div style={{marginTop:6,padding:'6px 8px',background:'#f0f9ff',borderRadius:8,border:'1px solid #bae6fd'}}><div style={{fontSize:12,color:'#0369a1',fontWeight:700,marginBottom:4}}>{'👷 Equipe sur ce chantier :'}</div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{cols.map(jj=>{const ce=(data.employees||[]).find(e=>e.id===jj.employeeId);return ce?<span key={jj.id} style={{background:'#0891b2',borderRadius:6,padding:'3px 10px',fontSize:13,fontWeight:700,color:'#fff'}}>{ce.name}</span>:null})}</div></div>);})()}
-{j.signature&&j.signature.signedBy&&<div style={{marginTop:8,padding:'8px 10px',background:'#f0fdf4',borderRadius:10,border:'2px solid #86efac'}}>
+{j.signature&&(j.signature.signedBy||j.signature.durationMin!=null)&&<div style={{marginTop:8,padding:'8px 10px',background:'#f0fdf4',borderRadius:10,border:'2px solid #86efac'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}}>
-<div><div style={{fontSize:12,color:'#15803d',fontWeight:800,textTransform:'uppercase',letterSpacing:'0.3px'}}>✍️ Signe par {j.signature.signedBy}</div><div style={{fontSize:11,color:'#166534',marginTop:2}}>{new Date(j.signature.signedAt).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</div></div>
+<div><div style={{fontSize:12,color:'#15803d',fontWeight:800,textTransform:'uppercase',letterSpacing:'0.3px'}}>🏁 Chantier termine</div><div style={{fontSize:11,color:'#166534',marginTop:2}}>{new Date(j.signature.signedAt).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</div></div>
 {(j.signature.durationMin!=null||j.signature.autoForfait)&&<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
 {j.signature.durationMin!=null&&<div style={{padding:'4px 10px',background:'#fff',borderRadius:6,border:'1px solid #86efac',fontSize:12,fontWeight:700,color:'#15803d'}}>⏱ {Math.floor(j.signature.durationMin/60)}h{String(j.signature.durationMin%60).padStart(2,'0')}{j.signature.pauseDeducted>0?<span style={{color:'#c2410c',fontSize:10,marginLeft:4}}>(−{j.signature.pauseDeducted}min pause)</span>:null}</div>}
 {j.signature.autoForfait&&<div style={{padding:'4px 10px',background:'#fff',borderRadius:6,border:'1px solid '+C.accent,fontSize:12,fontWeight:700,color:C.accent}}>💰 {j.signature.autoForfait}</div>}

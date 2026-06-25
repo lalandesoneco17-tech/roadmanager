@@ -105,6 +105,23 @@ Deno.serve(async (req) => {
       return new Response("ok");
     }
 
+    // 0bis) Cron fin de mois : rappel "tickets carte bleue" aux salaries (vers 18h Paris, dernier jour du mois)
+    if (update && update.source === "cron-cb-tickets") {
+      const hourParis = parseInt(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).format(new Date()), 10);
+      if (hourParis !== 18) return new Response("ok");
+      if (data.tgNotifyCbTickets === false) return new Response("ok");
+      const fmtP = (dt: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(dt);
+      const todayP = fmtP(new Date());
+      const tomorrowP = fmtP(new Date(Date.now() + 24 * 3600 * 1000));
+      if (todayP.slice(0, 7) === tomorrowP.slice(0, 7)) return new Response("ok"); // pas le dernier jour du mois
+      const ec = data.telegramEmpChats || {};
+      for (const empId of Object.keys(ec)) {
+        const chatId = ec[empId] && ec[empId].chatId;
+        if (chatId) await tg("sendMessage", { chat_id: chatId, text: "💳 Fin de mois ! Pense à nous donner tes tickets de carte bleue (tous les paiements du mois). Merci 🙏" });
+      }
+      return new Response("ok");
+    }
+
     // 1) Liaison via /start
     const msg = update.message;
     if (msg && typeof msg.text === "string" && msg.text.indexOf("/start") === 0) {
