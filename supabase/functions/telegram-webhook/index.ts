@@ -87,9 +87,17 @@ Deno.serve(async (req) => {
       const param = (msg.text.split(" ")[1] || "").trim();
       const chatId = String(msg.chat.id);
       if (param === "admin") {
-        data.telegramAdminChatId = chatId;
+        data.telegramAdminChats = data.telegramAdminChats || [];
+        // migre l'admin "historique" (champ unique) dans la liste
+        if (data.telegramAdminChatId && !data.telegramAdminChats.some((a: any) => String(a.chatId) === String(data.telegramAdminChatId))) {
+          data.telegramAdminChats.push({ chatId: String(data.telegramAdminChatId), name: "admin", at: Date.now() });
+        }
+        if (!data.telegramAdminChats.some((a: any) => String(a.chatId) === String(chatId))) {
+          data.telegramAdminChats.push({ chatId, name: msg.chat.first_name || "", at: Date.now() });
+        }
+        if (!data.telegramAdminChatId) data.telegramAdminChatId = chatId;
         await saveData(data);
-        await tg("sendMessage", { chat_id: chatId, text: "✅ Telegram admin lié à RoadManager." });
+        await tg("sendMessage", { chat_id: chatId, text: "✅ Tu es admin RoadManager. Tu recevras les mêmes alertes (pointages, signatures...)." });
       } else if (param.indexOf("emp_") === 0) {
         const empId = param.slice(4);
         data.telegramEmpChats = data.telegramEmpChats || {};
