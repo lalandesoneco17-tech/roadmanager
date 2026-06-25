@@ -3640,12 +3640,17 @@ return(
 const StationPresence=({user,data,save,readOnly})=>{
 const EB='#0066B3';const EB_BG='#E6F2FB';
 const[wOff,setWOff]=useState(0);
+const[pick,setPick]=useState(null);
 const mon=mondayOfWeek(new Date());mon.setDate(mon.getDate()+wOff*7);
 const days=[];for(let i=0;i<7;i++){const d=new Date(mon);d.setDate(d.getDate()+i);days.push(d)}
 const dowFr=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 const todayISO=fmtDateISO(new Date());
 const avail=user.availability||{};
-const toggle=(iso,slot)=>{if(readOnly)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const u=(nd.stationUsers||[]).find(x=>x.id===user.id);if(!u)return;if(!u.availability)u.availability={};const cur=Object.assign({am:false,pm:false},u.availability[iso]||{});cur[slot]=!cur[slot];if(!cur.am&&!cur.pm)delete u.availability[iso];else u.availability[iso]=cur;u._updatedAt=Date.now();save(nd)};
+const userStations=(data.stations||[]).filter(s=>(user.stationIds||[]).includes(s.id));
+const multi=userStations.length>1;
+const stationName=id=>{const s=(data.stations||[]).find(x=>x.id===id);return s?s.name:''};
+const applySlot=(iso,slot,on,stationId)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const u=(nd.stationUsers||[]).find(x=>x.id===user.id);if(!u)return;if(!u.availability)u.availability={};const cur=Object.assign({am:false,pm:false,amStation:null,pmStation:null},u.availability[iso]||{});cur[slot]=!!on;cur[slot+'Station']=on?(stationId||null):null;if(!cur.am&&!cur.pm)delete u.availability[iso];else u.availability[iso]=cur;u._updatedAt=Date.now();save(nd)};
+const onSlotClick=(iso,slot)=>{if(readOnly)return;const a=avail[iso]||{};if(multi){setPick({iso,slot})}else{applySlot(iso,slot,!a[slot],userStations[0]?userStations[0].id:null)}};
 const fmtDM=d=>pad2(d.getDate())+'/'+pad2(d.getMonth()+1);
 const weekLabel=fmtDM(days[0])+' → '+fmtDM(days[6])+' '+days[6].getFullYear();
 const navBtn={background:'#fff',border:'2px solid '+EB,color:EB,width:32,height:32,borderRadius:8,cursor:'pointer',fontWeight:800,fontSize:18,lineHeight:1};
@@ -3665,8 +3670,14 @@ return(<div style={{background:'#fff',borderRadius:12,border:'2px solid '+EB+'40
 {days.map((d,i)=>{const iso=fmtDateISO(d);const a=avail[iso]||{};const isToday=iso===todayISO;const isWeekend=i>=5;return(
 <div key={iso} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:10,border:'1px solid '+(isToday?EB:C.border),background:isWeekend?'#f8fafc':'#fff',flexWrap:'wrap'}}>
 <div style={{flex:1,minWidth:110}}><div style={{fontWeight:700,fontSize:14}}>{dowFr[i]}{isToday?' •':''}</div><div style={{fontSize:12,color:C.dim}}>{fmtDM(d)}</div></div>
-<button onClick={()=>toggle(iso,'am')} disabled={readOnly} style={slotBtn(a.am)}>☀️ Matin{a.am?' ✓':''}</button>
-<button onClick={()=>toggle(iso,'pm')} disabled={readOnly} style={slotBtn(a.pm)}>🌆 Après-midi{a.pm?' ✓':''}</button>
+<button onClick={()=>onSlotClick(iso,'am')} disabled={readOnly} style={slotBtn(a.am)}><div>☀️ Matin{a.am?' ✓':''}</div>{a.am&&a.amStation?<div style={{fontSize:11,fontWeight:700,marginTop:2}}>📍 {stationName(a.amStation)}</div>:null}</button>
+<button onClick={()=>onSlotClick(iso,'pm')} disabled={readOnly} style={slotBtn(a.pm)}><div>🌆 Après-midi{a.pm?' ✓':''}</div>{a.pm&&a.pmStation?<div style={{fontSize:11,fontWeight:700,marginTop:2}}>📍 {stationName(a.pmStation)}</div>:null}</button>
+{!readOnly&&pick&&pick.iso===iso&&<div style={{flexBasis:'100%',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginTop:8,paddingTop:8,borderTop:'1px dashed '+C.border}}>
+<span style={{fontSize:12,color:C.dim,fontWeight:700}}>{pick.slot==='am'?'☀️ Matin':'🌆 Après-midi'} — quelle station ?</span>
+{userStations.map(s=>{const sel=a[pick.slot]&&a[pick.slot+'Station']===s.id;return<button key={s.id} onClick={()=>{applySlot(pick.iso,pick.slot,true,s.id);setPick(null)}} style={{background:sel?EB:'#fff',border:'2px solid '+EB,color:sel?'#fff':EB,padding:'6px 12px',borderRadius:8,fontWeight:700,fontSize:12,cursor:'pointer'}}>{s.type==='depot'?'🏭':'🚿'} {s.name}</button>})}
+{a[pick.slot]&&<button onClick={()=>{applySlot(pick.iso,pick.slot,false,null);setPick(null)}} style={{background:'#fee2e2',border:'2px solid #dc2626',color:'#991b1b',padding:'6px 12px',borderRadius:8,fontWeight:700,fontSize:12,cursor:'pointer'}}>❌ Pas dispo</button>}
+<button onClick={()=>setPick(null)} style={{background:'#fff',border:'1px solid '+C.border,color:C.dim,padding:'6px 10px',borderRadius:8,fontSize:12,cursor:'pointer'}}>Annuler</button>
+</div>}
 </div>)})}
 </div>
 </div>)};
