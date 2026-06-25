@@ -103,6 +103,7 @@ if(typeof window!=='undefined'&&!window.__teOnlineBound){window.__teOnlineBound=
 const pad2=n=>String(n).padStart(2,'0');
 const fmtDate=d=>{const dt=new Date(d);const j=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];const m=['Jan','Fev','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'];return j[dt.getDay()]+' '+dt.getDate()+' '+m[dt.getMonth()]+' '+dt.getFullYear()};
 const fmtDateISO=d=>{const dt=new Date(d);return dt.getFullYear()+'-'+pad2(dt.getMonth()+1)+'-'+pad2(dt.getDate())};
+const mondayOfWeek=d=>{const x=new Date(d);const day=x.getDay();const diff=x.getDate()-day+(day===0?-6:1);const mon=new Date(x);mon.setDate(diff);mon.setHours(0,0,0,0);return mon};
 const fmtMoney=n=>Number(n||0).toFixed(2).replace('.',',')+' EUR';
 const fmtDuration=min=>{const h=Math.floor(min/60);const m=Math.round(min%60);return h+'h'+pad2(m)};
 // Calcul d'heures travaillees pour un pointage. Gere le passage minuit (ex: 20h->5h = 9h).
@@ -3627,6 +3628,41 @@ return(
 </div>)};
 
 // ======== STATIONS DE LAVAGE (Elephant Bleu) ========
+// Grille de disponibilites hebdo d'un utilisateur station (Lun->Dim x Matin/Apres-midi)
+const StationPresence=({user,data,save,readOnly})=>{
+const EB='#0066B3';const EB_BG='#E6F2FB';
+const[wOff,setWOff]=useState(0);
+const mon=mondayOfWeek(new Date());mon.setDate(mon.getDate()+wOff*7);
+const days=[];for(let i=0;i<7;i++){const d=new Date(mon);d.setDate(d.getDate()+i);days.push(d)}
+const dowFr=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+const todayISO=fmtDateISO(new Date());
+const avail=user.availability||{};
+const toggle=(iso,slot)=>{if(readOnly)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const u=(nd.stationUsers||[]).find(x=>x.id===user.id);if(!u)return;if(!u.availability)u.availability={};const cur=Object.assign({am:false,pm:false},u.availability[iso]||{});cur[slot]=!cur[slot];if(!cur.am&&!cur.pm)delete u.availability[iso];else u.availability[iso]=cur;u._updatedAt=Date.now();save(nd)};
+const fmtDM=d=>pad2(d.getDate())+'/'+pad2(d.getMonth()+1);
+const weekLabel=fmtDM(days[0])+' → '+fmtDM(days[6])+' '+days[6].getFullYear();
+const navBtn={background:'#fff',border:'2px solid '+EB,color:EB,width:32,height:32,borderRadius:8,cursor:'pointer',fontWeight:800,fontSize:18,lineHeight:1};
+const slotBtn=(on)=>({background:on?EB:'#fff',color:on?'#fff':EB,border:'2px solid '+EB,padding:'10px 14px',borderRadius:10,fontWeight:700,fontSize:13,cursor:readOnly?'default':'pointer',opacity:(readOnly&&!on)?.45:1,minWidth:120,whiteSpace:'nowrap'});
+const nbSlots=days.reduce((s,d)=>{const a=avail[fmtDateISO(d)]||{};return s+(a.am?1:0)+(a.pm?1:0)},0);
+return(<div style={{background:'#fff',borderRadius:12,border:'2px solid '+EB+'40',overflow:'hidden'}}>
+<div style={{padding:'12px 16px',background:EB_BG,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+<div style={{fontWeight:800,color:EB,fontSize:15}}>📅 {readOnly?('Présence — '+user.name):'Mes disponibilités'}</div>
+<div style={{display:'flex',alignItems:'center',gap:6}}>
+<button onClick={()=>setWOff(wOff-1)} style={navBtn} title="Semaine précédente">‹</button>
+<span style={{fontWeight:700,color:EB,fontSize:13,minWidth:150,textAlign:'center'}}>{weekLabel}{wOff===0?' • cette sem.':(wOff===1?' • sem. prochaine':'')}</span>
+<button onClick={()=>setWOff(wOff+1)} style={navBtn} title="Semaine suivante">›</button>
+</div>
+</div>
+<div style={{padding:'8px 16px',fontSize:12,color:C.dim,background:'#fafbfc',borderBottom:'1px solid '+C.border}}>{readOnly?(nbSlots+' demi-journée(s) de présence cette semaine'):'Indiquez les demi-journées où vous êtes disponible pour intervenir.'}</div>
+<div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
+{days.map((d,i)=>{const iso=fmtDateISO(d);const a=avail[iso]||{};const isToday=iso===todayISO;const isWeekend=i>=5;return(
+<div key={iso} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:10,border:'1px solid '+(isToday?EB:C.border),background:isWeekend?'#f8fafc':'#fff',flexWrap:'wrap'}}>
+<div style={{flex:1,minWidth:110}}><div style={{fontWeight:700,fontSize:14}}>{dowFr[i]}{isToday?' •':''}</div><div style={{fontSize:12,color:C.dim}}>{fmtDM(d)}</div></div>
+<button onClick={()=>toggle(iso,'am')} disabled={readOnly} style={slotBtn(a.am)}>☀️ Matin{a.am?' ✓':''}</button>
+<button onClick={()=>toggle(iso,'pm')} disabled={readOnly} style={slotBtn(a.pm)}>🌆 Après-midi{a.pm?' ✓':''}</button>
+</div>)})}
+</div>
+</div>)};
+
 const StationsPage=({data,save})=>{
 const ELEPHANT_BLUE='#0066B3';const ELEPHANT_BLUE_LIGHT='#3399D6';const ELEPHANT_BLUE_BG='#E6F2FB';
 const stations=data.stations||[];
@@ -3645,6 +3681,7 @@ const[transferDest,setTransferDest]=useState('');
 const[transferQty,setTransferQty]=useState('');
 const[showUsers,setShowUsers]=useState(false);
 const[editUser,setEditUser]=useState(null);
+const[selPlanningUserId,setSelPlanningUserId]=useState('');
 const stationUsers=data.stationUsers||[];
 const saveStationUser=()=>{if(!editUser.name.trim()||!editUser.login.trim()||!editUser.password.trim()){alert('Nom, login et mot de passe requis');return}const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.stationUsers)nd.stationUsers=[];const conflict=nd.stationUsers.find(u=>u.login===editUser.login.trim()&&u.id!==editUser.id);if(conflict){alert('Login deja utilise');return}if(editUser.id){const idx=nd.stationUsers.findIndex(u=>u.id===editUser.id);if(idx>=0)nd.stationUsers[idx]={...editUser,name:editUser.name.trim(),login:editUser.login.trim(),_updatedAt:Date.now()}}else{nd.stationUsers.push({...editUser,id:uid(),name:editUser.name.trim(),login:editUser.login.trim(),createdAt:new Date().toISOString(),_updatedAt:Date.now()})}save(nd);setEditUser(null)};
 const delStationUser=(id)=>{if(!confirm('Supprimer cet utilisateur ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));nd.stationUsers=(nd.stationUsers||[]).filter(u=>u.id!==id);save(nd)};
@@ -3671,15 +3708,22 @@ return(<div>
 </div>
 <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
 <button onClick={()=>setShowAddStation(true)} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>+ Nouvelle station</button>
-<button onClick={()=>{setShowMovements(!showMovements);setShowUsers(false)}} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showMovements?'← Stock':'📜 Mouvements'}</button>
-<button onClick={()=>{setShowUsers(!showUsers);setShowMovements(false)}} style={{background:showUsers?'rgba(255,255,255,.4)':'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>👷 Utilisateurs ({stationUsers.length})</button>
+<button onClick={()=>{setShowMovements(!showMovements);setShowUsers(false);setSelPlanningUserId('')}} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showMovements?'← Stock':'📜 Mouvements'}</button>
+<button onClick={()=>{setShowUsers(!showUsers);setShowMovements(false);setSelPlanningUserId('')}} style={{background:showUsers?'rgba(255,255,255,.4)':'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>👷 Utilisateurs ({stationUsers.length})</button>
 </div>
 </div>
 {/* Selecteur stations */}
 {stations.length>0?<div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-{stations.map(s=>(<button key={s.id} onClick={()=>setSelStationId(s.id)} style={{background:selStationId===s.id?ELEPHANT_BLUE:ELEPHANT_BLUE_BG,color:selStationId===s.id?'#fff':ELEPHANT_BLUE,border:'2px solid '+ELEPHANT_BLUE,padding:'10px 16px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',boxShadow:selStationId===s.id?'0 2px 6px rgba(0,102,179,.3)':'none'}}>{s.type==='depot'?'🏭':'🚿'} {s.name}{s.location?' • '+s.location:''}</button>))}
+{stations.map(s=>(<button key={s.id} onClick={()=>{setSelStationId(s.id);setSelPlanningUserId('');setShowUsers(false);setShowMovements(false)}} style={{background:(selStationId===s.id&&!selPlanningUserId)?ELEPHANT_BLUE:ELEPHANT_BLUE_BG,color:(selStationId===s.id&&!selPlanningUserId)?'#fff':ELEPHANT_BLUE,border:'2px solid '+ELEPHANT_BLUE,padding:'10px 16px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',boxShadow:(selStationId===s.id&&!selPlanningUserId)?'0 2px 6px rgba(0,102,179,.3)':'none'}}>{s.type==='depot'?'🏭':'🚿'} {s.name}{s.location?' • '+s.location:''}</button>))}
 </div>:<div style={{padding:30,textAlign:'center',background:ELEPHANT_BLUE_BG,borderRadius:12,border:'2px dashed '+ELEPHANT_BLUE_LIGHT,color:ELEPHANT_BLUE,marginBottom:16}}><div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Aucune station configuree</div><div style={{fontSize:13,opacity:.8}}>Cliquez sur « + Nouvelle station » en haut a droite pour commencer.</div></div>}
-{selStation&&!showMovements&&!showUsers&&<div>
+{/* Selecteur utilisateurs : voir le planning de presence */}
+{stationUsers.length>0&&<div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
+<span style={{fontSize:12,fontWeight:700,color:C.dim,textTransform:'uppercase',letterSpacing:'0.5px'}}>👷 Présence :</span>
+{stationUsers.map(u=>(<button key={u.id} onClick={()=>{setSelPlanningUserId(selPlanningUserId===u.id?'':u.id);setShowUsers(false);setShowMovements(false)}} style={{background:selPlanningUserId===u.id?'#7c3aed':'#f5f3ff',color:selPlanningUserId===u.id?'#fff':'#7c3aed',border:'2px solid #7c3aed',padding:'8px 14px',borderRadius:10,fontWeight:700,fontSize:13,cursor:'pointer',boxShadow:selPlanningUserId===u.id?'0 2px 6px rgba(124,58,237,.3)':'none'}}>{u.name}</button>))}
+</div>}
+{/* Planning de presence de l'utilisateur selectionne */}
+{selPlanningUserId&&(()=>{const u=stationUsers.find(x=>x.id===selPlanningUserId);return u?<div style={{marginBottom:16}}><StationPresence user={u} data={data} save={save} readOnly={true}/></div>:null})()}
+{selStation&&!showMovements&&!showUsers&&!selPlanningUserId&&<div>
 {/* Stats station */}
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
 <div style={{background:'#fff',border:'2px solid '+ELEPHANT_BLUE_LIGHT,borderRadius:10,padding:'12px 14px',textAlign:'center'}}><div style={{fontSize:10,color:C.dim,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>📦 Produits</div><div style={{fontSize:22,fontWeight:800,color:ELEPHANT_BLUE}}>{stationProducts.length}</div></div>
@@ -3830,6 +3874,7 @@ const[transferProduct,setTransferProduct]=useState(null);
 const[transferDest,setTransferDest]=useState('');
 const[transferQty,setTransferQty]=useState('');
 const[showMovements,setShowMovements]=useState(false);
+const[showPresence,setShowPresence]=useState(false);
 const selStation=myStations.find(s=>s.id===selStationId)||null;
 const stationProducts=products.filter(p=>p.stationId===selStationId);
 const stationMovs=movements.filter(m=>m.stationId===selStationId).slice(0,50);
@@ -3848,11 +3893,12 @@ return(<div style={{maxWidth:1000,margin:'0 auto',padding:14,fontSize:14}}>
 <div style={{fontSize:13,opacity:.95}}>{user.name} • Gestion du stock</div>
 </div>
 <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-<button onClick={()=>setShowMovements(!showMovements)} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 14px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showMovements?'← Stock':'📜 Mouvements'}</button>
+<button onClick={()=>{setShowPresence(!showPresence);setShowMovements(false)}} style={{background:showPresence?'rgba(255,255,255,.4)':'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 14px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showPresence?'← Stock':'📅 Mes dispos'}</button>
+<button onClick={()=>{setShowMovements(!showMovements);setShowPresence(false)}} style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 14px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13}}>{showMovements?'← Stock':'📜 Mouvements'}</button>
 <button onClick={onLogout} title="Deconnexion" style={{background:'rgba(255,255,255,.2)',border:'2px solid rgba(255,255,255,.5)',color:'#fff',padding:'8px 14px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:16}}>🚪</button>
 </div>
 </div>
-{myStations.length===0?<div style={{padding:30,textAlign:'center',background:ELEPHANT_BLUE_BG,borderRadius:12,border:'2px dashed '+ELEPHANT_BLUE_LIGHT,color:ELEPHANT_BLUE}}><div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Aucune station affectee</div><div style={{fontSize:13,opacity:.8}}>Contactez l'administrateur pour qu'il vous affecte des stations.</div></div>:<div>
+{showPresence?<StationPresence user={user} data={data} save={save} readOnly={false}/>:(myStations.length===0?<div style={{padding:30,textAlign:'center',background:ELEPHANT_BLUE_BG,borderRadius:12,border:'2px dashed '+ELEPHANT_BLUE_LIGHT,color:ELEPHANT_BLUE}}><div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Aucune station affectee</div><div style={{fontSize:13,opacity:.8}}>Contactez l'administrateur pour qu'il vous affecte des stations.</div></div>:<div>
 <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
 {myStations.map(s=>(<button key={s.id} onClick={()=>setSelStationId(s.id)} style={{background:selStationId===s.id?ELEPHANT_BLUE:ELEPHANT_BLUE_BG,color:selStationId===s.id?'#fff':ELEPHANT_BLUE,border:'2px solid '+ELEPHANT_BLUE,padding:'10px 16px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer'}}>{s.type==='depot'?'🏭':'🚿'} {s.name}</button>))}
 </div>
@@ -3886,7 +3932,7 @@ return(<div style={{maxWidth:1000,margin:'0 auto',padding:14,fontSize:14}}>
 <div style={{padding:'12px 16px',background:ELEPHANT_BLUE_BG,color:ELEPHANT_BLUE,fontWeight:800,fontSize:14}}>📜 Mouvements — {selStation.name}</div>
 {stationMovs.length===0?<div style={{padding:24,textAlign:'center',color:C.dim}}>Aucun mouvement.</div>:<div style={{maxHeight:'60vh',overflow:'auto'}}>{stationMovs.map(m=>{const prod=products.find(p=>p.id===m.productId);const otherSta=allStations.find(s=>s.id===(m.type==='transfer_out'?m.destStationId:m.sourceStationId));let label,bg,fg,sign;if(m.type==='in'){label='+ Entree';bg='#dcfce7';fg='#15803d';sign='+'}else if(m.type==='out'){label='− Sortie';bg='#fee2e2';fg='#991b1b';sign='-'}else if(m.type==='transfer_out'){label='↗ → '+(otherSta?otherSta.name:'?');bg='#fef3c7';fg='#9a3412';sign='-'}else if(m.type==='transfer_in'){label='↘ ← '+(otherSta?otherSta.name:'?');bg='#dbeafe';fg='#1d4ed8';sign='+'}else{label=m.type;bg='#f1f5f9';fg=C.dim;sign=''}return(<div key={m.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',borderBottom:'1px solid '+C.border,flexWrap:'wrap',gap:8}}><div style={{flex:1,minWidth:140}}><div style={{fontWeight:700}}>{prod?prod.name:'(supprime)'}</div><div style={{fontSize:11,color:C.dim}}>{new Date(m.date).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</div></div><span style={{background:bg,color:fg,padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap'}}>{label}</span><div style={{fontSize:16,fontWeight:800,color:fg,minWidth:50,textAlign:'right'}}>{sign}{m.qty}</div></div>)})}</div>}
 </div>}
-</div>}
+</div>)}
 {transferProduct&&<Mod title="↗ Transfert de stock" onClose={()=>setTransferProduct(null)} width={420}>
 <div style={{background:ELEPHANT_BLUE_BG,border:'2px solid '+ELEPHANT_BLUE,borderRadius:10,padding:'12px 16px',marginBottom:14}}>
 <div style={{fontSize:10,fontWeight:800,color:ELEPHANT_BLUE,textTransform:'uppercase',marginBottom:4}}>📦 Source</div>
