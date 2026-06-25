@@ -46,6 +46,13 @@ function isoTomorrow(): string {
   return t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
 }
 
+function adminChatList(data: any): string[] {
+  const s = new Set<string>();
+  if (data.telegramAdminChatId) s.add(String(data.telegramAdminChatId));
+  (data.telegramAdminChats || []).forEach((a: any) => { const c = a && (a.chatId || a); if (c) s.add(String(c)); });
+  return [...s];
+}
+
 function empName(data: any, empId: string): string {
   const e = (data.employees || []).find((x: any) => x.id === empId);
   return e ? e.name : "le salarié";
@@ -80,6 +87,23 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+
+    // 0) Cron quotidien : presence des employes de station (declenche par pg_cron, vers 8h Paris)
+    if (update && update.source === "cron-presence") {
+      const hourParis = parseInt(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).format(new Date()), 10);
+      if (hourParis !== 8) return new Response("ok"); // ne tire qu'a 8h heure de Paris
+      if (data.tgNotifyPresence === false) return new Response("ok");
+      const todayISO = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const dLabel = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "2-digit", month: "2-digit" }).format(new Date());
+      const users = data.stationUsers || [];
+      const absent = users.filter((u: any) => { const a = (u.availability || {})[todayISO]; return !a || (!a.am && !a.pm); });
+      if (absent.length) {
+        const chats = adminChatList(data);
+        const lines = ["🌅 Présence stations — " + dLabel, "⚠️ Pas de présence indiquée aujourd'hui :", ...absent.map((u: any) => "• " + (u.name || u.login || "?"))];
+        for (const cid of chats) await tg("sendMessage", { chat_id: cid, text: lines.join("\n") });
+      }
+      return new Response("ok");
+    }
 
     // 1) Liaison via /start
     const msg = update.message;
