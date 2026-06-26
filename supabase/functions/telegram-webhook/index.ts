@@ -224,6 +224,25 @@ function nextDayPlan(data: any, empId: string): string {
   return "📅 Rien de prévu pour toi dans les prochains jours.";
 }
 
+// Souhaite un bon week-end si on est vendredi/samedi ET que le salarie n'a pas de chantier le week-end
+function weekendWish(data: any, empId: string): string {
+  const tz = "Europe/Paris";
+  const wdName = (dt: Date) => new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long" }).format(dt);
+  const now = new Date();
+  const todayWd = wdName(now);
+  if (todayWd !== "Friday" && todayWd !== "Saturday") return "";
+  let weekendWork = false;
+  for (let k = 1; k <= 2; k++) {
+    const d = new Date(now.getTime() + k * 86400000);
+    const w = wdName(d);
+    if (w === "Saturday" || w === "Sunday") {
+      const iso = isoParis(d);
+      if ((data.jobs || []).some((j: any) => j.employeeId === empId && j.date === iso)) weekendWork = true;
+    }
+  }
+  return weekendWork ? "" : "\n\n🌞 Et passe un très bon week-end !";
+}
+
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
@@ -387,7 +406,7 @@ Deno.serve(async (req) => {
           const dp = (data.depots || []).find((x: any) => x.id === dest);
           destLabel = "au " + (dp ? dp.name : "dépôt");
         }
-        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer " + destLabel + ". Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer " + destLabel + ". Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "next") {
         const job = (data.jobs || []).find((x: any) => x.id === arg);
@@ -398,7 +417,7 @@ Deno.serve(async (req) => {
         await tg("sendMessage", { chat_id: link.chatId, text: txt });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "rentrer") {
-        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer au dépôt. Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer au dépôt. Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "plan") {
         await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Voici ton planning 📅\n\n" + nextDayPlan(data, empId) });
