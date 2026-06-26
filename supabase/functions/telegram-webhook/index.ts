@@ -72,19 +72,22 @@ function empName(data: any, empId: string): string {
 }
 
 function nextDayPlan(data: any, empId: string): string {
-  const iso = isoTomorrow();
-  const jobs = (data.jobs || []).filter((j: any) => j.employeeId === empId && j.date === iso);
-  if (!jobs.length) return "📅 Demain : rien de prévu pour toi.";
-  const lines = ["📅 Ton planning de demain :"];
-  for (const j of jobs) {
-    const c = (data.clients || []).find((x: any) => x.id === j.clientId);
-    const m = (data.machines || []).find((x: any) => x.id === j.machineId);
-    lines.push(
-      "• " + (j.billingStart || "") + " " + (j.location || (c ? c.name : "chantier")) +
-      (c && j.location ? " (" + c.name + ")" : "") + (m ? " [" + m.name + "]" : "")
-    );
+  // Cherche le PROCHAIN jour qui a un chantier (ex: le vendredi -> lundi si rien le week-end)
+  const tz = "Europe/Paris";
+  const isoOf = (dt: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(dt);
+  const now = new Date();
+  for (let k = 1; k <= 10; k++) {
+    const dd = new Date(now.getTime() + k * 86400000);
+    const iso = isoOf(dd);
+    const jobs = (data.jobs || []).filter((j: any) => j.employeeId === empId && j.date === iso);
+    if (jobs.length) {
+      const dl = new Intl.DateTimeFormat("fr-FR", { timeZone: tz, weekday: "long", day: "2-digit", month: "2-digit" }).format(dd);
+      const lines = ["📅 Prochain jour de travail — " + dl + " :"];
+      for (const j of jobs) lines.push("• " + jobLineF(data, j));
+      return lines.join("\n");
+    }
   }
-  return lines.join("\n");
+  return "📅 Rien de prévu pour toi dans les prochains jours.";
 }
 
 Deno.serve(async (req) => {
