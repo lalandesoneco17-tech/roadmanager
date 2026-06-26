@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
       const ec = data.telegramEmpChats || {};
       for (const empId of Object.keys(ec)) {
         const chatId = ec[empId] && ec[empId].chatId;
-        if (chatId) await tg("sendMessage", { chat_id: chatId, text: "💳 Fin de mois ! Pense à nous donner tes tickets de carte bleue (tous les paiements du mois). Merci 🙏" });
+        if (chatId) await tg("sendMessage", { chat_id: chatId, text: "👋 Bonjour ! C'est la fin du mois : pense à nous transmettre tes tickets de carte bleue (tous tes paiements du mois). Merci beaucoup et bonne journée ! 🙏" });
       }
       return new Response("ok");
     }
@@ -370,7 +370,8 @@ Deno.serve(async (req) => {
       const dest = isR ? parts[1] : null;       // id de depot ou "home"
       const arg = action === "next" ? parts[1] : null; // id du chantier
       const empId = threePart ? parts[2] : parts[1];
-      const name = empName(data, empId);
+      const _nm = empName(data, empId);
+      const name = _nm ? _nm.charAt(0).toUpperCase() + _nm.slice(1) : _nm;
       const link = (data.telegramEmpChats || {})[empId];
       if (!link || !link.chatId) {
         await tg("answerCallbackQuery", {
@@ -386,21 +387,21 @@ Deno.serve(async (req) => {
           const dp = (data.depots || []).find((x: any) => x.id === dest);
           destLabel = "au " + (dp ? dp.name : "dépôt");
         }
-        await tg("sendMessage", { chat_id: link.chatId, text: "✅ Tu peux rentrer " + destLabel + ".\n\n" + nextDayPlan(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer " + destLabel + ". Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "next") {
         const job = (data.jobs || []).find((x: any) => x.id === arg);
         if (!job) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Chantier introuvable" }); return new Response("ok"); }
-        let txt = "➡️ Tu peux aller sur le prochain chantier :\n• " + jobLineF(data, job);
+        let txt = "👋 Salut " + name + " ! Quand tu peux, tu peux filer sur le prochain chantier 🚗 :\n• " + jobLineF(data, job);
         const coords = parseCoordsF(job.gps || job._geocodedGps);
         if (coords) txt += "\n🗺 https://www.google.com/maps?q=" + coords[0] + "," + coords[1];
         await tg("sendMessage", { chat_id: link.chatId, text: txt });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "rentrer") {
-        await tg("sendMessage", { chat_id: link.chatId, text: "✅ Tu peux rentrer au dépôt.\n\n" + nextDayPlan(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer au dépôt. Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "plan") {
-        await tg("sendMessage", { chat_id: link.chatId, text: nextDayPlan(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Voici ton planning 📅\n\n" + nextDayPlan(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Planning envoyé à " + name + " 📅" });
       } else {
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Action inconnue" });
