@@ -157,6 +157,17 @@ function buildAIContext(data: any): string {
     const s = (data.stations || []).find((x: any) => x.id === pr.stationId);
     return "- " + (s ? s.name : "?") + " | " + pr.name + " : " + (pr.quantity != null ? pr.quantity : "?") + (pr.unit ? " " + pr.unit : "") + (pr.minStock ? " (mini " + pr.minStock + ")" : "");
   });
+  const dayLabel = (dt: Date) => new Intl.DateTimeFormat("fr-FR", { timeZone: tz, weekday: "long", day: "2-digit", month: "2-digit" }).format(dt);
+  const drivers = (data.employees || []).filter((e: any) => e.role !== "mechanic");
+  const availLines: string[] = [];
+  for (let k = 0; k <= 10; k++) {
+    const dd = new Date(Date.now() + k * 86400000);
+    const iso = isoP(dd);
+    const ids = new Set((data.jobs || []).filter((j: any) => j.date === iso && j.type !== "repos" && j.type !== "depot").map((j: any) => j.employeeId));
+    const avec = drivers.filter((e: any) => ids.has(e.id)).map((e: any) => e.name);
+    const sans = drivers.filter((e: any) => !ids.has(e.id)).map((e: any) => e.name);
+    availLines.push(dayLabel(dd) + " → avec chantier : " + (avec.join(", ") || "personne") + " | SANS chantier : " + (sans.join(", ") || "personne"));
+  }
   return [
     "AUJOURD'HUI (Europe/Paris) : " + today,
     "Note : 'temps passé' = durée travaillée sur le chantier (calculée à la signature/fin de chantier). 'fin chantier' = heure de fin du chantier. 'débauche' (section POINTAGES) = heure de fin de journée du chauffeur.",
@@ -167,6 +178,9 @@ function buildAIContext(data: any): string {
     "",
     "CHANTIERS (date | heure | chauffeur | lieu | client | machine | forfait | prix | [temps passé | fin chantier | signé]) du " + lo + " au " + hi + " :",
     jobLines.length ? jobLines.join("\n") : "(aucun)",
+    "",
+    "DISPONIBILITÉ PAR JOUR — pour toute question du type « qui travaille / qui est libre / qui n'a pas de chantier tel jour », utilise EXACTEMENT cette liste (déjà calculée), ne déduis pas toi-même :",
+    availLines.join("\n"),
     "",
     "POINTAGES (date | chauffeur | embauche | débauche | pause) des 14 derniers jours :",
     teLines.length ? teLines.join("\n") : "(aucun)",
