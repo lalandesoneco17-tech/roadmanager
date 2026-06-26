@@ -66,6 +66,52 @@ function jobLineF(data: any, job: any): string {
     (c && job.location ? " (" + c.name + ")" : "") + (m ? " [" + m.name + "]" : "");
 }
 
+function stripAccents(s: string): string { return s.normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+function isoParis(dt: Date): string { return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(dt); }
+function labelParis(dt: Date): string { return new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "2-digit", month: "2-digit" }).format(dt); }
+function planningForISO(data: any, iso: string, label: string): string {
+  const jobs = (data.jobs || []).filter((j: any) => j.date === iso).sort((a: any, b: any) => String(a.billingStart || "").localeCompare(String(b.billingStart || "")));
+  if (!jobs.length) return "📅 " + label + "\nAucun chantier prévu.";
+  const lines = ["📅 " + label + " — " + jobs.length + " chantier(s) :"];
+  for (const j of jobs) {
+    const e = (data.employees || []).find((x: any) => x.id === j.employeeId);
+    const who = e ? e.name : "—";
+    if (j.type === "depot") { lines.push("• " + who + " : 🏭 dépôt" + (j.depotActivity ? " (" + j.depotActivity + ")" : "")); continue; }
+    if (j.type === "repos") { lines.push("• " + who + " : 😴 repos"); continue; }
+    const c = (data.clients || []).find((x: any) => x.id === j.clientId);
+    const m = (data.machines || []).find((x: any) => x.id === j.machineId);
+    lines.push("• " + (j.billingStart || "") + " " + who + " → " + (j.location || (c ? c.name : "chantier")) + (c && j.location ? " (" + c.name + ")" : "") + (m ? " [" + m.name + "]" : ""));
+  }
+  return lines.join("\n");
+}
+function helpText(): string { return "ℹ️ Demande-moi le planning :\n• « aujourd'hui »\n• « demain »\n• « lundi » (ou un autre jour)\n• « 28/06 » (une date)\n• « semaine »"; }
+const MENU_KB = { inline_keyboard: [[{ text: "📅 Aujourd'hui", callback_data: "q:auj" }, { text: "Demain", callback_data: "q:demain" }], [{ text: "📆 Cette semaine", callback_data: "q:semaine" }]] };
+function handleAdminQuery(data: any, raw: string): string | null {
+  const t = stripAccents(String(raw).toLowerCase().trim()).replace(/^\//, "");
+  const now = new Date();
+  const add = (n: number) => new Date(now.getTime() + n * 86400000);
+  if (t === "aujourdhui" || t === "auj" || t === "jour" || t === "today") return planningForISO(data, isoParis(now), "Aujourd'hui (" + labelParis(now) + ")");
+  if (t === "demain") { const d = add(1); return planningForISO(data, isoParis(d), "Demain (" + labelParis(d) + ")"); }
+  if (t === "apres-demain" || t === "apres demain" || t === "surlendemain") { const d = add(2); return planningForISO(data, isoParis(d), labelParis(d)); }
+  const dayNames = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+  if (dayNames.includes(t)) {
+    for (let k = 0; k <= 7; k++) { const d = add(k); const name = stripAccents(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long" }).format(d).toLowerCase()); if (name === t) return planningForISO(data, isoParis(d), labelParis(d)); }
+  }
+  const md = t.match(/^(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?$/);
+  if (md) {
+    const dd = md[1].padStart(2, "0"); const mm = md[2].padStart(2, "0");
+    let yyyy = md[3] || isoParis(now).slice(0, 4); if (yyyy.length === 2) yyyy = "20" + yyyy;
+    return planningForISO(data, yyyy + "-" + mm + "-" + dd, "Le " + dd + "/" + mm);
+  }
+  if (t === "semaine" || t === "sem" || t === "cette semaine") {
+    const parts: string[] = [];
+    for (let k = 0; k < 7; k++) { const d = add(k); parts.push(planningForISO(data, isoParis(d), labelParis(d))); }
+    return parts.join("\n\n");
+  }
+  if (t === "aide" || t === "menu" || t === "help" || t === "?" || t === "commandes") return helpText();
+  return null;
+}
+
 function empName(data: any, empId: string): string {
   const e = (data.employees || []).find((x: any) => x.id === empId);
   return e ? e.name : "le salarié";
@@ -164,6 +210,8 @@ Deno.serve(async (req) => {
           chat_id: chatId,
           text: "✅ Ton Telegram est lié à RoadManager, " + empName(data, empId) + ".\nTu recevras ici les messages de l'admin.",
         });
+      } else if (adminChatList(data).includes(chatId)) {
+        await tg("sendMessage", { chat_id: chatId, text: "👋 Salut ! " + helpText(), reply_markup: MENU_KB });
       } else {
         await tg("sendMessage", {
           chat_id: chatId,
@@ -173,11 +221,32 @@ Deno.serve(async (req) => {
       return new Response("ok");
     }
 
+    // 1bis) Commandes texte (planning) — reservees aux admins
+    if (msg && typeof msg.text === "string") {
+      const chatId = String(msg.chat.id);
+      if (adminChatList(data).includes(chatId)) {
+        const reply = handleAdminQuery(data, msg.text);
+        if (reply) { await tg("sendMessage", { chat_id: chatId, text: reply, disable_web_page_preview: true }); return new Response("ok"); }
+        await tg("sendMessage", { chat_id: chatId, text: "Je n'ai pas compris. " + helpText(), reply_markup: MENU_KB });
+        return new Response("ok");
+      }
+    }
+
     // 2) Boutons sous la notif (callback_query)
     const cq = update.callback_query;
     if (cq && typeof cq.data === "string") {
       const parts = cq.data.split(":");
       const action = parts[0];
+      if (action === "q") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        if (adminChatList(data).includes(chatId)) {
+          const map: any = { auj: "aujourdhui", demain: "demain", semaine: "semaine" };
+          const reply = handleAdminQuery(data, map[parts[1]] || parts[1]) || helpText();
+          await tg("sendMessage", { chat_id: chatId, text: reply, disable_web_page_preview: true });
+        }
+        await tg("answerCallbackQuery", { callback_query_id: cq.id });
+        return new Response("ok");
+      }
       const isR = action === "r";
       const threePart = isR || action === "next";
       const dest = isR ? parts[1] : null;       // id de depot ou "home"
