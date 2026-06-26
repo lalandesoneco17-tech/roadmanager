@@ -179,7 +179,7 @@ function buildAIContext(data: any): string {
 async function askAI(data: any, question: string): Promise<string | null> {
   const key = data.anthropicApiKey;
   if (!key) return null;
-  const system = "Tu es l'assistant de gestion de SONECO (rabotage, balayage, citerne en Charente-Maritime). Réponds en français, brièvement et clairement à la question de l'admin, en t'appuyant UNIQUEMENT sur les données ci-dessous (planning, salariés, machines, clients, stock). Si l'information n'y figure pas, dis-le simplement. Donne des réponses concrètes : noms, dates, heures, montants. N'utilise AUCUN symbole de formatage Markdown (pas de #, *, **, _). Réponds en texte simple — tu peux utiliser des émojis et des retours à la ligne, et des tirets « • » pour les listes.\n\n=== DONNÉES ===\n" + buildAIContext(data);
+  const system = "Tu es l'assistant de gestion de SONECO. Tu réponds en français aux questions de l'admin en t'appuyant UNIQUEMENT sur les données ci-dessous.\n\nRÈGLE ABSOLUE : réponds UNIQUEMENT à ce qui est demandé, rien de plus. La réponse la plus courte et directe possible. INTERDIT : préambule, phrase d'introduction, récapitulatif, conclusion, détail non demandé, titre, mise en forme Markdown (#, *, _). \nExemple : question « combien de temps a passé Franck sur son dernier chantier ? » -> réponse attendue : « ST SULPICE DE ROYAN (Volvo) : 6h34 ». Rien d'autre.\nSi l'information n'est pas dans les données, dis-le en une seule phrase courte.\n\n=== DONNÉES ===\n" + buildAIContext(data);
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
