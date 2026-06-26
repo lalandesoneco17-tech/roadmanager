@@ -224,6 +224,34 @@ function nextDayPlan(data: any, empId: string): string {
   return "📅 Rien de prévu pour toi dans les prochains jours.";
 }
 
+// Variantes de formulation : on en tire une au hasard pour que les messages changent a chaque fois
+function pick(arr: string[]): string { return arr[Math.floor(Math.random() * arr.length)]; }
+const HELLOS = ["👋 Salut", "👋 Hello", "👋 Coucou", "Salut", "👋 Hey"];
+const THANKS = [
+  "Bonne route, et merci pour ton travail aujourd'hui 🙏",
+  "Merci pour aujourd'hui, fais bonne route ! 🚗",
+  "Beau boulot aujourd'hui, rentre bien ! 💪",
+  "Merci pour ton taf, bonne route à toi 🙏",
+  "Bonne route et repose-toi bien ! 😊",
+  "Super journée, merci à toi et rentre bien ! 🙌",
+];
+const NEXT_INTRO = [
+  "Quand tu peux, tu peux filer sur le prochain chantier 🚗 :",
+  "Direction le prochain chantier dès que tu es prêt 🚗 :",
+  "Tu peux enchaîner sur le prochain chantier 🚗 :",
+  "Prochaine étape, le chantier suivant 🚗 :",
+];
+const PLAN_INTRO = ["Voici ton planning 📅", "Ton planning à venir 📅", "Voilà ce qui t'attend 📅", "Ton prochain rendez-vous de travail 📅"];
+const WEEKEND = [
+  "🌞 Et passe un très bon week-end !",
+  "🌞 Profite bien de ton week-end !",
+  "🎉 Bon week-end à toi, tu l'as bien mérité !",
+  "😎 Repose-toi bien ce week-end !",
+  "🌴 Excellent week-end !",
+  "🍻 Bon week-end, à lundi !",
+];
+function hi(name: string): string { return pick(HELLOS) + " " + name + " !"; }
+
 // Souhaite un bon week-end si on est vendredi/samedi ET que le salarie n'a pas de chantier le week-end
 function weekendWish(data: any, empId: string): string {
   const tz = "Europe/Paris";
@@ -240,7 +268,7 @@ function weekendWish(data: any, empId: string): string {
       if ((data.jobs || []).some((j: any) => j.employeeId === empId && j.date === iso)) weekendWork = true;
     }
   }
-  return weekendWork ? "" : "\n\n🌞 Et passe un très bon week-end !";
+  return weekendWork ? "" : "\n\n" + pick(WEEKEND);
 }
 
 Deno.serve(async (req) => {
@@ -406,21 +434,21 @@ Deno.serve(async (req) => {
           const dp = (data.depots || []).find((x: any) => x.id === dest);
           destLabel = "au " + (dp ? dp.name : "dépôt");
         }
-        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer " + destLabel + ". Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: hi(name) + " Tu peux rentrer " + destLabel + ". " + pick(THANKS) + "\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "next") {
         const job = (data.jobs || []).find((x: any) => x.id === arg);
         if (!job) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Chantier introuvable" }); return new Response("ok"); }
-        let txt = "👋 Salut " + name + " ! Quand tu peux, tu peux filer sur le prochain chantier 🚗 :\n• " + jobLineF(data, job);
+        let txt = hi(name) + " " + pick(NEXT_INTRO) + "\n• " + jobLineF(data, job);
         const coords = parseCoordsF(job.gps || job._geocodedGps);
         if (coords) txt += "\n🗺 https://www.google.com/maps?q=" + coords[0] + "," + coords[1];
         await tg("sendMessage", { chat_id: link.chatId, text: txt });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "rentrer") {
-        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Tu peux rentrer au dépôt. Bonne route, et merci pour ton travail aujourd'hui 🙏\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: hi(name) + " Tu peux rentrer au dépôt. " + pick(THANKS) + "\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "plan") {
-        await tg("sendMessage", { chat_id: link.chatId, text: "👋 Salut " + name + " ! Voici ton planning 📅\n\n" + nextDayPlan(data, empId) });
+        await tg("sendMessage", { chat_id: link.chatId, text: hi(name) + " " + pick(PLAN_INTRO) + "\n\n" + nextDayPlan(data, empId) });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Planning envoyé à " + name + " 📅" });
       } else {
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Action inconnue" });
