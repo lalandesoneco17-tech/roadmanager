@@ -428,6 +428,21 @@ Deno.serve(async (req) => {
         await tg("answerCallbackQuery", { callback_query_id: cq.id });
         return new Response("ok");
       }
+      // Bouton "J'ai bien lu" cote chauffeur : marque le chantier confirme (ack) -> la carte passe au vert cote admin
+      if (action === "ack") {
+        const jobId = parts[1];
+        const job = (data.jobs || []).find((x: any) => x.id === jobId);
+        if (job) { job.ack = true; job.ackDate = new Date().toISOString(); job._updatedAt = Date.now(); await saveData(data); }
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Merci, c'est noté ✅" });
+        const aChat = cq.message && cq.message.chat && cq.message.chat.id;
+        const aMid = cq.message && cq.message.message_id;
+        const aOld = (cq.message && cq.message.text) || "";
+        if (aChat && aMid) { try { await tg("editMessageText", { chat_id: aChat, message_id: aMid, text: aOld + "\n\n✅ Bien reçu, merci !", disable_web_page_preview: true }); } catch (_e) { /* ignore */ } }
+        const drv = (data.employees || []).find((e: any) => e.id === (job && job.employeeId));
+        const drvNm = drv ? drv.name : "Le chauffeur";
+        for (const cid of adminChatList(data)) { try { await tg("sendMessage", { chat_id: cid, text: "👍 " + drvNm + " a bien reçu son chantier" + (job && job.location ? " (" + job.location + ")" : "") + "." }); } catch (_e) { /* ignore */ } }
+        return new Response("ok");
+      }
       // --- Coordination multi-admins (Option 1) : un seul admin traite, les boutons disparaissent chez tous ---
       const cqChat = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
       const cqMsgId = cq.message && cq.message.message_id;
