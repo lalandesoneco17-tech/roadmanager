@@ -2329,8 +2329,9 @@ const[tgDone,setTgDone]=useState(data.tgNotifyDone!==false);
 const[tgSign,setTgSign]=useState(data.tgNotifySign!==false);
 const[tgStock,setTgStock]=useState(data.tgNotifyStock!==false);
 const[tgPresence,setTgPresence]=useState(data.tgNotifyPresence!==false);
+const[tgAdmins,setTgAdmins]=useState(JSON.parse(JSON.stringify(data.telegramAdminChats||[])));
 const[tgCb,setTgCb]=useState(data.tgNotifyCbTickets!==false);
-const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),nightStart:nStart||'21:00',nightEnd:nEnd||'06:00',tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP),anthropicApiKey:apiKey,companyContext:companyCtx,telegramBotToken:tgToken,telegramAdminChatId:tgChatId,tgNotifyStart:tgStart,tgNotifyPause:tgPause,tgNotifyResume:tgResume,tgNotifyDone:tgDone,tgNotifySign:tgSign,tgNotifyStock:tgStock,tgNotifyPresence:tgPresence,tgNotifyCbTickets:tgCb});alert('Enregistre')};
+const doSave=()=>{save({...data,adminUser:au,adminPass:ap,fuelPrice:Number(fp),nightPct:Number(np),nightStart:nStart||'21:00',nightEnd:nEnd||'06:00',tempsPlusDepart:Number(tpDepartMin),tempsPlusArrivee:Number(tpArriveeMin),toleranceMinutes:Number(tolMin),workDaysPerMonth:Number(wdpm),monthlyRent:Number(mRent),monthlyAdmin:Number(mAdmin),monthlyInsuranceRC:Number(mIRC),yearStart:yStart,weeklyHoursNormal:Number(weeklyH),overtime25Threshold:Number(ot25),overtime50Threshold:Number(ot50),refHoursPerDay:Number(refHpd),paniersPrice:Number(paniersP),restoPrice:Number(restoP),anthropicApiKey:apiKey,companyContext:companyCtx,telegramBotToken:tgToken,telegramAdminChatId:tgChatId,tgNotifyStart:tgStart,tgNotifyPause:tgPause,tgNotifyResume:tgResume,tgNotifyDone:tgDone,tgNotifySign:tgSign,tgNotifyStock:tgStock,tgNotifyPresence:tgPresence,tgNotifyCbTickets:tgCb,telegramAdminChats:tgAdmins});alert('Enregistre')};
 const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,'');
 return(
 <div>
@@ -2404,7 +2405,14 @@ Suggestions de ce que tu peux ecrire :<br/>
 <button onClick={async()=>{const tok=(tgToken||'').trim();if(!tok){setTgStatus('⚠ Colle d abord le token du bot');return}setTgStatus('Recherche du bot...');const me=await tgGetMe(tok);if(!me.ok){setTgStatus('❌ '+me.error);return}if(!data.telegramBotToken)save({...data,telegramBotToken:tok});const lnk='https://t.me/'+me.username+'?start=admin';setTgStatus('👉 Lien admin : '+lnk+'\n\nOuvre ce lien sur CHAQUE téléphone (toi, papa, maman, frère) puis appuie sur « Démarrer ». Chacun recevra alors les mêmes alertes.');window.open(lnk,'_blank')}} style={btnStyle('#0891b2')}>🔗 Lier un admin (toi / famille)</button>
 <button onClick={async()=>{const tok=(tgToken||'').trim();if(!tok){setTgStatus('⚠ Renseigne le token');return}const s=new Set();if(data.telegramAdminChatId)s.add(String(data.telegramAdminChatId));(data.telegramAdminChats||[]).forEach(a=>{const c=a&&(a.chatId||a);if(c)s.add(String(c))});const arr=[...s];if(!arr.length){setTgStatus('⚠ Aucun admin lié. Clique d abord « Lier un admin ».');return}setTgStatus('Envoi du test...');let ok=0;for(const c of arr){const r=await tgSend(tok,c,'✅ Test RoadManager — tu reçois bien les alertes admin');if(r.ok)ok++}setTgStatus('✅ Test envoyé à '+ok+'/'+arr.length+' admin(s).')}} style={btnStyle(C.green)}>✉ Tester</button>
 </div>
-{(()=>{const s=new Set();if(data.telegramAdminChatId)s.add(String(data.telegramAdminChatId));(data.telegramAdminChats||[]).forEach(a=>{if(a&&a.chatId)s.add(String(a.chatId))});if(!s.size)return null;const names=(data.telegramAdminChats||[]).filter(a=>a&&a.chatId&&a.name&&a.name!=='admin').map(a=>a.name);return(<div style={{fontSize:12,color:C.green}}>👥 {s.size} admin(s) relié(s){names.length?' : '+names.join(', '):''}</div>)})()}
+{tgAdmins.length>0&&<div style={{marginTop:8}}>
+<div style={{fontWeight:600,color:C.dim,fontSize:13,marginBottom:4}}>👥 Admins reliés — donne-leur un prénom :</div>
+{tgAdmins.map((a,i)=>(<div key={a.chatId||i} style={{display:'flex',gap:8,alignItems:'center',marginBottom:4}}>
+<input value={a.name||''} onChange={e=>{const c=tgAdmins.slice();c[i]={...c[i],name:e.target.value};setTgAdmins(c)}} placeholder="Prénom (ex: Romain)" style={{...inputStyle,maxWidth:180,padding:'5px 8px',fontSize:13}}/>
+<span style={{fontSize:11,color:C.muted}}>id {a.chatId}</span>
+</div>))}
+<div style={{fontSize:11,color:C.muted,marginTop:2}}>Ces prénoms servent au « ✅ Traité par … ». N'oublie pas Enregistrer.</div>
+</div>}
 {tgStatus&&<div style={{fontSize:13,marginTop:6,padding:'6px 10px',borderRadius:6,background:'#f8fafc',border:'1px solid '+C.border,color:C.text}}>{tgStatus}</div>}
 <div style={{marginTop:12,fontSize:14}}>
 <div style={{fontWeight:600,color:C.dim,marginBottom:6}}>M'alerter quand un salarie :</div>
