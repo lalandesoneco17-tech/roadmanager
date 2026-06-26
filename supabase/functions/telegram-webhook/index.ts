@@ -232,6 +232,7 @@ function nextDayPlan(data: any, empId: string): string {
       const dl = new Intl.DateTimeFormat("fr-FR", { timeZone: tz, weekday: "long", day: "2-digit", month: "2-digit" }).format(dd);
       const lines = ["📅 Prochain jour de travail — " + dl + " :"];
       for (const j of jobs) lines.push("• " + jobLineF(data, j));
+      lines.push("", "⚠️ Ce planning n'est pas encore définitif — une confirmation te sera envoyée en fin de journée.");
       return lines.join("\n");
     }
   }
