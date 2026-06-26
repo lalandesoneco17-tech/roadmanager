@@ -341,6 +341,23 @@ Deno.serve(async (req) => {
         await tg("answerCallbackQuery", { callback_query_id: cq.id });
         return new Response("ok");
       }
+      // Boutons forfait apres fin de chantier : ecrit le forfait + prix sur le chantier (remplit le planning)
+      if (action === "ff") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        const jobId = parts[1], ft = parts[2], price = Number(parts[3] || 0);
+        const job = (data.jobs || []).find((x: any) => x.id === jobId);
+        if (!job) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Chantier introuvable", show_alert: true }); return new Response("ok"); }
+        job.forfaitType = ft;
+        job.priceForfait = price;
+        job._updatedAt = Date.now();
+        await saveData(data);
+        const c = (data.clients || []).find((x: any) => x.id === job.clientId);
+        const loc = job.location || (c ? c.name : "chantier");
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ Forfait " + ft + " (" + price + "€)" });
+        await tg("sendMessage", { chat_id: chatId, text: "✅ Planning mis à jour : " + loc + " → forfait " + ft + " (" + price + "€)" });
+        return new Response("ok");
+      }
       const isR = action === "r";
       const threePart = isR || action === "next";
       const dest = isR ? parts[1] : null;       // id de depot ou "home"
