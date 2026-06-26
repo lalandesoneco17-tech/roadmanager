@@ -285,6 +285,31 @@ function weekendWish(data: any, empId: string): string {
   return weekendWork ? "" : "\n\n" + pick(WEEKEND);
 }
 
+// ===== Coordination multi-admins (Option 1) =====
+// Une notif a boutons est envoyee a TOUS les admins : chaque copie est enregistree dans data.tgGroups
+// ({id, text, msgs:[{c:chatId, m:messageId}], doneBy, doneAt}). Au 1er clic, on execute l'action UNE fois,
+// on marque doneBy=<prenom> et on edite TOUTES les copies (boutons retires + "✅ Traité par X").
+function tgFindGroup(data: any, chatId: any, messageId: any): any {
+  for (const g of (data.tgGroups || [])) {
+    if ((g.msgs || []).some((m: any) => String(m.c) === String(chatId) && Number(m.m) === Number(messageId))) return g;
+  }
+  return null;
+}
+function tgPresser(data: any, chatId: any): string {
+  const a = (data.telegramAdminChats || []).find((x: any) => String(x.chatId) === String(chatId));
+  return (a && a.name) ? a.name : "un admin";
+}
+async function tgFinalizeGroup(tg: any, group: any, presser: string, resultLine: string): Promise<void> {
+  group.doneBy = presser;
+  group.doneAt = Date.now();
+  if (resultLine) group.result = resultLine;
+  const base = group.text ? group.text + "\n\n" : "";
+  const txt = base + "✅ Traité par " + presser + (resultLine ? " — " + resultLine : "");
+  for (const m of (group.msgs || [])) {
+    try { await tg("editMessageText", { chat_id: m.c, message_id: m.m, text: txt, disable_web_page_preview: true }); } catch (_e) { /* ignore */ }
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
@@ -402,10 +427,22 @@ Deno.serve(async (req) => {
         await tg("answerCallbackQuery", { callback_query_id: cq.id });
         return new Response("ok");
       }
+      // --- Coordination multi-admins (Option 1) : un seul admin traite, les boutons disparaissent chez tous ---
+      const cqChat = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+      const cqMsgId = cq.message && cq.message.message_id;
+      const group = tgFindGroup(data, cqChat, cqMsgId);
+      if (group && group.doneBy) {
+        // Deja traite par un autre admin : on ne refait pas l'action, on s'assure juste que cette copie est finalisee.
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Déjà traité par " + group.doneBy });
+        const base0 = group.text ? group.text + "\n\n" : "";
+        try { await tg("editMessageText", { chat_id: cqChat, message_id: cqMsgId, text: base0 + "✅ Traité par " + group.doneBy + (group.result ? " — " + group.result : ""), disable_web_page_preview: true }); } catch (_e) { /* ignore */ }
+        return new Response("ok");
+      }
+      const presser = tgPresser(data, cqChat);
+
       // Boutons forfait apres fin de chantier : ecrit le forfait + prix sur le chantier (remplit le planning)
       if (action === "ff") {
-        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
-        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        if (!adminChatList(data).includes(cqChat)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
         const jobId = parts[1], ft = parts[2], price = Number(parts[3] || 0);
         const job = (data.jobs || []).find((x: any) => x.id === jobId);
         if (!job) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Chantier introuvable", show_alert: true }); return new Response("ok"); }
@@ -418,12 +455,14 @@ Deno.serve(async (req) => {
           job.priceForfait = price;
         }
         job._updatedAt = Date.now();
-        await saveData(data);
         const c = (data.clients || []).find((x: any) => x.id === job.clientId);
         const loc = job.location || (c ? c.name : "chantier");
         const label = ft === "Transfert" ? "transfert" : ("forfait " + ft);
-        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ " + label + " (" + price + "€)" });
-        await tg("sendMessage", { chat_id: chatId, text: "✅ Planning mis à jour : " + loc + " → " + label + " (" + price + "€)" });
+        const resultLine = label + " (" + price + "€)";
+        if (group) { await tgFinalizeGroup(tg, group, presser, resultLine); data.tgGroups = (data.tgGroups || []).filter((g: any) => Date.now() - (g.ts || 0) < 86400000); }
+        await saveData(data);
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ " + resultLine });
+        if (!group) await tg("sendMessage", { chat_id: cqChat, text: "✅ Planning mis à jour : " + loc + " → " + resultLine });
         return new Response("ok");
       }
       const isR = action === "r";
@@ -442,6 +481,7 @@ Deno.serve(async (req) => {
         });
         return new Response("ok");
       }
+      let resultLine = "";
       if (isR) {
         let destLabel = "à la maison";
         if (dest !== "home") {
@@ -449,6 +489,7 @@ Deno.serve(async (req) => {
           destLabel = "au " + (dp ? dp.name : "dépôt");
         }
         await tg("sendMessage", { chat_id: link.chatId, text: hi(name) + " Tu peux rentrer " + destLabel + ". " + pick(THANKS) + "\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
+        resultLine = name + " rentre " + destLabel;
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "next") {
         const job = (data.jobs || []).find((x: any) => x.id === arg);
@@ -457,16 +498,21 @@ Deno.serve(async (req) => {
         const coords = parseCoordsF(job.gps || job._geocodedGps);
         if (coords) txt += "\n🗺 https://www.google.com/maps?q=" + coords[0] + "," + coords[1];
         await tg("sendMessage", { chat_id: link.chatId, text: txt });
+        resultLine = name + " → prochain chantier";
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "rentrer") {
         await tg("sendMessage", { chat_id: link.chatId, text: hi(name) + " Tu peux rentrer au dépôt. " + pick(THANKS) + "\n\n" + nextDayPlan(data, empId) + weekendWish(data, empId) });
+        resultLine = name + " rentre au dépôt";
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoyé à " + name + " ✅" });
       } else if (action === "plan") {
         await tg("sendMessage", { chat_id: link.chatId, text: hi(name) + " " + pick(PLAN_INTRO) + "\n\n" + nextDayPlan(data, empId) });
+        resultLine = "planning envoyé à " + name;
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Planning envoyé à " + name + " 📅" });
       } else {
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Action inconnue" });
+        return new Response("ok");
       }
+      if (group) { await tgFinalizeGroup(tg, group, presser, resultLine); data.tgGroups = (data.tgGroups || []).filter((g: any) => Date.now() - (g.ts || 0) < 86400000); await saveData(data); }
       return new Response("ok");
     }
 
