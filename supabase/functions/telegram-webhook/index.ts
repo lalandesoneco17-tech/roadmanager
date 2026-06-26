@@ -116,9 +116,13 @@ function handleAdminQuery(data: any, raw: string): string | null {
 function buildAIContext(data: any): string {
   const tz = "Europe/Paris";
   const isoP = (dt: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(dt);
+  const hhmmP = (iso: string) => { try { return new Intl.DateTimeFormat("fr-FR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)); } catch (_e) { return ""; } };
+  const dur = (mn: any) => (mn != null ? Math.floor(mn / 60) + "h" + String(mn % 60).padStart(2, "0") : "");
   const today = isoP(new Date());
-  const lo = isoP(new Date(Date.now() - 3 * 86400000));
+  const lo = isoP(new Date(Date.now() - 7 * 86400000));
   const hi = isoP(new Date(Date.now() + 31 * 86400000));
+  const teLo = isoP(new Date(Date.now() - 14 * 86400000));
+  const empById = (id: string) => (data.employees || []).find((x: any) => x.id === id);
   const emps = (data.employees || []).map((e: any) => e.name).filter(Boolean);
   const machines = (data.machines || []).map((m: any) => m.name + (m.type ? " (" + m.type + ")" : "")).filter(Boolean);
   const depots = (data.depots || []).map((d: any) => d.name).filter(Boolean);
@@ -126,7 +130,7 @@ function buildAIContext(data: any): string {
   const jobs = (data.jobs || []).filter((j: any) => j.date >= lo && j.date <= hi)
     .sort((a: any, b: any) => (a.date + (a.billingStart || "")).localeCompare(b.date + (b.billingStart || "")));
   const jobLines = jobs.map((j: any) => {
-    const e = (data.employees || []).find((x: any) => x.id === j.employeeId);
+    const e = empById(j.employeeId);
     const c = (data.clients || []).find((x: any) => x.id === j.clientId);
     const m = (data.machines || []).find((x: any) => x.id === j.machineId);
     const p = [j.date, (j.billingStart || "--"), (e ? e.name : "?"), (j.location || (c ? c.name : "chantier"))];
@@ -134,10 +138,20 @@ function buildAIContext(data: any): string {
     if (m) p.push(m.name);
     if (j.forfaitType) p.push("forfait " + j.forfaitType);
     if (j.priceForfait) p.push(j.priceForfait + "€");
-    if (j.signature) p.push("signé");
     if (j.type === "depot") p.push("DEPOT");
     if (j.type === "repos") p.push("REPOS");
+    if (j.signature) {
+      if (j.signature.durationMin != null) p.push("temps passé " + dur(j.signature.durationMin));
+      if (j.signature.signedAt) p.push("fin chantier " + hhmmP(j.signature.signedAt));
+      p.push("signé");
+    }
     return "- " + p.join(" | ");
+  });
+  const tes = (data.timeEntries || []).filter((t: any) => t.date >= teLo && t.date <= today)
+    .sort((a: any, b: any) => (a.date).localeCompare(b.date));
+  const teLines = tes.map((t: any) => {
+    const e = empById(t.empId);
+    return "- " + t.date + " | " + (e ? e.name : "?") + " | embauche " + (t.startTime || "--") + " | débauche " + (t.endTime || "--") + (t.pauseMin ? " | pause " + t.pauseMin + "min" : "") + (t.absenceType ? " | ABSENCE " + t.absenceType : "");
   });
   const stock = (data.stationProducts || []).map((pr: any) => {
     const s = (data.stations || []).find((x: any) => x.id === pr.stationId);
@@ -145,13 +159,17 @@ function buildAIContext(data: any): string {
   });
   return [
     "AUJOURD'HUI (Europe/Paris) : " + today,
+    "Note : 'temps passé' = durée travaillée sur le chantier (calculée à la signature/fin de chantier). 'fin chantier' = heure de fin du chantier. 'débauche' (section POINTAGES) = heure de fin de journée du chauffeur.",
     "SALARIÉS : " + emps.join(", "),
     "MACHINES : " + machines.join(", "),
     "DÉPÔTS : " + depots.join(", "),
     "CLIENTS : " + clients.join(", "),
     "",
-    "CHANTIERS (date | heure | chauffeur | lieu | client | machine | forfait | prix | statut) du " + lo + " au " + hi + " :",
+    "CHANTIERS (date | heure | chauffeur | lieu | client | machine | forfait | prix | [temps passé | fin chantier | signé]) du " + lo + " au " + hi + " :",
     jobLines.length ? jobLines.join("\n") : "(aucun)",
+    "",
+    "POINTAGES (date | chauffeur | embauche | débauche | pause) des 14 derniers jours :",
+    teLines.length ? teLines.join("\n") : "(aucun)",
     "",
     "STOCK STATIONS (station | produit : quantité (mini)) :",
     stock.length ? stock.join("\n") : "(aucun)",
@@ -161,7 +179,7 @@ function buildAIContext(data: any): string {
 async function askAI(data: any, question: string): Promise<string | null> {
   const key = data.anthropicApiKey;
   if (!key) return null;
-  const system = "Tu es l'assistant de gestion de SONECO (rabotage, balayage, citerne en Charente-Maritime). Réponds en français, brièvement et clairement à la question de l'admin, en t'appuyant UNIQUEMENT sur les données ci-dessous (planning, salariés, machines, clients, stock). Si l'information n'y figure pas, dis-le simplement. Donne des réponses concrètes : noms, dates, heures, montants. Évite le formatage Markdown lourd.\n\n=== DONNÉES ===\n" + buildAIContext(data);
+  const system = "Tu es l'assistant de gestion de SONECO (rabotage, balayage, citerne en Charente-Maritime). Réponds en français, brièvement et clairement à la question de l'admin, en t'appuyant UNIQUEMENT sur les données ci-dessous (planning, salariés, machines, clients, stock). Si l'information n'y figure pas, dis-le simplement. Donne des réponses concrètes : noms, dates, heures, montants. N'utilise AUCUN symbole de formatage Markdown (pas de #, *, **, _). Réponds en texte simple — tu peux utiliser des émojis et des retours à la ligne, et des tirets « • » pour les listes.\n\n=== DONNÉES ===\n" + buildAIContext(data);
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
