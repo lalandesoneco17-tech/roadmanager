@@ -112,6 +112,76 @@ function handleAdminQuery(data: any, raw: string): string | null {
   return null;
 }
 
+// ===== Hybride IA : repond aux questions libres des admins via Claude (seulement si une commande gratuite ne matche pas) =====
+function buildAIContext(data: any): string {
+  const tz = "Europe/Paris";
+  const isoP = (dt: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(dt);
+  const today = isoP(new Date());
+  const lo = isoP(new Date(Date.now() - 3 * 86400000));
+  const hi = isoP(new Date(Date.now() + 31 * 86400000));
+  const emps = (data.employees || []).map((e: any) => e.name).filter(Boolean);
+  const machines = (data.machines || []).map((m: any) => m.name + (m.type ? " (" + m.type + ")" : "")).filter(Boolean);
+  const depots = (data.depots || []).map((d: any) => d.name).filter(Boolean);
+  const clients = (data.clients || []).map((c: any) => c.name).filter(Boolean);
+  const jobs = (data.jobs || []).filter((j: any) => j.date >= lo && j.date <= hi)
+    .sort((a: any, b: any) => (a.date + (a.billingStart || "")).localeCompare(b.date + (b.billingStart || "")));
+  const jobLines = jobs.map((j: any) => {
+    const e = (data.employees || []).find((x: any) => x.id === j.employeeId);
+    const c = (data.clients || []).find((x: any) => x.id === j.clientId);
+    const m = (data.machines || []).find((x: any) => x.id === j.machineId);
+    const p = [j.date, (j.billingStart || "--"), (e ? e.name : "?"), (j.location || (c ? c.name : "chantier"))];
+    if (c && j.location) p.push("client " + c.name);
+    if (m) p.push(m.name);
+    if (j.forfaitType) p.push("forfait " + j.forfaitType);
+    if (j.priceForfait) p.push(j.priceForfait + "€");
+    if (j.signature) p.push("signé");
+    if (j.type === "depot") p.push("DEPOT");
+    if (j.type === "repos") p.push("REPOS");
+    return "- " + p.join(" | ");
+  });
+  const stock = (data.stationProducts || []).map((pr: any) => {
+    const s = (data.stations || []).find((x: any) => x.id === pr.stationId);
+    return "- " + (s ? s.name : "?") + " | " + pr.name + " : " + (pr.quantity != null ? pr.quantity : "?") + (pr.unit ? " " + pr.unit : "") + (pr.minStock ? " (mini " + pr.minStock + ")" : "");
+  });
+  return [
+    "AUJOURD'HUI (Europe/Paris) : " + today,
+    "SALARIÉS : " + emps.join(", "),
+    "MACHINES : " + machines.join(", "),
+    "DÉPÔTS : " + depots.join(", "),
+    "CLIENTS : " + clients.join(", "),
+    "",
+    "CHANTIERS (date | heure | chauffeur | lieu | client | machine | forfait | prix | statut) du " + lo + " au " + hi + " :",
+    jobLines.length ? jobLines.join("\n") : "(aucun)",
+    "",
+    "STOCK STATIONS (station | produit : quantité (mini)) :",
+    stock.length ? stock.join("\n") : "(aucun)",
+  ].join("\n");
+}
+
+async function askAI(data: any, question: string): Promise<string | null> {
+  const key = data.anthropicApiKey;
+  if (!key) return null;
+  const system = "Tu es l'assistant de gestion de SONECO (rabotage, balayage, citerne en Charente-Maritime). Réponds en français, brièvement et clairement à la question de l'admin, en t'appuyant UNIQUEMENT sur les données ci-dessous (planning, salariés, machines, clients, stock). Si l'information n'y figure pas, dis-le simplement. Donne des réponses concrètes : noms, dates, heures, montants. Évite le formatage Markdown lourd.\n\n=== DONNÉES ===\n" + buildAIContext(data);
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: data.aiModel || "claude-haiku-4-5",
+        max_tokens: 1024,
+        system,
+        messages: [{ role: "user", content: question }],
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) return null;
+    const txt = ((j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n")).trim();
+    return txt || null;
+  } catch (_e) {
+    return null;
+  }
+}
+
 function empName(data: any, empId: string): string {
   const e = (data.employees || []).find((x: any) => x.id === empId);
   return e ? e.name : "le salarié";
@@ -227,7 +297,13 @@ Deno.serve(async (req) => {
       if (adminChatList(data).includes(chatId)) {
         const reply = handleAdminQuery(data, msg.text);
         if (reply) { await tg("sendMessage", { chat_id: chatId, text: reply, disable_web_page_preview: true }); return new Response("ok"); }
-        await tg("sendMessage", { chat_id: chatId, text: "Je n'ai pas compris. " + helpText(), reply_markup: MENU_KB });
+        // Hybride : question libre -> IA Claude (seulement si une cle API est configuree)
+        if (data.anthropicApiKey) {
+          await tg("sendChatAction", { chat_id: chatId, action: "typing" });
+          const ai = await askAI(data, msg.text);
+          if (ai) { await tg("sendMessage", { chat_id: chatId, text: ai, disable_web_page_preview: true }); return new Response("ok"); }
+        }
+        await tg("sendMessage", { chat_id: chatId, text: (data.anthropicApiKey ? "Je n'ai pas pu répondre. " : "Je n'ai pas compris. ") + helpText(), reply_markup: MENU_KB });
         return new Response("ok");
       }
     }
