@@ -348,14 +348,21 @@ Deno.serve(async (req) => {
         const jobId = parts[1], ft = parts[2], price = Number(parts[3] || 0);
         const job = (data.jobs || []).find((x: any) => x.id === jobId);
         if (!job) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Chantier introuvable", show_alert: true }); return new Response("ok"); }
-        job.forfaitType = ft;
-        job.priceForfait = price;
+        if (ft === "Transfert") {
+          // Le transfert n'est pas un forfait : c'est l'add-on hasTransfer + transferPrice (bouton +T du planning)
+          job.hasTransfer = true;
+          job.transferPrice = price;
+        } else {
+          job.forfaitType = ft;
+          job.priceForfait = price;
+        }
         job._updatedAt = Date.now();
         await saveData(data);
         const c = (data.clients || []).find((x: any) => x.id === job.clientId);
         const loc = job.location || (c ? c.name : "chantier");
-        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ Forfait " + ft + " (" + price + "€)" });
-        await tg("sendMessage", { chat_id: chatId, text: "✅ Planning mis à jour : " + loc + " → forfait " + ft + " (" + price + "€)" });
+        const label = ft === "Transfert" ? "transfert" : ("forfait " + ft);
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ " + label + " (" + price + "€)" });
+        await tg("sendMessage", { chat_id: chatId, text: "✅ Planning mis à jour : " + loc + " → " + label + " (" + price + "€)" });
         return new Response("ok");
       }
       const isR = action === "r";
