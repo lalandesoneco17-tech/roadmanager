@@ -411,6 +411,12 @@ Deno.serve(async (req) => {
         await tg("sendMessage", { chat_id: chatId, text: (data.anthropicApiKey ? "Je n'ai pas pu répondre. " : "Je n'ai pas compris. ") + helpText(), reply_markup: MENU_KB });
         return new Response("ok");
       }
+      // Salaries : on NE LIT PAS les messages ecrits, uniquement les boutons. On le leur rappelle gentiment.
+      const isEmp = Object.values(data.telegramEmpChats || {}).some((l: any) => l && String(l.chatId) === chatId);
+      if (isEmp) {
+        await tg("sendMessage", { chat_id: chatId, text: "👋 Je ne lis pas les messages écrits ici 🙂.\nUtilise les boutons sous les messages (par ex. « ✅ J'ai bien lu »).\nPour joindre le bureau, appelle ou envoie un SMS directement." });
+      }
+      return new Response("ok");
     }
 
     // 2) Boutons sous la notif (callback_query)
