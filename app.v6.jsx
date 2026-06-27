@@ -6,6 +6,10 @@ const SKEY='roadmanager-v5';
 if(!window.storage||typeof window.storage.get!=='function'){window.storage={get:function(k){try{return Promise.resolve(localStorage.getItem(k))}catch(e){return Promise.resolve(null)}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve()}};}
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
 const defaultData=()=>({depots:[],employees:[],machines:[],trucks:[],cars:[],clients:[],jobs:[],forfaits:{},timeEntries:[],timeEntriesValidated:[],parts:[],interventions:[],panneReports:[],jdReports:[],fuelPrice:1.72,nightPct:30,adminUser:'admin',adminPass:'admin',empPasswords:{},workDaysPerMonth:22,monthlyRent:0,monthlyAdmin:0,monthlyInsuranceRC:0,yearStart:fmtDateISO(new Date(new Date().getFullYear(),0,1)),weeklyHoursNormal:35,overtime25Threshold:35,overtime50Threshold:43,refHoursPerDay:1,nightStart:'21:00',nightEnd:'06:00',paniersPrice:12,restoPrice:15,anthropicApiKey:'',telegramBotToken:'',telegramAdminChatId:'',telegramAdminChats:[],tgNotifyStart:true,tgNotifyPause:true,tgNotifyResume:true,tgNotifyDone:true,tgNotifySign:true,tgNotifyStock:true,tgNotifyPresence:true,tgNotifyCbTickets:true,telegramEmpChats:{},machineReports:[],equipmentLists:{Raboteuse:[],Balayeuse:[],Citerne:[]},machineEquipmentStatus:{},maintenanceRequests:[],stations:[],stationProducts:[],stationMovements:[],stationUsers:[],tgGroups:[]});
+// ======== DISPOSITION DU PLANNING (tailles personnalisables) ========
+// Valeurs par defaut = exactement les tailles codees en dur dans le planning (rien ne change tant qu'on n'y touche pas).
+const PLANNING_LAYOUT_DEFAULTS={zoom:100,cardGap:12,leftColW:95,cardRadius:10,cardBorder:3,empFont:15,machFont:13};
+const getPlanningLayout=(data)=>({...PLANNING_LAYOUT_DEFAULTS,...((data&&data.planningLayout)||{})});
 const PART_CATS=['pneu','filtre','courroie','dent','roulement','electrique','hydraulique','autre'];
 const INTER_TYPES=['reparation','entretien','changement_piece','panne'];
 const SEVERITIES=['urgent','normal','mineur'];
@@ -913,6 +917,7 @@ return{id:uid(),machineName,serial,date:reportDate,depotDepart,depotArrival,site
 // ======== PLANNING PAGE ========
 const DEPOT_ACTIVITIES=['Rangement / nettoyage','Mecanique / entretien','Attente pieces','Formation','Administratif','Autre'];
 const PlanningPage=({data,save,sbHidden,setSbHidden})=>{
+const PL=getPlanningLayout(data);
 const[selDate,setSelDate]=useState(fmtDateISO(new Date()));
 const[showJdImport,setShowJdImport]=useState(false);
 const[jdImportRows,setJdImportRows]=useState([]);
@@ -1044,7 +1049,7 @@ const onJobDragOver=(e,empId)=>{if(!dragJobId)return;e.preventDefault();e.stopPr
 const onJobDrop=(e,targetEmpId)=>{if(!dragJobId)return;e.preventDefault();e.stopPropagation();const nd=JSON.parse(JSON.stringify(_liveData||data));const jj=(nd.jobs||[]).find(x=>x.id===dragJobId);if(jj&&targetEmpId&&jj.employeeId!==targetEmpId){const targetEmp=(nd.employees||[]).find(x=>x.id===targetEmpId);jj.employeeId=targetEmpId;if(targetEmp&&targetEmp.machineId)jj.machineId=targetEmp.machineId;save(nd)}setDragJobId(null);setDragJobOverEmp(null)};
 const onJobDragEnd=()=>{setDragJobId(null);setDragJobOverEmp(null)};
 return(
-<div>
+<div style={{zoom:(PL.zoom||100)/100}}>
 <datalist id="planning-clients-list">{(data.clients||[]).map(c2=><option key={c2.id} value={c2.name}/>)}</datalist>
 <div style={{background:C.card,borderRadius:8,padding:'10px 14px',marginBottom:10,marginTop:10,border:'1px solid '+C.border}}>
 <span style={{color:MC[types[0]]||C.green,fontWeight:800,fontSize:18}}>{label}</span>
@@ -1065,9 +1070,9 @@ const umJobs=dayJobs.filter(j2=>j2.machineId===um.id);
 if(umJobs.length===0){
 const createUmJob=(field,value)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:'',machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return(<React.Fragment key={cardId}>
-<div draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,marginTop:showSep?28:0,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
+<div draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:PL.cardRadius,marginBottom:PL.cardGap,marginTop:showSep?28:0,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 {/* Côté gauche : select chauffeur + nom machine */}
-<div style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+umColor+'20',background:umColor+'08',gap:4}}>
+<div style={{width:PL.leftColW,minWidth:PL.leftColW,maxWidth:PL.leftColW,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+umColor+'20',background:umColor+'08',gap:4}}>
 <select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px',background:'#fff',width:'100%',textAlign:'center'}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:e2.target.value,machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}}><option value="">Chauff.</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
 <div style={{fontSize:13,fontWeight:700,color:umColor,textAlign:'center',lineHeight:'1.2'}}>{um.name}{um.width?' ('+um.width+')':''}</div>
 </div>
@@ -1078,7 +1083,7 @@ return(<React.Fragment key={cardId}>
 </div>
 </div>
 </div></React.Fragment>)}
-return(<React.Fragment key={cardId}><div draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:10,marginBottom:12,marginTop:showSep?28:0,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
+return(<React.Fragment key={cardId}><div draggable onDragStart={e=>onDragStart(e,cardId)} onDragOver={e=>onDragOver(e,cardId)} onDragEnd={onDragEnd} style={{background:C.card,borderRadius:PL.cardRadius,marginBottom:PL.cardGap,marginTop:showSep?28:0,border:'2px solid '+(dragOverId===cardId?C.accent+'80':umColor+'40'),borderLeft:'6px solid '+umColor,boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1,cursor:'grab'}}>
 <div style={{width:100,minWidth:100,maxWidth:100,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+umColor+'20',background:umColor+'08',gap:4,borderTopLeftRadius:7,borderBottomLeftRadius:7}}>
 <select style={{fontSize:13,fontWeight:700,border:'1px solid '+C.border,borderRadius:6,padding:'3px 4px',background:'#fff',width:'100%',textAlign:'center'}} value="" onChange={e2=>{if(!e2.target.value)return;const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];const existingJ=nd.jobs.filter(x=>x.machineId===um.id&&x.date===selDate);if(existingJ.length>0){existingJ.forEach(x2=>{x2.employeeId=e2.target.value})}else{nd.jobs.push({id:uid(),date:selDate,employeeId:e2.target.value,machineId:um.id,clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false})}save(nd)}}><option value="">Chauff.</option>{(data.employees||[]).map(e2=><option key={e2.id} value={e2.id}>{e2.name}</option>)}</select>
 <div style={{fontSize:13,fontWeight:700,color:umColor,textAlign:'center'}}>{um.name}{um.width?' ('+um.width+')':''}</div>
@@ -1222,13 +1227,13 @@ return(
 {allMissions.length===0&&depotJobs.length===0&&(()=>{const defMach=getMach(emp.machineId);const machColor2=defMach?widthColor(defMach):C.muted;
 const createJobForEmp=(field,value)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];const newJ={id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false};newJ[field]=value;nd.jobs.push(newJ);save(nd)};
 return(
-<div onDragOver={e2=>{if(dragJobId){e2.preventDefault();e2.stopPropagation();if(eId!==dragJobOverEmp)setDragJobOverEmp(eId)}}} onDrop={e2=>{if(dragJobId)onJobDrop(e2,eId)}} style={{background:C.card,borderRadius:10,marginBottom:12,marginTop:showSep?28:0,border:'3px solid '+(dragJobOverEmp===eId?C.cyan+'CC':machColor2),borderLeft:'6px solid '+machColor2,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
+<div onDragOver={e2=>{if(dragJobId){e2.preventDefault();e2.stopPropagation();if(eId!==dragJobOverEmp)setDragJobOverEmp(eId)}}} onDrop={e2=>{if(dragJobId)onJobDrop(e2,eId)}} style={{background:C.card,borderRadius:PL.cardRadius,marginBottom:PL.cardGap,marginTop:showSep?28:0,border:PL.cardBorder+'px solid '+(dragJobOverEmp===eId?C.cyan+'CC':machColor2),borderLeft:'6px solid '+machColor2,overflow:'hidden',boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex'}}>
 {/* Côté gauche : nom employé + bouton "+" + nom machine + stats */}
-<div style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+machColor2+'20',background:machColor2+'08',gap:4}}>
+<div style={{width:PL.leftColW,minWidth:PL.leftColW,maxWidth:PL.leftColW,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+machColor2+'20',background:machColor2+'08',gap:4}}>
 <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'center'}}>
-<div style={{fontSize:15,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
+<div style={{fontSize:PL.empFont,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} title="Ajouter un chantier" style={{background:machColor2,color:'#fff',border:'none',borderRadius:4,width:20,height:20,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'18px',padding:0,flexShrink:0}}>+</button></div>
-{defMach&&<div style={{fontSize:13,fontWeight:700,color:machColor2,textAlign:'center',lineHeight:'1.2'}}>{defMach.name}</div>}
+{defMach&&<div style={{fontSize:PL.machFont,fontWeight:700,color:machColor2,textAlign:'center',lineHeight:'1.2'}}>{defMach.name}</div>}
 {(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te2=>te2.date===d&&te2.startTime&&te2.endTime);return s+(best?calcWorkedMin(best):0)},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<div style={{fontSize:11,color:C.dim,textAlign:'center',marginTop:2,lineHeight:1.3,background:'#f1f5f9',borderRadius:6,padding:'3px 4px',width:'100%'}}><div>J <b style={{color:C.accent,fontSize:12}}>{fmtDuration(dayMin)}</b></div><div>S <b style={{color:C.accent,fontSize:12}}>{fmtDuration(weekMin)}</b></div></div>)})()}
 </div>
 {/* Côté droit : ligne placeholder pour saisie chantier (atténuée tant qu'aucun chantier n'a été créé) */}
@@ -1250,13 +1255,13 @@ return(
 </div>
 </div>)})()}
 {allMissions.length>0&&(()=>{const machGroups={};allMissions.forEach(mc=>{const mid=mc.m?mc.m.id:'none';if(!machGroups[mid])machGroups[mid]={m:mc.m,mt:mc.mt,missions:[]};machGroups[mid].missions.push(mc)});return Object.values(machGroups).map((grp,grpIdx)=>{const machColor=grp.m?widthColor(grp.m):C.accent;const allAck=grp.missions.every(mc2=>mc2.j.ack);return(
-<div key={eId+'_'+(grp.m?grp.m.id:'none')} onDragOver={e2=>{e2.preventDefault();if(dragJobId){if(eId!==dragJobOverEmp)setDragJobOverEmp(eId)}else if(dragId&&cardId!==dragId){setDragOverId(cardId)}}} onDrop={e2=>{if(dragJobId)onJobDrop(e2,eId)}} style={{background:allAck?'#dcfce7':C.card,borderRadius:10,marginBottom:12,marginTop:(showSep&&grpIdx===0)?28:0,border:'3px solid '+(dragJobOverEmp===eId?C.cyan+'CC':dragOverId===cardId?C.accent+'80':allAck?'#16a34a':machColor),borderLeft:'6px solid '+(allAck?C.green:machColor),boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1}}>
+<div key={eId+'_'+(grp.m?grp.m.id:'none')} onDragOver={e2=>{e2.preventDefault();if(dragJobId){if(eId!==dragJobOverEmp)setDragJobOverEmp(eId)}else if(dragId&&cardId!==dragId){setDragOverId(cardId)}}} onDrop={e2=>{if(dragJobId)onJobDrop(e2,eId)}} style={{background:allAck?'#dcfce7':C.card,borderRadius:PL.cardRadius,marginBottom:PL.cardGap,marginTop:(showSep&&grpIdx===0)?28:0,border:PL.cardBorder+'px solid '+(dragJobOverEmp===eId?C.cyan+'CC':dragOverId===cardId?C.accent+'80':allAck?'#16a34a':machColor),borderLeft:'6px solid '+(allAck?C.green:machColor),boxShadow:'0 2px 6px rgba(0,0,0,.06)',display:'flex',opacity:dragId===cardId?0.5:1}}>
 {/* Côté gauche: nom + bouton "+" sur la même ligne, machine en dessous (draggable pour réordonner machines) */}
-<div draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragEnd={onDragEnd} style={{width:95,minWidth:95,maxWidth:95,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4,cursor:'grab',borderTopLeftRadius:7,borderBottomLeftRadius:7}}>
+<div draggable onDragStart={e2=>onDragStart(e2,cardId)} onDragEnd={onDragEnd} style={{width:PL.leftColW,minWidth:PL.leftColW,maxWidth:PL.leftColW,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRight:'2px solid '+(allAck?'#16a34a20':machColor+'20'),background:machColor+'08',gap:4,cursor:'grab',borderTopLeftRadius:7,borderBottomLeftRadius:7}}>
 <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'center'}}>
-<div style={{fontSize:15,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
+<div style={{fontSize:PL.empFont,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:grp.m?grp.m.id:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'08:00',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} title="Ajouter un chantier" style={{background:machColor,color:'#fff',border:'none',borderRadius:4,width:20,height:20,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'18px',padding:0,flexShrink:0}}>+</button></div>
-<div style={{fontSize:13,fontWeight:700,color:machColor,textAlign:'center',lineHeight:'1.2'}}>{grp.m?grp.m.name:'?'}</div>
+<div style={{fontSize:PL.machFont,fontWeight:700,color:machColor,textAlign:'center',lineHeight:'1.2'}}>{grp.m?grp.m.name:'?'}</div>
 {(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te2=>te2.date===d&&te2.startTime&&te2.endTime);return s+(best?calcWorkedMin(best):0)},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<div style={{fontSize:11,color:C.dim,textAlign:'center',marginTop:2,lineHeight:1.3,background:'#f1f5f9',borderRadius:6,padding:'3px 4px',width:'100%'}}><div>J <b style={{color:C.accent,fontSize:12}}>{fmtDuration(dayMin)}</b></div><div>S <b style={{color:C.accent,fontSize:12}}>{fmtDuration(weekMin)}</b></div></div>)})()}
 {isMonthly&&<div style={{fontSize:11,color:C.dim,textAlign:'center'}}>{fmtMoney(dailySalary)}/j</div>}
 </div>
@@ -3926,8 +3931,8 @@ return(<div style={{maxWidth:1000,margin:'0 auto',padding:14,fontSize:14}}>
 // ======== ADMIN PANEL ========
 const AdminPanel=({data,save,onLogout,onUndo})=>{
 const[pg,setPg]=useState('planning');const[mobOpen,setMobOpen]=useState(false);const[sbHidden,setSbHidden]=useState(false);
-const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'equipements',l:'Equipements',i:'&#129520;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stations',l:'Stations',i:'&#128024;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
-const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save} sbHidden={sbHidden} setSbHidden={setSbHidden}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'equipements':return(<EquipmentListsPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stations':return(<StationsPage data={data} save={save}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
+const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'disposition',l:'Disposition',i:'&#128208;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'equipements',l:'Equipements',i:'&#129520;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stations',l:'Stations',i:'&#128024;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
+const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save} sbHidden={sbHidden} setSbHidden={setSbHidden}/>);case'disposition':return(<DispositionPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'equipements':return(<EquipmentListsPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stations':return(<StationsPage data={data} save={save}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
 return(
 <div>
 {mobOpen&&<div className="sb-overlay" style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.3)',zIndex:199}} onClick={()=>setMobOpen(false)}/>}
@@ -4663,6 +4668,57 @@ return(
 </button>
 </div>
 );};
+
+// ======== DISPOSITION DU PLANNING (onglet admin) ========
+// Editeur visuel des tailles du planning : curseurs + apercu en direct (le vrai PlanningPage rendu avec les
+// valeurs en cours d'edition) + bouton "Implementer" qui enregistre data.planningLayout. Ne touche a aucune
+// automatisation : seules les tailles d'affichage changent.
+const DispositionPage=({data,save})=>{
+const cur=getPlanningLayout(data);
+const[draft,setDraft]=useState(cur);
+const set=(k,v)=>setDraft(d=>({...d,[k]:Number(v)}));
+const previewData={...data,planningLayout:draft};
+const dirty=JSON.stringify(draft)!==JSON.stringify(cur);
+const fields=[
+ {k:'zoom',l:'Echelle generale (agrandit / reduit tout le planning)',min:50,max:150,step:5,unit:'%'},
+ {k:'cardGap',l:'Ecart entre les chauffeurs',min:0,max:40,step:1,unit:'px'},
+ {k:'leftColW',l:'Largeur de la colonne nom / machine',min:60,max:180,step:5,unit:'px'},
+ {k:'cardRadius',l:'Arrondi des cartes',min:0,max:24,step:1,unit:'px'},
+ {k:'cardBorder',l:'Epaisseur des bordures',min:1,max:8,step:1,unit:'px'},
+ {k:'empFont',l:'Taille du nom du chauffeur',min:10,max:24,step:1,unit:'px'},
+ {k:'machFont',l:'Taille du nom de la machine',min:9,max:22,step:1,unit:'px'},
+];
+const implement=()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));nd.planningLayout={...draft};save(nd);alert('✓ Disposition appliquee au planning !')};
+return(
+<div style={{paddingBottom:20}}>
+<h2 style={{margin:'0 0 4px'}}>{'📐'} Disposition du planning</h2>
+<p style={{color:C.dim,marginTop:0,fontSize:14,maxWidth:760}}>Regle les tailles avec les curseurs : l'apercu en dessous se met a jour <b>en direct</b> sans rien changer au vrai planning ni aux automatisations. Quand le rendu te plait, clique sur <b>Implementer</b> en bas pour l'appliquer partout.</p>
+<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12,marginBottom:16}}>
+{fields.map(f=>(
+<div key={f.k} style={{background:C.card,border:'1px solid '+C.border,borderRadius:10,padding:'10px 14px'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:6}}>
+<label style={{fontSize:13,fontWeight:700,color:C.text}}>{f.l}</label>
+<div style={{display:'flex',alignItems:'center',gap:3,flexShrink:0}}>
+<input type="number" value={draft[f.k]} min={f.min} max={f.max} step={f.step} onChange={e=>set(f.k,e.target.value)} style={{width:54,fontSize:13,padding:'2px 4px',borderRadius:6,border:'1px solid '+C.border,textAlign:'right'}}/>
+<span style={{fontSize:12,color:C.dim,width:16}}>{f.unit}</span>
+</div>
+</div>
+<input type="range" value={draft[f.k]} min={f.min} max={f.max} step={f.step} onChange={e=>set(f.k,e.target.value)} style={{width:'100%'}}/>
+</div>))}
+</div>
+<div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+<button onClick={()=>setDraft({...PLANNING_LAYOUT_DEFAULTS})} style={{background:'#fff',border:'1px solid '+C.border,color:C.dim,padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600}}>{'↺'} Valeurs d'origine</button>
+{dirty&&<button onClick={()=>setDraft(cur)} style={{background:'#fff',border:'1px solid '+C.border,color:C.dim,padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600}}>Annuler mes changements</button>}
+</div>
+<div style={{fontSize:13,fontWeight:800,color:C.accent,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>{'👁'} Apercu en direct</div>
+<div style={{border:'2px dashed '+C.border,borderRadius:12,padding:'4px 10px',background:C.bg,maxHeight:620,overflow:'auto'}}>
+<PlanningPage data={previewData} save={save} sbHidden={true} setSbHidden={()=>{}}/>
+</div>
+<div style={{position:'sticky',bottom:0,marginTop:16,padding:'12px 0',background:C.bg,borderTop:'2px solid '+C.border,display:'flex',justifyContent:'center',alignItems:'center',gap:14,flexWrap:'wrap',zIndex:5}}>
+{!dirty&&<span style={{color:C.dim,fontSize:13}}>Disposition deja appliquee.</span>}
+<button onClick={implement} disabled={!dirty} style={{background:dirty?C.green:C.muted,color:'#fff',border:'none',padding:'14px 40px',borderRadius:10,cursor:dirty?'pointer':'default',fontSize:17,fontWeight:800,boxShadow:dirty?'0 3px 10px rgba(0,0,0,.2)':'none',opacity:dirty?1:0.55}}>{'✓'} Implementer cette disposition</button>
+</div>
+</div>);};
 
 // ======== APP ROOT ========
 const App=()=>{
