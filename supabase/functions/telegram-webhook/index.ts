@@ -485,15 +485,22 @@ const AGENT_SYSTEM = [
   "2. Le numero de machine identifie le chantier ; le prenom sert seulement a verifier.",
   "   Si le prenom donne ne correspond pas a celui du planning, tu le signales avant de proposer.",
   "3. Tu n'inventes jamais un client, un lieu, un chef ou une heure que tu n'as pas lus ou qu'on ne t'a pas dictes.",
-  "4. Le planning est DEJA fourni ci-dessous (section CHANTIERS), avec le job_id de chaque ligne.",
-  "   Sers-t'en directement. N'appelle lire_planning QUE pour une date hors de cette plage.",
-  "5. Pour modifier ou supprimer, prends le job_id dans la section CHANTIERS.",
+  "4. DEUX SOURCES, NE LES CONFONDS JAMAIS :",
+  "   - GOOGLE SHEETS = le planning du PERE. C'est LA REFERENCE : c'est la que le planning",
+  "     est decide. Outils : comparer_planning, lire_planning_pere.",
+  "   - ROADMANAGER = ce que les chauffeurs voient dans l'application. C'est la destination.",
+  "     Il est deja fourni ci-dessous (section CHANTIERS) avec les job_id.",
+  "   Pour TOUTE question sur le planning d'un jour (« qui travaille demain », « ou est la 210 »,",
+  "   « qu'est-ce qu'il reste a faire »), appelle comparer_planning : il te donne les deux.",
+  "   DIS TOUJOURS de quelle source vient ce que tu annonces : « chez le pere » / « dans RoadManager ».",
+  "   Si les deux sources divergent, dis-le au lieu de choisir.",
+  "5. Pour modifier ou supprimer, prends le job_id dans la section CHANTIERS (RoadManager).",
   "6. Les outils d'ecriture n'ecrivent RIEN : ils preparent une proposition que l'admin valide par un bouton.",
   "   Ne dis donc jamais 'c'est enregistre' apres un appel d'outil d'ecriture.",
   "7. Les dates sont au format ISO AAAA-MM-JJ, les heures au format HH:MM. Utilise le calendrier fourni.",
   "",
   "8. VERIFICATION CROISEE : avant de proposer la creation d'un chantier, appelle",
-  "   lire_planning_pere pour ce jour. Si le planning du pere dit autre chose que l'admin",
+  "   comparer_planning pour ce jour. Si le planning du pere dit autre chose que l'admin",
   "   (client, lieu, heure, chauffeur, machine), SIGNALE l'ecart en une phrase avant de proposer.",
   "   Exemple : « Le planning dit eurovia ang, pas Ferroviaire. Je prends lequel ? »",
   "   Si le planning du pere contient une incoherence (case NUIT cochee sur un chantier de jour),",
@@ -527,6 +534,11 @@ const AGENT_TOOLS = [
       properties: { date: { type: "string", description: "Date ISO AAAA-MM-JJ" } },
       required: ["date"],
     },
+  },
+  {
+    name: "comparer_planning",
+    description: "Compare le planning du PERE (Google Sheets) et celui de RoadManager pour un jour, chauffeur par chauffeur, et dit ce qui reste A RECOPIER. C'est l'outil a utiliser pour toute question sur le planning d'un jour.",
+    input_schema: { type: "object", properties: { date: { type: "string", description: "Date ISO AAAA-MM-JJ" } }, required: ["date"] },
   },
   {
     name: "creer_chantier",
@@ -930,6 +942,79 @@ function gsRender(iso: string, res: any): string {
 // Enregistre un classeur a partir d'un lien colle dans Telegram.
 function gsExtractId(txt: string): string { const m = String(txt || "").match(/spreadsheets\/d\/([a-zA-Z0-9-_]{20,})/); return m ? m[1] : ""; }
 
+// Compare le planning du PERE (Google Sheets) et celui de ROADMANAGER pour un jour.
+// C'est ce qui permet de repondre a « qu'est-ce qui reste a recopier ? ».
+// repos / absence / depot : ce sont des etats, pas des chantiers a recopier.
+function gsEstNonChantier(g: any): boolean {
+  const t = normTxt((g.lieu || "") + " " + (g.client || ""));
+  return !t || /^(repos|absent|absent le matin|absente|conge|conges|depot|prepa|effacage)\b/.test(t) || t === "depot";
+}
+
+async function toolComparerPlanning(data: any, iso: string): Promise<string> {
+  const gs = await gsLookupDay(data, iso);
+  const rmJobs = (data.jobs || []).filter((j: any) => j.date === iso);
+  const nomOf = (id: string) => { const e = (data.employees || []).find((x: any) => x.id === id); return e ? e.name : ""; };
+  const macOf = (id: string) => { const m = (data.machines || []).find((x: any) => x.id === id); return m ? m.name : ""; };
+
+  const rmByDrv: any = {};
+  for (const j of rmJobs) {
+    const k = normTxt(nomOf(j.employeeId)) || "(sans chauffeur)";
+    (rmByDrv[k] = rmByDrv[k] || []).push(j);
+  }
+  const gsByDrv: any = {};
+  for (const g of (gs.jobs || [])) {
+    if (!g.client && !g.lieu) continue;          // ligne vide ou simple note
+    const k = normTxt(g.chauffeur) || "(sans chauffeur)";
+    (gsByDrv[k] = gsByDrv[k] || []).push(g);
+  }
+
+  const L: string[] = [];
+  L.push("COMPARAISON " + gsDayLabel(iso) + " — planning du PERE (Google Sheets) vs ROADMANAGER");
+  if (gs.error) L.push("Google Sheets : " + gs.error);
+  L.push("");
+
+  const drivers = [...new Set([...Object.keys(gsByDrv), ...Object.keys(rmByDrv)])].sort();
+  if (!drivers.length) return L.join("\n") + "Les deux plannings sont vides ce jour-la.";
+
+  const aCopier: string[] = [];
+  for (const d of drivers) {
+    const G = gsByDrv[d] || [], R = rmByDrv[d] || [];
+    const label = (G[0] && G[0].chauffeur) || nomOf((R[0] || {}).employeeId) || d;
+    L.push("* " + label.toUpperCase());
+    for (const g of G) {
+      const p = [g.machine || "?"];
+      if (g.client) p.push(g.client);
+      if (g.lieu) p.push(g.lieu);
+      if (g.heure) p.push(g.heure);
+      if (g.forfait) p.push("forfait " + g.forfait);
+      if (g.nuit) p.push("NUIT");
+      L.push("   PERE : " + p.join(" | "));
+    }
+    if (!G.length) L.push("   PERE : (rien)");
+    for (const j of R) {
+      const c = (data.clients || []).find((x: any) => x.id === j.clientId);
+      const p = [macOf(j.machineId) || "?"];
+      if (c) p.push(c.name);
+      if (j.location) p.push(j.location);
+      if (j.billingStart) p.push(j.billingStart);
+      if (j.forfaitType) p.push("forfait " + j.forfaitType);
+      if (j.isNight) p.push("NUIT");
+      p.push("job_id=" + j.id);
+      L.push("   ROADMANAGER : " + p.join(" | "));
+    }
+    if (!R.length) {
+      const vrais = G.filter((g: any) => !gsEstNonChantier(g));
+      L.push("   ROADMANAGER : (rien)" + (vrais.length ? " -> A RECOPIER" : ""));
+      for (const g of vrais) aCopier.push(label + " " + (g.machine || "") + " " + (g.client || g.lieu || ""));
+    }
+    L.push("");
+  }
+  L.push(aCopier.length
+    ? "A RECOPIER dans RoadManager (" + aCopier.length + ") : " + aCopier.join(" ; ")
+    : "Rien a recopier : tous les chauffeurs du planning du pere ont deja un chantier dans RoadManager.");
+  return L.join("\n");
+}
+
 // ---- Boucle agent (tool use) ----------------------------------------------
 async function anthropic(key: string, body: any): Promise<any> {
   const call = (extraHeaders: any, extraBody: any) => fetch("https://api.anthropic.com/v1/messages", {
@@ -996,6 +1081,10 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
       const a = tu.input || {};
       if (tu.name === "lire_planning") {
         results.push({ type: "tool_result", tool_use_id: tu.id, content: toolLirePlanning(data, a) });
+        continue;
+      }
+      if (tu.name === "comparer_planning") {
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: await toolComparerPlanning(data, String(a.date || "")) });
         continue;
       }
       if (tu.name === "lire_planning_pere") {
