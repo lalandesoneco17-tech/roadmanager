@@ -1667,7 +1667,7 @@ return(<div style={{padding:'4px 8px',display:'flex',alignItems:'center',gap:5,f
 {(()=>{const buckets=(mr.opTimeBuckets||[]).filter(b=>b.opH>=0.05&&b.fuelRateLh!=null);if(!buckets.length)return null;const totalOpH=buckets.reduce((s,b)=>s+b.opH,0);if(totalOpH<=0)return null;const wAvg=buckets.reduce((s,b)=>s+b.opH*b.fuelRateLh,0)/totalOpH;return<span title="Consommation moyenne pondérée pendant les heures de fraisage actif" style={{background:'#fef3c7',border:'1px solid #d97706',borderRadius:5,padding:'1px 7px',color:'#92400e',fontWeight:700,cursor:'help'}}>⛽/h {wAvg.toFixed(1)} L/h</span>})()}
 {(()=>{const buckets=(mr.opTimeBuckets||[]).filter(b=>b.opH>=0.05&&b.pressureBar!=null);if(!buckets.length)return null;const totalOpH=buckets.reduce((s,b)=>s+b.opH,0);if(totalOpH<=0)return null;const wAvg=buckets.reduce((s,b)=>s+b.opH*b.pressureBar,0)/totalOpH;return<span title="Pression moyenne du système d'entraînement pondérée pendant les heures de fraisage actif" style={{background:'#fce7f3',border:'1px solid #db2777',borderRadius:5,padding:'1px 7px',color:'#831843',fontWeight:700,cursor:'help'}}>🔧 {wAvg.toFixed(0)} bar</span>})()}
 {(!mr.rawPts||!mr.rawPts.length)&&<span style={{background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'1px 7px',color:'#991b1b',fontWeight:700}}>⚠️ Ancien format — supprimer puis ré-importer</span>}
-<button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen (le chantier sera conservé) ?')){const nd=JSON.parse(JSON.stringify(_liveData||data));nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} title="Supprime uniquement le rapport Wirtgen (le chantier reste)" style={{marginLeft:'auto',background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:11,color:'#991b1b',fontWeight:700}}>🗑 Suppr rapport</button>
+<button onClick={()=>{if(confirm('Supprimer ce rapport Wirtgen (le chantier sera conservé) ?')){const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'machineReports',mr.id);nd.machineReports=(nd.machineReports||[]).filter(r=>r.id!==mr.id);save(nd)}}} title="Supprime uniquement le rapport Wirtgen (le chantier reste)" style={{marginLeft:'auto',background:'#fee2e2',border:'1px solid #ef4444',borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:11,color:'#991b1b',fontWeight:700}}>🗑 Suppr rapport</button>
 </div>)})()}
 <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
 <button onClick={()=>{setDepotFormEmpId(eId);setShowDepotForm(true)}} style={{background:'#64748b',color:'#fff',border:'none',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:12,fontWeight:600}}>🏠 Affecter au depot</button>
@@ -1976,7 +1976,7 @@ const blank={name:'',address:'',_coords:null,gnrStock:0,gnrPrice:0,gazoleStock:0
 const open=d=>{setSel(d?{...d}:{...blank,id:uid()});setShow(true)};
 const close=()=>{setShow(false);setSel(null)};
 const doSave=()=>{const ds=data.depots||[];const idx=ds.findIndex(d=>d.id===sel.id);const nd=idx>=0?ds.map(d=>d.id===sel.id?sel:d):[...ds,sel];save({...data,depots:nd});close()};
-const delItem=()=>{if(!confirm('Supprimer ?'))return;save({...data,depots:(data.depots||[]).filter(d=>d.id!==sel.id)});close()};
+const delItem=()=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'depots',sel.id);nd.depots=(nd.depots||[]).filter(d=>d.id!==sel.id);save(nd);close()};
 const doOut=()=>{if(!outDepot||!outL)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const dep=nd.depots.find(d=>d.id===outDepot);if(!dep)return;const liters=Number(outL)||0;const fld=outType==='gnr'?'gnr':'gazole';dep[fld+'Stock']=Math.max(0,(dep[fld+'Stock']||0)-liters);const hist=dep[fld+'History']||[];hist.unshift({type:'out',liters,date:outDate,employeeName:(nd.employees||[]).find(e=>e.id===outEmp)?.name||'',machineName:(nd.machines||[]).find(m=>m.id===outMach)?.name||'',truckName:(nd.trucks||[]).find(t=>t.id===outTruck)?.name||''});dep[fld+'History']=hist.slice(0,30);save(nd);setOutType(null);setOutDepot(null);setOutL('');setOutEmp('');setOutMach('');setOutTruck('')};
 const gauge=(stock,price,color,label)=>{const maxL=5000;const pct=Math.min((stock/maxL)*100,100);return(
 <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color,marginBottom:4}}>{label}</div>
@@ -2042,7 +2042,7 @@ const types=['Raboteuse','Balayeuse','Citerne'];
 const open=m=>{setSel(m?{...m}:{id:uid(),name:'',type:'Raboteuse',width:'',fuelConsumption:'',purchasePrice:'',creditMonthly:'',creditEnd:''});setShow(true)};
 const close=()=>{setShow(false);setSel(null)};
 const doSave=()=>{const ms=data.machines||[];const idx=ms.findIndex(m=>m.id===sel.id);const nm=idx>=0?ms.map(m=>m.id===sel.id?sel:m):[...ms,sel];save({...data,machines:nm});close()};
-const delItem=()=>{if(!confirm('Supprimer ?'))return;save({...data,machines:(data.machines||[]).filter(m=>m.id!==sel.id)});close()};
+const delItem=()=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'machines',sel.id);nd.machines=(nd.machines||[]).filter(m=>m.id!==sel.id);save(nd);close()};
 const driver=mid=>{const e=(data.employees||[]).find(e=>e.machineId===mid);return e?e.name:'-'};
 return(
 <div>
@@ -2119,7 +2119,7 @@ const[sel,setSel]=useState(null);const[show,setShow]=useState(false);
 const open=t=>{setSel(t?{...t}:{id:uid(),name:'',fuelPer100:'',ctDate:'',vidangeDate:''});setShow(true)};
 const close=()=>{setShow(false);setSel(null)};
 const doSave=()=>{const ts=data.trucks||[];const idx=ts.findIndex(t=>t.id===sel.id);const nt=idx>=0?ts.map(t=>t.id===sel.id?sel:t):[...ts,sel];save({...data,trucks:nt});close()};
-const delItem=()=>{if(!confirm('Supprimer ?'))return;save({...data,trucks:(data.trucks||[]).filter(t=>t.id!==sel.id)});close()};
+const delItem=()=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'trucks',sel.id);nd.trucks=(nd.trucks||[]).filter(t=>t.id!==sel.id);save(nd);close()};
 return(
 <div>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h2 style={{margin:0}}>Camions</h2><button style={btnStyle(C.accent,true)} onClick={()=>open(null)}>+ Ajouter</button></div>
@@ -2152,7 +2152,7 @@ const[sel,setSel]=useState(null);const[show,setShow]=useState(false);
 const open=c=>{setSel(c?{...c}:{id:uid(),name:'',plate:'',ctDate:'',vidangeDate:''});setShow(true)};
 const close=()=>{setShow(false);setSel(null)};
 const doSave=()=>{const cs=data.cars||[];const idx=cs.findIndex(c=>c.id===sel.id);const nc=idx>=0?cs.map(c=>c.id===sel.id?sel:c):[...cs,sel];save({...data,cars:nc});close()};
-const delItem=()=>{if(!confirm('Supprimer ?'))return;save({...data,cars:(data.cars||[]).filter(c=>c.id!==sel.id)});close()};
+const delItem=()=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'cars',sel.id);nd.cars=(nd.cars||[]).filter(c=>c.id!==sel.id);save(nd);close()};
 return(
 <div>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h2 style={{margin:0}}>Voitures</h2><button style={btnStyle(C.accent,true)} onClick={()=>open(null)}>+ Ajouter</button></div>
@@ -2180,7 +2180,7 @@ const genLogin=n=>(n||'').toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,
 const open=e=>{if(e){setSel({...e,_coords:e._coords||null,password:(data.empPasswords||{})[e.id]||''})}else{setSel({id:uid(),name:'',role:'employee',address:'',_coords:null,hourlySalary:'',machineId:'',truckId:'',password:''})}setShow(true)};
 const close=()=>{setShow(false);setSel(null)};
 const doSave=()=>{const{password,...emp}=sel;emp.login=genLogin(emp.name);const es=data.employees||[];const idx=es.findIndex(e=>e.id===emp.id);const ne=idx>=0?es.map(e=>e.id===emp.id?emp:e):[...es,emp];const ps={...(data.empPasswords||{})};if(password)ps[emp.id]=password;else delete ps[emp.id];save({...data,employees:ne,empPasswords:ps});close()};
-const delItem=()=>{if(!confirm('Supprimer ?'))return;const ps={...(data.empPasswords||{})};delete ps[sel.id];save({...data,employees:(data.employees||[]).filter(e=>e.id!==sel.id),empPasswords:ps});close()};
+const delItem=()=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'employees',sel.id);nd.employees=(nd.employees||[]).filter(e=>e.id!==sel.id);nd.empPasswords={...(nd.empPasswords||{})};delete nd.empPasswords[sel.id];save(nd);close()};
 const machName=mid=>{const m=(data.machines||[]).find(m=>m.id===mid);return m?m.name:'-'};
 return(
 <div>
@@ -2225,7 +2225,7 @@ const[sel,setSel]=useState(null);const[show,setShow]=useState(false);const[agIn,
 const open=c=>{setSel(c?{...c,agencies:[...(c.agencies||[])],siteManagers:[...(c.siteManagers||[]).map(s=>({...s}))]}:{id:uid(),name:'',forfaitType:'standard',agencies:[],siteManagers:[]});setShow(true)};
 const close=()=>{setShow(false);setSel(null);setAgIn('')};
 const doSave=()=>{const cs=data.clients||[];const idx=cs.findIndex(c=>c.id===sel.id);const nc=idx>=0?cs.map(c=>c.id===sel.id?sel:c):[...cs,sel];save({...data,clients:nc});close()};
-const delItem=()=>{if(!confirm('Supprimer ?'))return;save({...data,clients:(data.clients||[]).filter(c=>c.id!==sel.id)});close()};
+const delItem=()=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'clients',sel.id);nd.clients=(nd.clients||[]).filter(c=>c.id!==sel.id);save(nd);close()};
 return(
 <div>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h2 style={{margin:0}}>Clients</h2><button style={btnStyle(C.accent,true)} onClick={()=>open(null)}>+ Ajouter</button></div>
