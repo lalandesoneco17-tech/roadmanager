@@ -386,13 +386,21 @@ function resolveEmployee(data: any, q: string): any {
   return { emp: hits[0] };
 }
 
-function resolveMachine(data: any, q: string): any {
+function resolveMachine(data: any, q: string, emp?: any): any {
   const raw = String(q == null ? "" : q).trim();
   const n = normTxt(raw);
   const dg = (raw.match(/\d+/) || [])[0] || "";
   const list = (data.machines || []).filter((m: any) => m && m.name);
   if (!n) return { error: "Machine non precisee." };
   const numOf = (m: any) => (String(m.name).match(/\d+/) || [])[0] || "";
+  // La MACHINE ATTRIBUEE au chauffeur tranche l'ambiguite : le planning du pere ecrit
+  // "210", et RoadManager a 210fi (Jerome) et 210i (Jeremy). Le chauffeur suffit a choisir.
+  if (emp && emp.machineId) {
+    const own = list.find((m: any) => m.id === emp.machineId);
+    if (own && (normTxt(own.name) === n || (dg && (numOf(own) === dg || getMachineWidth(own) === dg)) || (!dg && n && normTxt(own.name).indexOf(n) >= 0))) {
+      return { machine: own };
+    }
+  }
   let hits = list.filter((m: any) => normTxt(m.name) === n);
   if (!hits.length && dg) hits = list.filter((m: any) => numOf(m) === dg);
   if (!hits.length && dg) hits = list.filter((m: any) => getMachineWidth(m) === dg);
@@ -599,7 +607,7 @@ function toolLirePlanning(data: any, a: any): string {
     jobs = jobs.filter((j: any) => j.employeeId === r.emp.id);
   }
   if (a.machine) {
-    const r = resolveMachine(data, a.machine);
+    const r = resolveMachine(data, a.machine, a.chauffeur ? (resolveEmployee(data, a.chauffeur).emp || null) : null);
     if (r.error) return r.error;
     jobs = jobs.filter((j: any) => j.machineId === r.machine.id);
   }
@@ -642,8 +650,10 @@ function buildProposal(data: any, a: any, kind: string): any {
 
   let newClientName = "";
   if (a.date) j.date = String(a.date);
-  if (a.chauffeur) { const r = resolveEmployee(data, a.chauffeur); if (r.error) return { error: r.error }; j.employeeId = r.emp.id; }
-  if (a.machine) { const r = resolveMachine(data, a.machine); if (r.error) return { error: r.error }; j.machineId = r.machine.id; }
+  let empObj: any = null;
+  if (a.chauffeur) { const r = resolveEmployee(data, a.chauffeur); if (r.error) return { error: r.error }; j.employeeId = r.emp.id; empObj = r.emp; }
+  if (!empObj && j.employeeId) empObj = (data.employees || []).find((x: any) => x.id === j.employeeId) || null;
+  if (a.machine) { const r = resolveMachine(data, a.machine, empObj); if (r.error) return { error: r.error }; j.machineId = r.machine.id; }
   if (a.client) {
     const r = resolveClient(data, a.client);
     if (r.error) return { error: r.error };
