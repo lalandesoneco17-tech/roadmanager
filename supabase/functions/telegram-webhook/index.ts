@@ -311,6 +311,500 @@ async function tgFinalizeGroup(tg: any, group: any, presser: string, resultLine:
   }
 }
 
+// ============================================================================
+// ===== AGENT IA : lecture ET ECRITURE dans RoadManager ======================
+// ----------------------------------------------------------------------------
+// L'admin ecrit en langage naturel ("mardi 1er sept, Jerome, la 210, nuit,
+// Ferroviaire, giratoire route de Chevres, 19h"). L'agent :
+//   1. retrouve le chauffeur / la machine / le client dans les donnees,
+//   2. RELIT ce qu'il a compris et attend un clic "Valider",
+//   3. ecrit seulement apres validation.
+// Rien n'est jamais ecrit sans validation explicite de l'admin.
+// ============================================================================
+
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+
+// Sauvegarde sure : on RELIT juste avant d'ecrire, pour ne pas ecraser les
+// modifs faites depuis l'app (PC/Mac/tel) pendant qu'on reflechissait.
+async function mutate(fn: (d: any) => void): Promise<any> {
+  const fresh = await loadData();
+  fn(fresh);
+  await saveData(fresh);
+  return fresh;
+}
+
+function normTxt(s: any): string {
+  return stripAccents(String(s == null ? "" : s).toLowerCase()).replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// ---- Moteur de forfaits (copie fidele de app.v6.jsx lignes 158-169) ----
+function getMachineWidth(m: any): string {
+  const s = String((m && m.width) || "") || String((m && m.name) || "");
+  const d = s.match(/\d+/);
+  return d ? d[0] : "";
+}
+function getForfaitKey(data: any, cid: string, machine: any): string | null {
+  if (!machine) return null;
+  const c = (data.clients || []).find((x: any) => x.id === cid);
+  const p = (c && c.forfaitType === "specific") ? cid : "standard";
+  if (machine.type === "Raboteuse") return p + "_rab_" + getMachineWidth(machine);
+  if (machine.type === "Balayeuse") return p + "_bal";
+  if (machine.type === "Citerne") return p + "_cit";
+  return null;
+}
+function getForfaitPrice(data: any, cid: string, machine: any, ft: string, citOpt: string | null, isNight: boolean): number {
+  if (!ft) return 0;
+  let key = getForfaitKey(data, cid, machine);
+  if (!key) return 0;
+  if (machine.type === "Citerne") key += "_" + (citOpt || "Avec chauffeur");
+  let g = (data.forfaits || {})[key];
+  if (!g && key.indexOf("standard") !== 0) {
+    // client "specific" sans grille propre -> on retombe sur la grille standard
+    g = (data.forfaits || {})[key.replace(/^[^_]+_/, "standard_")];
+  }
+  let pr = Number((g || {})[ft] || 0);
+  if (isNight) pr *= 1 + (Number(data.nightPct || 30) / 100);
+  return Math.round(pr * 100) / 100;
+}
+
+// ---- Resolution des noms dictes -> vrais enregistrements -------------------
+// On ne devine JAMAIS : en cas de doute on renvoie une erreur que l'agent
+// transforme en question a l'admin.
+function resolveEmployee(data: any, q: string): any {
+  const n = normTxt(q);
+  const list = (data.employees || []).filter((e: any) => e && e.name);
+  if (!n) return { error: "Chauffeur non precise." };
+  const first = (e: any) => normTxt(e.name).split(" ")[0];
+  let hits = list.filter((e: any) => normTxt(e.name) === n);
+  if (!hits.length) hits = list.filter((e: any) => first(e) === n);
+  if (!hits.length) hits = list.filter((e: any) => normTxt(e.name).split(" ").indexOf(n) >= 0);
+  if (!hits.length) hits = list.filter((e: any) => normTxt(e.name).indexOf(n) === 0);
+  if (!hits.length) hits = list.filter((e: any) => normTxt(e.name).indexOf(n) >= 0);
+  if (!hits.length) return { error: 'Aucun chauffeur ne correspond a "' + q + '". Chauffeurs existants : ' + list.map((e: any) => e.name).join(", ") };
+  if (hits.length > 1) return { error: 'Plusieurs chauffeurs correspondent a "' + q + '" : ' + hits.map((e: any) => e.name).join(", ") + ". Demande a l'admin lequel." };
+  return { emp: hits[0] };
+}
+
+function resolveMachine(data: any, q: string): any {
+  const raw = String(q == null ? "" : q).trim();
+  const n = normTxt(raw);
+  const dg = (raw.match(/\d+/) || [])[0] || "";
+  const list = (data.machines || []).filter((m: any) => m && m.name);
+  if (!n) return { error: "Machine non precisee." };
+  const numOf = (m: any) => (String(m.name).match(/\d+/) || [])[0] || "";
+  let hits = list.filter((m: any) => normTxt(m.name) === n);
+  if (!hits.length && dg) hits = list.filter((m: any) => numOf(m) === dg);
+  if (!hits.length && dg) hits = list.filter((m: any) => getMachineWidth(m) === dg);
+  if (!hits.length) hits = list.filter((m: any) => normTxt(m.name).indexOf(n) >= 0);
+  if (!hits.length) return { error: 'Aucune machine ne correspond a "' + q + '". Machines existantes : ' + list.map((m: any) => m.name).join(", ") };
+  if (hits.length > 1) return { error: 'Plusieurs machines correspondent a "' + q + '" : ' + hits.map((m: any) => m.name).join(", ") + ". Demande a l'admin laquelle." };
+  return { machine: hits[0] };
+}
+
+// Le client peut ne pas exister encore -> on le signale, il sera cree a la validation.
+function resolveClient(data: any, q: string): any {
+  const raw = String(q == null ? "" : q).trim();
+  if (!raw) return { client: null };
+  const n = normTxt(raw);
+  const list = (data.clients || []).filter((c: any) => c && c.name);
+  let hits = list.filter((c: any) => normTxt(c.name) === n);
+  if (!hits.length) hits = list.filter((c: any) => normTxt(c.name).indexOf(n) === 0);
+  if (!hits.length) hits = list.filter((c: any) => normTxt(c.name).indexOf(n) >= 0 || n.indexOf(normTxt(c.name)) >= 0);
+  if (hits.length === 1) return { client: hits[0] };
+  if (hits.length > 1) return { error: 'Plusieurs clients correspondent a "' + raw + '" : ' + hits.map((c: any) => c.name).join(", ") + ". Demande a l'admin lequel." };
+  return { client: null, isNew: true, newName: raw };
+}
+
+// ---- Rendu d'un chantier pour la relecture ---------------------------------
+function fmtDateFR(iso: string): string {
+  try {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    return new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "2-digit", month: "2-digit" }).format(new Date(Date.UTC(y, m - 1, d, 12)));
+  } catch (_e) { return String(iso); }
+}
+
+function jobRecap(data: any, j: any, extra: any): string[] {
+  const emp = (data.employees || []).find((x: any) => x.id === j.employeeId);
+  const mac = (data.machines || []).find((x: any) => x.id === j.machineId);
+  const cli = (data.clients || []).find((x: any) => x.id === j.clientId);
+  const cliName = (extra && extra.newClientName) || (cli ? cli.name : "");
+  const L: string[] = [];
+  L.push(fmtDateFR(j.date) + (j.isNight ? "  \u{1F319} NUIT" : ""));
+  L.push("\u{1F464} " + (emp ? emp.name : "?") + "   \u{1F69C} " + (mac ? mac.name : "?"));
+  const lieuLine = [j.location || "", cliName ? "(" + cliName + (extra && extra.newClientName ? " — NOUVEAU CLIENT" : "") + ")" : ""].filter(Boolean).join(" ");
+  if (lieuLine) L.push("\u{1F4CD} " + lieuLine);
+  const money: string[] = [];
+  if (j.billingStart) money.push(j.billingStart);
+  if (j.forfaitType) money.push("forfait " + j.forfaitType);
+  if (j.priceForfait) money.push(j.priceForfait + " €");
+  if (j.hasTransfer) money.push("+ transfert " + (j.transferPrice || 0) + " €");
+  if (money.length) L.push("\u{1F551} " + money.join("  ·  "));
+  if (j.siteManager || j.siteManagerPhone) L.push("\u{1F477} Chef : " + (j.siteManager || "?") + (j.siteManagerPhone ? "  " + j.siteManagerPhone : ""));
+  if (j.gps) L.push("\u{1F5FA} https://www.google.com/maps?q=" + j.gps);
+  return L;
+}
+
+// ---- Contexte transmis a l'agent ------------------------------------------
+function agentContext(data: any): string {
+  const now = new Date();
+  const cal: string[] = [];
+  for (let k = -1; k <= 14; k++) {
+    const d = new Date(now.getTime() + k * 86400000);
+    cal.push(labelParis(d) + " = " + isoParis(d));
+  }
+  const emps = (data.employees || []).filter((e: any) => e.role !== "mechanic").map((e: any) => e.name).filter(Boolean);
+  const macs = (data.machines || []).map((m: any) => m.name + " (" + (m.type || "?") + (m.width ? ", " + m.width : "") + ")").filter(Boolean);
+  const clis = (data.clients || []).map((c: any) => c.name).filter(Boolean);
+  return [
+    "AUJOURD'HUI (Europe/Paris) : " + isoParis(now) + " (" + labelParis(now) + ")",
+    "",
+    "CALENDRIER (pour convertir une date dite a l'oral en date ISO) :",
+    cal.join("\n"),
+    "",
+    "CHAUFFEURS : " + (emps.join(", ") || "(aucun)"),
+    "MACHINES : " + (macs.join(", ") || "(aucune)"),
+    "CLIENTS : " + (clis.join(", ") || "(aucun)"),
+    "",
+    "FORFAITS possibles : 2h, 4h, 6h, 8h, 10h (raboteuse/balayeuse) — Demi-journee, Journee (citerne).",
+    "Majoration de nuit : +" + (data.nightPct || 30) + "%.",
+  ].join("\n");
+}
+
+const AGENT_SYSTEM = [
+  "Tu es l'assistant de gestion de SONECO (rabotage de chaussees). Ton interlocuteur est le patron.",
+  "Tu peux LIRE le planning et PROPOSER des ecritures dedans. Tu reponds en francais.",
+  "",
+  "TON DE REPONSE : une phrase, deux au maximum. Jamais de preambule, jamais de formule de politesse,",
+  "jamais de recapitulatif de ce que tu viens de faire, jamais de Markdown (#, *, _).",
+  "Tu dis 'la 210', pas 'la machine numero 210'. Tu dis 'le chantier', 'le chauffeur', 'le chef', 'le depot'.",
+  "",
+  "REGLES ABSOLUES :",
+  "1. Tu ne devines JAMAIS un chauffeur, une machine, un client, un lieu, un chef ou une heure.",
+  "   Si l'info manque ou est ambigue, tu poses UNE question courte et tu t'arretes.",
+  "2. Le numero de machine identifie le chantier ; le prenom sert seulement a verifier.",
+  "   Si le prenom donne ne correspond pas a celui du planning, tu le signales avant de proposer.",
+  "3. Tu n'inventes jamais un client, un lieu, un chef ou une heure que tu n'as pas lus ou qu'on ne t'a pas dictes.",
+  "4. Avant de creer un chantier, utilise lire_planning pour verifier ce qui existe deja ce jour-la.",
+  "5. Pour modifier ou supprimer, il te faut le job_id : recupere-le avec lire_planning.",
+  "6. Les outils d'ecriture n'ecrivent RIEN : ils preparent une proposition que l'admin valide par un bouton.",
+  "   Ne dis donc jamais 'c'est enregistre' apres un appel d'outil d'ecriture.",
+  "7. Les dates sont au format ISO AAAA-MM-JJ, les heures au format HH:MM. Utilise le calendrier fourni.",
+  "",
+  "Si une reponse ne demande aucun outil, reponds directement, en une phrase.",
+].join("\n");
+
+const AGENT_TOOLS = [
+  {
+    name: "lire_planning",
+    description: "Lit les chantiers du planning sur une periode. A utiliser avant toute creation/modification, et pour repondre aux questions de consultation. Renvoie le job_id de chaque chantier.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date_debut: { type: "string", description: "Date ISO AAAA-MM-JJ" },
+        date_fin: { type: "string", description: "Date ISO AAAA-MM-JJ (identique a date_debut pour un seul jour)" },
+        chauffeur: { type: "string", description: "Optionnel : filtre sur un prenom de chauffeur" },
+        machine: { type: "string", description: "Optionnel : filtre sur un numero de machine, ex 210" },
+      },
+      required: ["date_debut", "date_fin"],
+    },
+  },
+  {
+    name: "creer_chantier",
+    description: "Prepare la creation d'un chantier. N'ECRIT RIEN : renvoie une proposition que l'admin devra valider par un bouton.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Date ISO AAAA-MM-JJ" },
+        chauffeur: { type: "string", description: "Prenom ou nom du chauffeur" },
+        machine: { type: "string", description: "Numero de machine, ex 210" },
+        client: { type: "string", description: "Nom du client" },
+        lieu: { type: "string", description: "Lieu / adresse du chantier" },
+        heure: { type: "string", description: "Heure de debut HH:MM" },
+        nuit: { type: "boolean", description: "true si chantier de nuit" },
+        forfait: { type: "string", description: "2h, 4h, 6h, 8h, 10h, Demi-journee ou Journee" },
+        chef: { type: "string", description: "Nom du chef de chantier" },
+        telephone_chef: { type: "string", description: "Telephone du chef de chantier" },
+        gps: { type: "string", description: "Coordonnees 'lat,lon'" },
+        transfert: { type: "boolean", description: "true si un transfert est facture en plus" },
+      },
+      required: ["date", "chauffeur", "machine"],
+    },
+  },
+  {
+    name: "modifier_chantier",
+    description: "Prepare la modification d'un chantier existant (y compris pour poser un point GPS ou le contact du chef). N'ECRIT RIEN : renvoie une proposition a valider. Ne renseigne que les champs a changer.",
+    input_schema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "Identifiant du chantier, obtenu via lire_planning" },
+        date: { type: "string" }, chauffeur: { type: "string" }, machine: { type: "string" },
+        client: { type: "string" }, lieu: { type: "string" }, heure: { type: "string" },
+        nuit: { type: "boolean" }, forfait: { type: "string" },
+        chef: { type: "string" }, telephone_chef: { type: "string" },
+        gps: { type: "string" }, transfert: { type: "boolean" },
+      },
+      required: ["job_id"],
+    },
+  },
+  {
+    name: "supprimer_chantier",
+    description: "Prepare la suppression d'un chantier. N'ECRIT RIEN : renvoie une proposition a valider.",
+    input_schema: {
+      type: "object",
+      properties: { job_id: { type: "string", description: "Identifiant du chantier, obtenu via lire_planning" } },
+      required: ["job_id"],
+    },
+  },
+];
+
+// ---- Execution des outils --------------------------------------------------
+function toolLirePlanning(data: any, a: any): string {
+  const d1 = String(a.date_debut || ""), d2 = String(a.date_fin || a.date_debut || "");
+  let jobs = (data.jobs || []).filter((j: any) => j.date >= d1 && j.date <= d2);
+  if (a.chauffeur) {
+    const r = resolveEmployee(data, a.chauffeur);
+    if (r.error) return r.error;
+    jobs = jobs.filter((j: any) => j.employeeId === r.emp.id);
+  }
+  if (a.machine) {
+    const r = resolveMachine(data, a.machine);
+    if (r.error) return r.error;
+    jobs = jobs.filter((j: any) => j.machineId === r.machine.id);
+  }
+  jobs = jobs.sort((x: any, y: any) => (x.date + (x.billingStart || "")).localeCompare(y.date + (y.billingStart || "")));
+  if (!jobs.length) return "Aucun chantier sur cette periode avec ces criteres.";
+  return jobs.map((j: any) => {
+    const e = (data.employees || []).find((x: any) => x.id === j.employeeId);
+    const m = (data.machines || []).find((x: any) => x.id === j.machineId);
+    const c = (data.clients || []).find((x: any) => x.id === j.clientId);
+    const p = ["job_id=" + j.id, j.date, j.billingStart || "--", e ? e.name : "sans chauffeur", m ? m.name : "sans machine"];
+    if (c) p.push("client " + c.name);
+    if (j.location) p.push("lieu " + j.location);
+    if (j.type === "depot") p.push(j.rest ? "REPOS" : "DEPOT");
+    if (j.isNight) p.push("NUIT");
+    if (j.forfaitType) p.push("forfait " + j.forfaitType);
+    if (j.priceForfait) p.push(j.priceForfait + "EUR");
+    if (j.siteManager) p.push("chef " + j.siteManager + (j.siteManagerPhone ? " " + j.siteManagerPhone : ""));
+    if (j.gps || j._geocodedGps) p.push("gps " + (j.gps || j._geocodedGps));
+    if (j.ack) p.push("lu par le chauffeur");
+    else if (j.sent) p.push("envoye, pas encore lu");
+    return "- " + p.join(" | ");
+  }).join("\n");
+}
+
+// Construit le chantier propose (creation ou modification) a partir des champs dictes.
+function buildProposal(data: any, a: any, kind: string): any {
+  const warn: string[] = [];
+  let base: any = null;
+  if (kind === "update" || kind === "delete") {
+    base = (data.jobs || []).find((x: any) => x.id === a.job_id);
+    if (!base) return { error: "Chantier introuvable (job_id " + a.job_id + "). Relis le planning pour recuperer le bon identifiant." };
+  }
+  if (kind === "delete") {
+    return { kind: "delete", jobId: base.id, lines: ["\u{1F5D1} SUPPRESSION"].concat(jobRecap(data, base, null)), warn };
+  }
+
+  const j: any = kind === "create"
+    ? { id: uid(), date: "", employeeId: "", machineId: "", clientId: "", agencyName: "", siteManager: "", siteManagerPhone: "", location: "", gps: "", forfaitType: "", priceForfait: 0, isNight: false, hasTransfer: false, transferPrice: 0, billingStart: "08:00", startFrom: "home", endAt: "home", machineFuelL: 0, machineFuelDepot: "", kmAller: 0, kmRetour: 0, travelMinAller: 0, travelMinRetour: 0, distanceKm: 0, travelMin: 0, sent: false, ack: false }
+    : JSON.parse(JSON.stringify(base));
+
+  let newClientName = "";
+  if (a.date) j.date = String(a.date);
+  if (a.chauffeur) { const r = resolveEmployee(data, a.chauffeur); if (r.error) return { error: r.error }; j.employeeId = r.emp.id; }
+  if (a.machine) { const r = resolveMachine(data, a.machine); if (r.error) return { error: r.error }; j.machineId = r.machine.id; }
+  if (a.client) {
+    const r = resolveClient(data, a.client);
+    if (r.error) return { error: r.error };
+    if (r.client) j.clientId = r.client.id;
+    else { newClientName = r.newName; j.clientId = ""; }
+  }
+  if (a.lieu) { j.location = String(a.lieu); j._geocodedGps = ""; }
+  if (a.heure) j.billingStart = String(a.heure);
+  if (typeof a.nuit === "boolean") j.isNight = a.nuit;
+  if (a.forfait) j.forfaitType = String(a.forfait);
+  if (a.chef) j.siteManager = String(a.chef);
+  if (a.telephone_chef) j.siteManagerPhone = String(a.telephone_chef);
+  if (a.gps) j.gps = String(a.gps).replace(/\s+/g, "");
+  if (typeof a.transfert === "boolean") j.hasTransfer = a.transfert;
+
+  if (!j.date) return { error: "Date manquante." };
+  if (!j.employeeId) return { error: "Chauffeur manquant." };
+  if (!j.machineId) return { error: "Machine manquante." };
+
+  // Prix : calcule avec la meme grille que l'app (client existant uniquement).
+  const mac = (data.machines || []).find((x: any) => x.id === j.machineId);
+  if (j.forfaitType && j.clientId && mac) {
+    j.priceForfait = getForfaitPrice(data, j.clientId, mac, j.forfaitType, j.citOption || null, !!j.isNight);
+    if (j.hasTransfer) j.transferPrice = getForfaitPrice(data, j.clientId, mac, "Transfert", j.citOption || null, !!j.isNight);
+    if (!j.priceForfait) warn.push("Pas de tarif trouve pour ce forfait : prix a 0, a completer dans l'app.");
+  } else if (j.forfaitType && newClientName) {
+    warn.push("Client nouveau : pas de tarif, prix a 0.");
+  }
+
+  // Verification croisee : ce chauffeur a-t-il deja quelque chose ce jour-la ?
+  const clash = (data.jobs || []).filter((x: any) => x.employeeId === j.employeeId && x.date === j.date && x.id !== j.id);
+  for (const cj of clash) {
+    const cm = (data.machines || []).find((x: any) => x.id === cj.machineId);
+    warn.push("Deja au planning ce jour : " + (cj.billingStart || "--") + " " + (cj.location || "chantier") + (cm ? " [" + cm.name + "]" : ""));
+  }
+  // La machine est-elle deja prise ce jour-la par quelqu'un d'autre ?
+  const mclash = (data.jobs || []).filter((x: any) => x.machineId === j.machineId && x.date === j.date && x.id !== j.id && x.employeeId !== j.employeeId);
+  for (const cj of mclash) {
+    const ce = (data.employees || []).find((x: any) => x.id === cj.employeeId);
+    warn.push("Cette machine est deja prise ce jour par " + (ce ? ce.name : "quelqu'un") + ".");
+  }
+  if (!j.location && !newClientName && !j.clientId) warn.push("Ni lieu ni client : le chauffeur verra un chantier vide.");
+
+  const head = kind === "create" ? "\u{1F195} NOUVEAU CHANTIER" : "✏️ MODIFICATION";
+  return { kind, job: j, newClientName, lines: [head].concat(jobRecap(data, j, { newClientName })), warn };
+}
+
+// ---- Stockage des propositions en attente ---------------------------------
+function pruneProposals(data: any): void {
+  data.tgProposals = (data.tgProposals || []).filter((p: any) => Date.now() - (p.ts || 0) < 2 * 3600 * 1000);
+}
+
+async function sendProposal(tg: any, data: any, chatId: string, prop: any): Promise<void> {
+  const pid = uid();
+  const txt = prop.lines.join("\n") + (prop.warn && prop.warn.length ? "\n\n⚠️ " + prop.warn.join("\n⚠️ ") : "") + "\n\nC'est bien ca ?";
+  await mutate((d: any) => {
+    pruneProposals(d);
+    d.tgProposals = d.tgProposals || [];
+    d.tgProposals.push({ id: pid, chatId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", text: txt, ts: Date.now() });
+  });
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text: txt,
+    disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: [[{ text: "✅ Valider", callback_data: "pok:" + pid }, { text: "❌ Annuler", callback_data: "pno:" + pid }]] },
+  });
+}
+
+// ---- Application d'une proposition validee --------------------------------
+async function applyProposal(prop: any): Promise<string> {
+  let msg = "";
+  await mutate((d: any) => {
+    d.jobs = d.jobs || [];
+    if (prop.kind === "delete") {
+      d._tombstones = d._tombstones || {};
+      d._tombstones.jobs = d._tombstones.jobs || {};
+      d._tombstones.jobs[prop.jobId] = Date.now();
+      d.jobs = d.jobs.filter((j: any) => j.id !== prop.jobId);
+      msg = "Chantier supprime.";
+      return;
+    }
+    const j = JSON.parse(JSON.stringify(prop.job));
+    // Client cree a la volee, comme le fait l'app quand on tape un nouveau nom.
+    if (prop.newClientName) {
+      const ex = (d.clients || []).find((c: any) => normTxt(c.name) === normTxt(prop.newClientName));
+      if (ex) j.clientId = ex.id;
+      else {
+        const nc = { id: uid(), name: prop.newClientName, forfaitType: "standard", agencies: [], siteManagers: [] };
+        d.clients = (d.clients || []).concat([nc]);
+        j.clientId = nc.id;
+      }
+    }
+    // On memorise le chef de chantier sur la fiche client, comme l'app.
+    if (j.siteManager && j.clientId) {
+      const c = (d.clients || []).find((x: any) => x.id === j.clientId);
+      if (c) {
+        c.siteManagers = c.siteManagers || [];
+        if (!c.siteManagers.some((s: any) => normTxt(s.name) === normTxt(j.siteManager))) {
+          c.siteManagers.push({ name: j.siteManager, phone: j.siteManagerPhone || "" });
+        }
+      }
+    }
+    j._updatedAt = Date.now();
+    const i = d.jobs.findIndex((x: any) => x.id === j.id);
+    if (i >= 0) { d.jobs[i] = j; msg = "Chantier modifie."; }
+    else { d.jobs.push(j); msg = "Chantier ajoute au planning."; }
+  });
+  return msg;
+}
+
+// ---- Boucle agent (tool use) ----------------------------------------------
+async function anthropic(key: string, body: any): Promise<any> {
+  const call = (extraHeaders: any, extraBody: any) => fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: Object.assign({ "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" }, extraHeaders),
+    body: JSON.stringify(Object.assign({}, body, extraBody)),
+  });
+  // Les replis serveur evitent qu'un refus de classifieur coupe net le bot.
+  let r = await call({ "anthropic-beta": "server-side-fallback-2026-07-01" }, { fallbacks: "default" });
+  if (r.status === 400) r = await call({}, {});  // si le beta n'est pas dispo, on reessaie sans
+  return r;
+}
+
+async function runAgent(tg: any, data: any, chatId: string, userText: string): Promise<boolean> {
+  const key = data.anthropicApiKey;
+  if (!key) return false;
+  const model = data.aiAgentModel || "claude-opus-5";
+  const conv = (data.tgConv || {})[chatId];
+  const history = (conv && Date.now() - (conv.ts || 0) < 30 * 60 * 1000 && Array.isArray(conv.m)) ? conv.m : [];
+  const messages: any[] = history.concat([{ role: "user", content: userText }]);
+  const system = AGENT_SYSTEM + "\n\n=== DONNEES ===\n" + agentContext(data) + "\n\n" + buildAIContext(data);
+
+  for (let step = 0; step < 6; step++) {
+    const r = await anthropic(key, {
+      model,
+      max_tokens: 8000,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium" },
+      system,
+      tools: AGENT_TOOLS,
+      messages,
+    });
+    if (!r.ok) return false;
+    const j = await r.json();
+    const content = j.content || [];
+    messages.push({ role: "assistant", content });
+
+    const toolUses = content.filter((b: any) => b.type === "tool_use");
+    if (!toolUses.length) {
+      const txt = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+      if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
+      // On garde le fil seulement si l'agent a pose une question.
+      if (txt.indexOf("?") >= 0) await saveConv(chatId, messages);
+      else await clearConv(chatId);
+      return true;
+    }
+
+    const results: any[] = [];
+    let proposalSent = false;
+    for (const tu of toolUses) {
+      const a = tu.input || {};
+      if (tu.name === "lire_planning") {
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: toolLirePlanning(data, a) });
+        continue;
+      }
+      const kind = tu.name === "creer_chantier" ? "create" : tu.name === "modifier_chantier" ? "update" : tu.name === "supprimer_chantier" ? "delete" : "";
+      if (!kind) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Outil inconnu.", is_error: true }); continue; }
+      const prop = buildProposal(data, a, kind);
+      if (prop.error) { results.push({ type: "tool_result", tool_use_id: tu.id, content: prop.error, is_error: true }); continue; }
+      const txt = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+      if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
+      await sendProposal(tg, data, chatId, prop);
+      proposalSent = true;
+      break;
+    }
+    if (proposalSent) { await clearConv(chatId); return true; }
+    messages.push({ role: "user", content: results });
+  }
+  return false;
+}
+
+async function saveConv(chatId: string, messages: any[]): Promise<void> {
+  await mutate((d: any) => {
+    d.tgConv = d.tgConv || {};
+    d.tgConv[chatId] = { m: messages.slice(-8), ts: Date.now() };
+    for (const k of Object.keys(d.tgConv)) if (Date.now() - (d.tgConv[k].ts || 0) > 3600 * 1000) delete d.tgConv[k];
+  });
+}
+async function clearConv(chatId: string): Promise<void> {
+  await mutate((d: any) => { if (d.tgConv) delete d.tgConv[chatId]; });
+}
+
+
 Deno.serve(async (req) => {
   try {
     const update = await req.json();
@@ -396,15 +890,47 @@ Deno.serve(async (req) => {
       return new Response("ok");
     }
 
+    // 1ter) Medias envoyes par un admin : point GPS d'un chef de chantier, fiche contact, vocal.
+    //       On memorise l'element recu, puis le message suivant dit a quel chantier il se rapporte.
+    if (msg && adminChatList(data).includes(String(msg.chat.id))) {
+      const chatId = String(msg.chat.id);
+      const loc = msg.location || (msg.venue && msg.venue.location);
+      if (loc && loc.latitude != null) {
+        const gps = Number(loc.latitude).toFixed(6) + "," + Number(loc.longitude).toFixed(6);
+        await mutate((d: any) => { d.tgPendingItem = d.tgPendingItem || {}; d.tgPendingItem[chatId] = { type: "gps", gps, ts: Date.now() }; });
+        await tg("sendMessage", { chat_id: chatId, text: "\u{1F4CD} Point recu. C'est pour quel chantier ? (chauffeur + jour)" });
+        return new Response("ok");
+      }
+      if (msg.contact && (msg.contact.phone_number || msg.contact.first_name)) {
+        const nom = [msg.contact.first_name, msg.contact.last_name].filter(Boolean).join(" ");
+        await mutate((d: any) => { d.tgPendingItem = d.tgPendingItem || {}; d.tgPendingItem[chatId] = { type: "contact", nom, tel: msg.contact.phone_number || "", ts: Date.now() }; });
+        await tg("sendMessage", { chat_id: chatId, text: "\u{1F477} Contact recu (" + (nom || "?") + "). C'est le chef de quel chantier ? (chauffeur + jour)" });
+        return new Response("ok");
+      }
+      if (msg.voice || msg.audio) {
+        await tg("sendMessage", { chat_id: chatId, text: "\u{1F3A4} Je ne sais pas encore ecouter les vocaux. Ecris-moi le chantier pour l'instant." });
+        return new Response("ok");
+      }
+    }
+
     // 1bis) Commandes texte (planning) — reservees aux admins
     if (msg && typeof msg.text === "string") {
       const chatId = String(msg.chat.id);
       if (adminChatList(data).includes(chatId)) {
         const reply = handleAdminQuery(data, msg.text);
         if (reply) { await tg("sendMessage", { chat_id: chatId, text: reply, disable_web_page_preview: true }); return new Response("ok"); }
-        // Hybride : question libre -> IA Claude (seulement si une cle API est configuree)
+        // Question ou ordre libre -> AGENT Claude (lecture + proposition d'ecriture)
         if (data.anthropicApiKey) {
           await tg("sendChatAction", { chat_id: chatId, action: "typing" });
+          // Si un point GPS / un contact vient d'etre envoye, on le joint a la demande.
+          let ask = msg.text;
+          const pend = (data.tgPendingItem || {})[chatId];
+          if (pend && Date.now() - (pend.ts || 0) < 30 * 60 * 1000) {
+            if (pend.type === "gps") ask += "\n[Point GPS recu a l'instant, a poser sur le chantier concerne : " + pend.gps + "]";
+            if (pend.type === "contact") ask += "\n[Fiche contact recue a l'instant, c'est le chef de chantier : " + pend.nom + " " + pend.tel + "]";
+            await mutate((d: any) => { if (d.tgPendingItem) delete d.tgPendingItem[chatId]; });
+          }
+          if (await runAgent(tg, data, chatId, ask)) return new Response("ok");
           const ai = await askAI(data, msg.text);
           if (ai) { await tg("sendMessage", { chat_id: chatId, text: ai, disable_web_page_preview: true }); return new Response("ok"); }
         }
@@ -424,6 +950,29 @@ Deno.serve(async (req) => {
     if (cq && typeof cq.data === "string") {
       const parts = cq.data.split(":");
       const action = parts[0];
+      // Validation / annulation d'une proposition d'ecriture de l'agent
+      if (action === "pok" || action === "pno") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        const mid = cq.message && cq.message.message_id;
+        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        const prop = (data.tgProposals || []).find((x: any) => x.id === parts[1]);
+        if (!prop) {
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Proposition expiree", show_alert: true });
+          return new Response("ok");
+        }
+        await mutate((d: any) => { d.tgProposals = (d.tgProposals || []).filter((x: any) => x.id !== parts[1]); });
+        let tail = "";
+        if (action === "pno") {
+          tail = "❌ Annule.";
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Annule" });
+        } else {
+          const res = await applyProposal(prop);
+          tail = "✅ " + res;
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ " + res });
+        }
+        if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: (prop.text || "").replace(/\n\nC'est bien ca \?$/, "") + "\n\n" + tail, disable_web_page_preview: true }); } catch (_e) { /* ignore */ } }
+        return new Response("ok");
+      }
       if (action === "q") {
         const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
         if (adminChatList(data).includes(chatId)) {
@@ -460,7 +1009,8 @@ Deno.serve(async (req) => {
         try { await tg("editMessageText", { chat_id: cqChat, message_id: cqMsgId, text: base0 + "✅ Traité par " + group.doneBy + (group.result ? " — " + group.result : ""), disable_web_page_preview: true }); } catch (_e) { /* ignore */ }
         return new Response("ok");
       }
-      const presser = tgPresser(data, cqChat);
+      // Nom affiche = prenom Telegram de celui qui clique (cq.from), sinon le prenom saisi dans Reglages, sinon "un admin".
+      const presser = (cq.from && cq.from.first_name) ? cq.from.first_name : ((cq.from && cq.from.username) ? "@" + cq.from.username : tgPresser(data, cqChat));
 
       // Boutons forfait apres fin de chantier : ecrit le forfait + prix sur le chantier (remplit le planning)
       if (action === "ff") {
