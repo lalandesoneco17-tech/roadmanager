@@ -3391,6 +3391,258 @@ return(
 </div>
 </div>)};
 
+// ======== RECAP HEURES (tous les chauffeurs, un tableau par semaine) ========
+const mondayOfISO=(dateStr)=>{const d=new Date(dateStr);const dow=(d.getDay()+6)%7;d.setDate(d.getDate()-dow);return fmtDateISO(d)};
+const addDaysISO=(dateStr,n)=>{const d=new Date(dateStr);d.setDate(d.getDate()+n);return fmtDateISO(d)};
+const shortFR=(dateStr)=>{const d=new Date(dateStr);return pad2(d.getDate())+'/'+pad2(d.getMonth()+1)};
+const JOURS3=['LUN','MAR','MER','JEU','VEN','SAM','DIM'];
+const ABS_LABEL={maladie:'MALADIE',conge:'CONGE',rtt:'RTT',autre:'ABSENT',formation:'FORMATION'};
+
+const RecapHeuresPage=({data})=>{
+const emps=(data.employees||[]);
+const seuil25=data.overtime25Threshold||35;const seuil50=data.overtime50Threshold||43;
+const nightStart=data.nightStart||'21:00';const nightEnd=data.nightEnd||'06:00';
+const[weekStart,setWeekStart]=useState(()=>mondayOfISO(fmtDateISO(new Date())));
+const[nbWeeks,setNbWeeks]=useState(4);
+const[source,setSource]=useState('declared');
+const[showAll,setShowAll]=useState(false);
+const[vue,setVue]=useState('grille');
+const[selEmps,setSelEmps]=useState([]);
+
+// Semaines affichees (la plus recente en premier)
+const weeks=useMemo(()=>{const out=[];for(let i=nbWeeks-1;i>=0;i--){const mon=addDaysISO(weekStart,-7*i);const days=[];for(let d=0;d<7;d++)days.push(addDaysISO(mon,d));out.push({num:getISOWeek(mon),monday:mon,sunday:days[6],days})}return out.reverse()},[weekStart,nbWeeks]);
+
+const wkRange=(()=>{const oldest=weeks[weeks.length-1],newest=weeks[0];return oldest.num===newest.num?('semaine '+newest.num):('semaines '+oldest.num+' a '+newest.num)})();
+
+// Pool de pointages selon la source (validees : repli sur les declarees si absent)
+const getDayData=(empId,date)=>{
+const decl=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date===date);
+const val=(data.timeEntriesValidated||[]).filter(t=>t.empId===empId&&t.date===date);
+const list=(source==='validated'&&val.length)?val:decl;
+if(!list.length)return null;
+const withTimes=list.filter(t=>t.startTime);
+const start=withTimes.length?withTimes.map(t=>t.startTime).sort()[0]:'';
+const ends=list.filter(t=>t.endTime).map(t=>t.endTime).sort();
+const end=ends.length?ends[ends.length-1]:'';
+const main=list.find(t=>t.startTime&&t.endTime)||list[0];
+const brS=main.breakStart||main.pauseStart||'';
+const brE=main.breakEnd||main.pauseEnd||'';
+let worked=0;list.forEach(t=>{if(t.startTime&&t.endTime){let pm=t.pauseMin||0;if(!pm&&t.breakStart&&t.breakEnd){const[a,b]=t.breakStart.split(':').map(Number);const[c,dd]=t.breakEnd.split(':').map(Number);const diff=(c*60+dd)-(a*60+b);if(diff>0)pm=diff}worked+=toDecHours(t.startTime,t.endTime,pm)}});
+worked=Math.round(worked*100)/100;
+const absence=(list.find(t=>t.absenceType)||{}).absenceType||'';
+const night=calcNightHours(start,end,nightStart,nightEnd);
+const meal=(list.find(t=>t.mealType)||{}).mealType||'';
+const isVal=(source==='validated'&&val.length>0);
+return{start,end,breakStart:brS,breakEnd:brE,worked,night,absence,meal,isVal,pending:!!(start&&!end)};
+};
+
+// Lignes de la semaine : 1 par salarie
+const buildWeek=(wk)=>{
+const rows=emps.filter(e=>selEmps.length===0||selEmps.includes(e.id)).map(e=>{
+const cells=wk.days.map(d=>getDayData(e.id,d));
+let total=0,night=0,nbPaniers=0,nbResto=0,nbJours=0;
+cells.forEach(c=>{if(!c)return;if(!c.absence){total+=c.worked;nbJours+=(c.worked>0?1:0)}night+=c.night;if(c.meal==='PANIER')nbPaniers++;else if(c.meal==='RESTO')nbResto++});
+total=Math.round(total*100)/100;night=Math.round(night*100)/100;
+const{h25,h50}=calcSupp(total,seuil25,seuil50);
+const hasData=cells.some(c=>c&&(c.start||c.absence));
+return{emp:e,cells,total,night,h25,h50,nbPaniers,nbResto,nbJours,hasData};
+}).filter(r=>showAll||r.hasData);
+const tot={total:0,night:0,h25:0,h50:0,paniers:0,resto:0};
+rows.forEach(r=>{tot.total+=r.total;tot.night+=r.night;tot.h25+=r.h25;tot.h50+=r.h50;tot.paniers+=r.nbPaniers;tot.resto+=r.nbResto});
+const perDay=wk.days.map((d,i)=>{let s=0;rows.forEach(r=>{const c=r.cells[i];if(c&&!c.absence)s+=c.worked});return Math.round(s*100)/100});
+return{rows,tot,perDay};
+};
+const weekData=useMemo(()=>weeks.map(w=>({wk:w,...buildWeek(w)})),[weeks,data.timeEntries,data.timeEntriesValidated,source,showAll,selEmps,emps]);
+
+// ---- styles
+const thS={fontSize:10,fontWeight:800,padding:'6px 4px',background:'#1e293b',color:'#fff',textAlign:'center',whiteSpace:'nowrap',border:'1px solid #334155'};
+const tdS={fontSize:11,padding:'3px 4px',border:'1px solid '+C.border,textAlign:'center',verticalAlign:'middle'};
+const btnS={padding:'6px 12px',fontSize:12,borderRadius:6,cursor:'pointer',border:'1px solid '+C.border,background:'#fff',color:C.dim,fontWeight:600,whiteSpace:'nowrap'};
+const btnOnS={...btnS,background:C.accent,color:'#fff',borderColor:C.accent};
+
+const cellNode=(c,dateStr)=>{
+const hol=getFrenchHoliday(dateStr);
+const dow=new Date(dateStr).getDay();const we=dow===0||dow===6;
+const bg=hol?'#fef2f2':we?'#f1f5f9':'#fff';
+if(!c||(!c.start&&!c.absence))return<td key={dateStr} style={{...tdS,background:bg,color:C.muted,fontSize:10}}>{hol?'🎉':we?'':'—'}</td>;
+if(c.absence)return<td key={dateStr} style={{...tdS,background:'#fef2f2',color:C.red,fontWeight:700,fontSize:10}}>{ABS_LABEL[c.absence]||c.absence.toUpperCase()}</td>;
+const tip='Embauche '+(c.start||'?')+(c.breakStart?' · Coupure '+c.breakStart:'')+(c.breakEnd?' · Reprise '+c.breakEnd:'')+' · Debauche '+(c.end||'en cours');
+return(<td key={dateStr} style={{...tdS,background:bg,padding:'2px 3px'}} title={tip}>
+<div style={{fontSize:10,color:C.text,whiteSpace:'nowrap'}}>{c.start||'--:--'}<span style={{color:C.muted}}> ▸ </span>{c.breakStart||'--:--'}</div>
+<div style={{fontSize:10,color:C.text,whiteSpace:'nowrap'}}>{c.breakEnd||'--:--'}<span style={{color:C.muted}}> ▸ </span>{c.end||<span style={{color:C.orange,fontWeight:700}}>en cours</span>}</div>
+<div style={{fontSize:11,fontWeight:800,color:c.pending?C.orange:C.accent,marginTop:1}}>{fmtDec(c.worked)}{c.night>0&&<span style={{color:C.purple,fontWeight:700,fontSize:9}}> 🌙{fmtDec(c.night)}</span>}</div>
+</td>)};
+
+// ---- export CSV (toutes les semaines)
+const doExportCSV=()=>{
+let csv='Semaine;Chauffeur;Date;Jour;Embauche;Coupure;Reprise;Debauche;Travail;Nuit;Absence\n';
+weekData.forEach(w=>{
+w.rows.forEach(r=>{
+w.wk.days.forEach((d,i)=>{const c=r.cells[i];if(!c||(!c.start&&!c.absence))return;
+csv+=w.wk.num+';'+r.emp.name+';'+shortFR(d)+';'+JOURS3[i]+';'+(c.start||'')+';'+(c.breakStart||'')+';'+(c.breakEnd||'')+';'+(c.end||'')+';'+fmtDec(c.worked)+';'+fmtDec(c.night)+';'+(c.absence||'')+'\n'});
+csv+='Semaine '+w.wk.num+';'+r.emp.name+';TOTAL;;;;;;'+fmtDec(r.total)+';'+fmtDec(r.night)+';25%: '+fmtDec(r.h25)+' / 50%: '+fmtDec(r.h50)+'\n'});
+csv+='\n';
+});
+const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='soneco_recap_heures_S'+weeks[0].num+'_'+weekStart+'.csv';a.click();URL.revokeObjectURL(url)};
+
+// ---- impression / mail (tableau HTML par semaine)
+const buildHtml=()=>{
+let html='';
+weekData.forEach(w=>{
+let head='<tr><th style="text-align:left">CHAUFFEUR</th>';
+w.wk.days.forEach((d,i)=>{head+='<th>'+JOURS3[i]+'<br><span style="font-weight:400;font-size:9px">'+shortFR(d)+'</span></th>'});
+head+='<th>TOTAL</th><th>25%</th><th>50%</th><th>NUIT</th><th>P/R</th></tr>';
+let body='';
+w.rows.forEach(r=>{
+body+='<tr><td style="text-align:left;font-weight:bold">'+r.emp.name+'</td>';
+w.wk.days.forEach((d,i)=>{const c=r.cells[i];
+if(!c||(!c.start&&!c.absence)){body+='<td style="color:#94a3b8">—</td>';return}
+if(c.absence){body+='<td style="color:#dc2626;font-weight:bold;font-size:9px">'+(ABS_LABEL[c.absence]||c.absence)+'</td>';return}
+body+='<td><div style="font-size:9px">'+(c.start||'--:--')+' &#9656; '+(c.breakStart||'--:--')+'</div><div style="font-size:9px">'+(c.breakEnd||'--:--')+' &#9656; '+(c.end||'...')+'</div><div style="font-size:10px;font-weight:bold;color:#008965">'+fmtDec(c.worked)+'</div></td>'});
+body+='<td style="font-weight:bold;color:#008965">'+fmtDec(r.total)+'</td><td style="color:#d97706">'+fmtDec(r.h25)+'</td><td style="color:#dc2626">'+fmtDec(r.h50)+'</td><td style="color:#7c3aed">'+fmtDec(r.night)+'</td><td style="font-size:9px">'+r.nbPaniers+'/'+r.nbResto+'</td></tr>'});
+body+='<tr class="tot"><td style="text-align:left">TOTAL SEMAINE</td>';
+w.perDay.forEach(p=>{body+='<td>'+fmtDec(p)+'</td>'});
+body+='<td>'+fmtDec(w.tot.total)+'</td><td>'+fmtDec(w.tot.h25)+'</td><td>'+fmtDec(w.tot.h50)+'</td><td>'+fmtDec(w.tot.night)+'</td><td>'+w.tot.paniers+'/'+w.tot.resto+'</td></tr>';
+html+='<h2>Semaine '+w.wk.num+' <span style="font-weight:400;font-size:12px;color:#64748b">du '+shortFR(w.wk.monday)+' au '+shortFR(w.wk.sunday)+'</span></h2><table><thead>'+head+'</thead><tbody>'+body+'</tbody></table>';
+});
+return html};
+
+const doPrint=()=>{
+const label=source==='validated'?'heures validees':'heures declarees';
+const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>SONECO - Recap heures</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,sans-serif;font-size:10px;margin:14px}h1{font-size:16px;color:#008965;margin:0 0 2px}h2{font-size:13px;margin:16px 0 4px;color:#1e293b}table{width:100%;border-collapse:collapse;page-break-inside:avoid}th{background:#1e293b;color:#fff;padding:4px 3px;font-size:9px;border:1px solid #334155}td{padding:3px;border:1px solid #cbd5e1;text-align:center}.tot{background:#e2e8f0;font-weight:bold}</style></head><body><h1>SONECO — Recapitulatif des heures</h1><div style="font-size:11px;color:#64748b;margin-bottom:8px">'+label+' — '+wkRange+'</div>'+buildHtml()+'</body></html>';
+const w=window.open('','_blank');if(!w){alert('Autorisez les fenetres pop-up pour imprimer.');return}w.document.write(html);w.document.close();w.print()};
+
+const doMail=()=>{
+const label=source==='validated'?'heures validees':'heures declarees';
+const subject='SONECO - Recap heures chauffeurs - '+wkRange;
+const tableHtml='<div style="font-family:Arial,sans-serif"><h2 style="color:#008965;margin:0 0 4px;font-size:18px">SONECO — Recapitulatif des heures</h2><div style="font-size:12px;color:#64748b;margin-bottom:10px">'+label+' — '+wkRange+'</div>'+buildHtml()+'</div>';
+const body='SONECO - Recapitulatif des heures ('+label+')\n'+wkRange+'\n\n(Collez le tableau avec Ctrl+V)';
+const w=window.open('','_blank');if(!w){alert('Autorisez les fenetres pop-up pour cette page.');return}
+const full='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+subject+'</title><style>table{width:100%;border-collapse:collapse;margin-bottom:14px}h2{font-size:13px;margin:14px 0 4px}th{background:#1e293b;color:#fff;padding:4px 3px;font-size:9px;border:1px solid #334155}td{padding:3px;border:1px solid #cbd5e1;text-align:center;font-size:10px}.tot{background:#e2e8f0;font-weight:bold}</style></head><body style="font-family:Arial,sans-serif;margin:20px;background:#f8fafc"><div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:10px;padding:14px 18px;margin-bottom:18px"><div style="font-weight:bold;font-size:15px;color:#92400e;margin-bottom:8px">📧 Comment envoyer par mail</div><ol style="margin:6px 0;padding-left:20px;font-size:13px;line-height:1.6;color:#78350f"><li>Cliquez sur <strong>« 📋 Copier le tableau »</strong></li><li>Cliquez ensuite sur <strong>« ✉️ Ouvrir mail »</strong></li><li>Dans le corps du message, faites <strong>Ctrl+V</strong> (ou Cmd+V)</li></ol><div style="display:flex;gap:8px;margin-top:10px"><button id="btnCopy" style="background:#16a34a;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:bold">📋 Copier le tableau</button><button id="btnMail" style="background:#0891b2;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:bold">✉️ Ouvrir mail</button><button onclick="window.print()" style="background:#64748b;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:bold">🖨 Imprimer</button><span id="ok" style="margin-left:auto;display:none;align-self:center;color:#15803d;font-weight:bold">✓ Copie !</span></div></div><div id="tbl" style="background:#fff;padding:18px;border-radius:10px">'+tableHtml+'</div><script>document.getElementById("btnCopy").onclick=async function(){try{const el=document.getElementById("tbl");if(navigator.clipboard&&window.ClipboardItem){await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([el.innerHTML],{type:"text/html"}),"text/plain":new Blob([el.innerText],{type:"text/plain"})})])}else{const r=document.createRange();r.selectNode(el);window.getSelection().removeAllRanges();window.getSelection().addRange(r);document.execCommand("copy");window.getSelection().removeAllRanges()}const ok=document.getElementById("ok");ok.style.display="inline-block";setTimeout(()=>{ok.style.display="none"},2500)}catch(e){alert("Erreur copie : "+e.message)}};document.getElementById("btnMail").onclick=function(){window.open("mailto:?subject="+encodeURIComponent('+JSON.stringify(subject)+')+"&body="+encodeURIComponent('+JSON.stringify(body)+'))};<\/script></body></html>';
+w.document.write(full);w.document.close()};
+
+// ---- rendu d'une semaine en grille (1 ligne par chauffeur, 7 colonnes jours)
+const renderGrille=(w)=>(
+<table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
+<thead>
+<tr>
+<th style={{...thS,textAlign:'left',minWidth:120}}>CHAUFFEUR</th>
+{w.wk.days.map((d,i)=>{const hol=getFrenchHoliday(d);return<th key={d} style={{...thS,minWidth:92}}>{JOURS3[i]}<div style={{fontWeight:400,fontSize:9,color:'#cbd5e1'}}>{shortFR(d)}</div>{hol&&<div style={{fontSize:8,color:'#fca5a5'}}>🎉</div>}</th>})}
+<th style={{...thS,background:'#0f172a'}}>TOTAL</th>
+<th style={thS}>25%</th>
+<th style={thS}>50%</th>
+<th style={thS}>NUIT</th>
+<th style={thS} title="Paniers / Restos">P/R</th>
+</tr>
+</thead>
+<tbody>
+{w.rows.length===0&&<tr><td colSpan={13} style={{...tdS,padding:16,color:C.muted,fontStyle:'italic'}}>Aucun pointage cette semaine</td></tr>}
+{w.rows.map((r,idx)=>(
+<tr key={r.emp.id} style={{background:idx%2?'#fafbfc':'#fff'}}>
+<td style={{...tdS,textAlign:'left',fontWeight:700,fontSize:12,background:'#f8fafc'}}>{r.emp.name}{r.emp.role==='mechanic'&&<span style={{fontSize:9,color:C.dim,fontWeight:400}}> 🔧</span>}</td>
+{r.cells.map((c,i)=>cellNode(c,w.wk.days[i]))}
+<td style={{...tdS,fontWeight:800,fontSize:13,color:C.accent,background:'#f0fdf4'}}>{fmtDec(r.total)}</td>
+<td style={{...tdS,color:r.h25>0?C.orange:C.muted,fontWeight:700}}>{fmtDec(r.h25)}</td>
+<td style={{...tdS,color:r.h50>0?C.red:C.muted,fontWeight:700}}>{fmtDec(r.h50)}</td>
+<td style={{...tdS,color:r.night>0?C.purple:C.muted,fontWeight:700}}>{fmtDec(r.night)}</td>
+<td style={{...tdS,fontSize:10,color:C.dim}}>{r.nbPaniers}/{r.nbResto}</td>
+</tr>))}
+{w.rows.length>0&&<tr style={{background:'#e2e8f0',fontWeight:800}}>
+<td style={{...tdS,textAlign:'left',fontSize:11}}>TOTAL SEMAINE</td>
+{w.perDay.map((p,i)=><td key={i} style={{...tdS,fontSize:11}}>{fmtDec(p)}</td>)}
+<td style={{...tdS,fontSize:13,color:C.accent}}>{fmtDec(w.tot.total)}</td>
+<td style={{...tdS,color:C.orange}}>{fmtDec(w.tot.h25)}</td>
+<td style={{...tdS,color:C.red}}>{fmtDec(w.tot.h50)}</td>
+<td style={{...tdS,color:C.purple}}>{fmtDec(w.tot.night)}</td>
+<td style={{...tdS,fontSize:10}}>{w.tot.paniers}/{w.tot.resto}</td>
+</tr>}
+</tbody>
+</table>);
+
+// ---- rendu d'une semaine en detail (1 ligne par chauffeur x jour)
+const renderDetail=(w)=>(
+<table style={{width:'100%',borderCollapse:'collapse',minWidth:760}}>
+<thead><tr>
+<th style={{...thS,textAlign:'left'}}>CHAUFFEUR</th><th style={{...thS,textAlign:'left'}}>JOUR</th>
+<th style={thS}>EMBAUCHE</th><th style={thS}>COUPURE</th><th style={thS}>REPRISE</th><th style={thS}>DEBAUCHE</th>
+<th style={thS}>TRAVAIL</th><th style={thS}>NUIT</th><th style={thS}>REPAS</th><th style={{...thS,textAlign:'left'}}>ABSENCE</th>
+</tr></thead>
+<tbody>
+{w.rows.length===0&&<tr><td colSpan={10} style={{...tdS,padding:16,color:C.muted,fontStyle:'italic'}}>Aucun pointage cette semaine</td></tr>}
+{w.rows.map(r=>{const trs=[];
+trs.push(<tr key={r.emp.id+'-h'} style={{background:'#f1f5f9'}}><td colSpan={10} style={{...tdS,textAlign:'left',fontWeight:800,fontSize:12,padding:'5px 6px'}}>👤 {r.emp.name}</td></tr>);
+w.wk.days.forEach((d,i)=>{const c=r.cells[i];const dow=new Date(d).getDay();const we=dow===0||dow===6;const hol=getFrenchHoliday(d);
+if(!c||(!c.start&&!c.absence)){if(we&&!showAll)return;trs.push(<tr key={r.emp.id+d} style={{background:hol?'#fef2f2':we?'#f8fafc':'#fff'}}><td style={{...tdS,textAlign:'left',color:C.muted,fontSize:10}}></td><td style={{...tdS,textAlign:'left',fontSize:10}}>{JOURS3[i]} {shortFR(d)}</td><td colSpan={8} style={{...tdS,color:hol?C.red:C.muted,fontSize:10,fontStyle:'italic'}}>{hol?('🎉 '+hol):we?'Weekend':'—'}</td></tr>);return}
+trs.push(<tr key={r.emp.id+d} style={{background:hol?'#fef2f2':we?'#f8fafc':'#fff'}}>
+<td style={{...tdS,textAlign:'left',fontSize:10,color:C.dim}}></td>
+<td style={{...tdS,textAlign:'left',fontSize:11,fontWeight:600}}>{JOURS3[i]} {shortFR(d)}</td>
+<td style={{...tdS,fontWeight:600}}>{c.start||'—'}</td>
+<td style={tdS}>{c.breakStart||'—'}</td>
+<td style={tdS}>{c.breakEnd||'—'}</td>
+<td style={{...tdS,fontWeight:600,color:c.pending?C.orange:C.text}}>{c.end||'en cours'}</td>
+<td style={{...tdS,fontWeight:800,color:C.accent}}>{fmtDec(c.worked)}</td>
+<td style={{...tdS,color:c.night>0?C.purple:C.muted}}>{fmtDec(c.night)}</td>
+<td style={{...tdS,fontSize:10,fontWeight:600,color:c.meal==='PANIER'?C.accent:c.meal==='RESTO'?C.orange:C.muted}}>{c.meal||'—'}</td>
+<td style={{...tdS,textAlign:'left',fontSize:10,color:C.red,fontWeight:700}}>{c.absence?(ABS_LABEL[c.absence]||c.absence):''}</td>
+</tr>)});
+trs.push(<tr key={r.emp.id+'-t'} style={{background:'#e2e8f0',fontWeight:800}}><td colSpan={6} style={{...tdS,textAlign:'right',fontSize:11}}>Total {r.emp.name} — {r.nbJours} jour(s) · {r.nbPaniers} panier(s) / {r.nbResto} resto(s)</td><td style={{...tdS,color:C.accent,fontSize:13}}>{fmtDec(r.total)}</td><td style={{...tdS,color:C.purple}}>{fmtDec(r.night)}</td><td colSpan={2} style={{...tdS,textAlign:'left',fontSize:10}}><span style={{color:C.orange}}>25% : {fmtDec(r.h25)}</span> · <span style={{color:C.red}}>50% : {fmtDec(r.h50)}</span></td></tr>);
+return trs})}
+{w.rows.length>0&&<tr style={{background:'#1e293b',color:'#fff',fontWeight:800}}><td colSpan={6} style={{...tdS,textAlign:'right',fontSize:12,borderColor:'#334155'}}>TOTAL SEMAINE {w.wk.num}</td><td style={{...tdS,fontSize:13,borderColor:'#334155'}}>{fmtDec(w.tot.total)}</td><td style={{...tdS,borderColor:'#334155'}}>{fmtDec(w.tot.night)}</td><td colSpan={2} style={{...tdS,textAlign:'left',fontSize:10,borderColor:'#334155'}}>25% : {fmtDec(w.tot.h25)} · 50% : {fmtDec(w.tot.h50)}</td></tr>}
+</tbody>
+</table>);
+
+return(
+<div>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.08.31-1</span></h2>
+<div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
+
+<div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+<button onClick={()=>setWeekStart(addDaysISO(weekStart,-7))} style={btnS}>◀ Sem. préc.</button>
+<div style={{fontWeight:800,fontSize:14,minWidth:150,textAlign:'center'}}>Semaine {getISOWeek(weekStart)}<div style={{fontSize:10,color:C.dim,fontWeight:400}}>du {shortFR(weekStart)} au {shortFR(addDaysISO(weekStart,6))}</div></div>
+<button onClick={()=>setWeekStart(addDaysISO(weekStart,7))} style={btnS}>Sem. suiv. ▶</button>
+<button onClick={()=>setWeekStart(mondayOfISO(fmtDateISO(new Date())))} style={{...btnS,color:C.cyan,borderColor:C.cyan}}>Cette semaine</button>
+<span style={{width:1,height:26,background:C.border,margin:'0 4px'}}/>
+<span style={{fontSize:11,color:C.dim,fontWeight:600}}>Afficher</span>
+{[1,2,4,8].map(n=><button key={n} onClick={()=>setNbWeeks(n)} style={nbWeeks===n?btnOnS:btnS}>{n} sem.</button>)}
+<span style={{width:1,height:26,background:C.border,margin:'0 4px'}}/>
+<button onClick={()=>setSource('declared')} style={source==='declared'?btnOnS:btnS}>🔒 Declarees</button>
+<button onClick={()=>setSource('validated')} style={source==='validated'?btnOnS:btnS}>✎ Validees</button>
+<span style={{width:1,height:26,background:C.border,margin:'0 4px'}}/>
+<button onClick={()=>setVue('grille')} style={vue==='grille'?btnOnS:btnS}>▦ Grille</button>
+<button onClick={()=>setVue('detail')} style={vue==='detail'?btnOnS:btnS}>☰ Detail</button>
+<span style={{width:1,height:26,background:C.border,margin:'0 4px'}}/>
+<label style={{fontSize:12,color:C.dim,display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}><input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)}/>Tous les salaries</label>
+<div style={{marginLeft:'auto',display:'flex',gap:6}}>
+<button onClick={doMail} style={btnS}>📧 Mail</button>
+<button onClick={doPrint} style={btnS}>🖨 Imprimer</button>
+<button onClick={doExportCSV} style={btnS}>📥 CSV</button>
+</div>
+</div>
+
+<div style={{background:C.card,borderRadius:12,padding:'10px 12px',border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+<span style={{fontSize:11,color:C.dim,fontWeight:700,marginRight:4}}>Filtre chauffeurs :</span>
+<button onClick={()=>setSelEmps([])} style={selEmps.length===0?btnOnS:btnS}>Tous</button>
+{emps.map(e=>{const on=selEmps.includes(e.id);return<button key={e.id} onClick={()=>setSelEmps(on?selEmps.filter(x=>x!==e.id):[...selEmps,e.id])} style={on?btnOnS:btnS}>{e.name}</button>})}
+</div>
+
+{weekData.map(w=>(
+<div key={w.wk.monday} style={{background:C.card,borderRadius:12,padding:14,border:'1px solid '+C.border,marginBottom:18,overflow:'auto'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:8}}>
+<h3 style={{margin:0,fontSize:16}}>Semaine {w.wk.num} <span style={{fontSize:12,color:C.dim,fontWeight:400}}>du {shortFR(w.wk.monday)} au {shortFR(w.wk.sunday)}</span></h3>
+<div style={{fontSize:12,display:'flex',gap:12,flexWrap:'wrap'}}>
+<span>Total <b style={{color:C.accent,fontSize:14}}>{fmtDec(w.tot.total)}h</b></span>
+<span>25% <b style={{color:C.orange}}>{fmtDec(w.tot.h25)}h</b></span>
+<span>50% <b style={{color:C.red}}>{fmtDec(w.tot.h50)}h</b></span>
+<span>Nuit <b style={{color:C.purple}}>{fmtDec(w.tot.night)}h</b></span>
+<span>Paniers <b>{w.tot.paniers}</b> / Restos <b>{w.tot.resto}</b></span>
+</div>
+</div>
+{vue==='grille'?renderGrille(w):renderDetail(w)}
+</div>))}
+<div style={{fontSize:11,color:C.dim,marginBottom:20}}>Chaque case : <b>embauche ▸ coupure</b> / <b>reprise ▸ debauche</b> puis le temps de travail. 🌙 = heures de nuit ({nightStart}–{nightEnd}). Seuils heures sup : 25% au-dela de {seuil25}h, 50% au-dela de {seuil50}h.</div>
+</div>)};
+
+
 // ======== RECHERCHE DATA ========
 const SearchDataPage=({data})=>{
 const[query,setQuery]=useState('');const[results,setResults]=useState(null);const[loading,setLoading]=useState(false);
@@ -3935,8 +4187,8 @@ return(<div style={{maxWidth:1000,margin:'0 auto',padding:14,fontSize:14}}>
 // ======== ADMIN PANEL ========
 const AdminPanel=({data,save,onLogout,onUndo})=>{
 const[pg,setPg]=useState('planning');const[mobOpen,setMobOpen]=useState(false);const[sbHidden,setSbHidden]=useState(false);
-const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'disposition',l:'Disposition',i:'&#128208;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'equipements',l:'Equipements',i:'&#129520;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stations',l:'Stations',i:'&#128024;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
-const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save} sbHidden={sbHidden} setSbHidden={setSbHidden}/>);case'disposition':return(<DispositionPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'equipements':return(<EquipmentListsPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stations':return(<StationsPage data={data} save={save}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
+const pages=[{k:'planning',l:'Planning',i:'&#128197;'},{k:'disposition',l:'Disposition',i:'&#128208;'},{k:'dashboard',l:'Dashboard',i:'&#128200;'},{k:'depots',l:'Depots',i:'&#127981;'},{k:'machines',l:'Machines',i:'&#9881;'},{k:'equipements',l:'Equipements',i:'&#129520;'},{k:'trucks',l:'Camions',i:'&#128666;'},{k:'cars',l:'Voitures',i:'&#128663;'},{k:'employees',l:'Employes',i:'&#128100;'},{k:'clients',l:'Clients',i:'&#128188;'},{k:'forfaits',l:'Forfaits',i:'&#128176;'},{k:'heures',l:'Heures',i:'&#128337;'},{k:'recapheures',l:'Recap heures',i:'&#128203;'},{k:'stock',l:'Stock',i:'&#128230;'},{k:'interventions',l:'Interventions',i:'&#128295;'},{k:'stations',l:'Stations',i:'&#128024;'},{k:'stats',l:'Stats',i:'&#128202;'},{k:'recherche',l:'Recherche',i:'&#128269;'},{k:'settings',l:'Parametres',i:'&#9881;'}];
+const content=()=>{switch(pg){case'planning':return(<PlanningPage data={data} save={save} sbHidden={sbHidden} setSbHidden={setSbHidden}/>);case'disposition':return(<DispositionPage data={data} save={save}/>);case'dashboard':return(<DashboardPage data={data}/>);case'depots':return(<DepotsPage data={data} save={save}/>);case'machines':return(<MachinesPage data={data} save={save}/>);case'equipements':return(<EquipmentListsPage data={data} save={save}/>);case'trucks':return(<TrucksPage data={data} save={save}/>);case'cars':return(<CarsPage data={data} save={save}/>);case'employees':return(<EmployeesPage data={data} save={save}/>);case'clients':return(<ClientsPage data={data} save={save}/>);case'forfaits':return(<ForfaitsPage data={data} save={save}/>);case'heures':return(<HeuresPage data={data} save={save}/>);case'recapheures':return(<RecapHeuresPage data={data}/>);case'stock':return(<StockPage data={data} save={save} isAdmin={true}/>);case'interventions':return(<InterventionsPage data={data} save={save} isAdmin={true}/>);case'stations':return(<StationsPage data={data} save={save}/>);case'stats':return(<StatsPage data={data}/>);case'recherche':return(<SearchDataPage data={data}/>);case'settings':return(<SettingsPage data={data} save={save}/>);default:return null}};
 return(
 <div>
 {mobOpen&&<div className="sb-overlay" style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.3)',zIndex:199}} onClick={()=>setMobOpen(false)}/>}
