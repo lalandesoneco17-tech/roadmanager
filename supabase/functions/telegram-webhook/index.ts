@@ -145,6 +145,7 @@ function buildAIContext(data: any): string {
       if (j.signature.signedAt) p.push("fin chantier " + hhmmP(j.signature.signedAt));
       p.push("signé");
     }
+    p.push("job_id=" + j.id);
     return "- " + p.join(" | ");
   });
   const tes = (data.timeEntries || []).filter((t: any) => t.date >= teLo && t.date <= today)
@@ -484,11 +485,15 @@ const AGENT_SYSTEM = [
   "2. Le numero de machine identifie le chantier ; le prenom sert seulement a verifier.",
   "   Si le prenom donne ne correspond pas a celui du planning, tu le signales avant de proposer.",
   "3. Tu n'inventes jamais un client, un lieu, un chef ou une heure que tu n'as pas lus ou qu'on ne t'a pas dictes.",
-  "4. Avant de creer un chantier, utilise lire_planning pour verifier ce qui existe deja ce jour-la.",
-  "5. Pour modifier ou supprimer, il te faut le job_id : recupere-le avec lire_planning.",
+  "4. Le planning est DEJA fourni ci-dessous (section CHANTIERS), avec le job_id de chaque ligne.",
+  "   Sers-t'en directement. N'appelle lire_planning QUE pour une date hors de cette plage.",
+  "5. Pour modifier ou supprimer, prends le job_id dans la section CHANTIERS.",
   "6. Les outils d'ecriture n'ecrivent RIEN : ils preparent une proposition que l'admin valide par un bouton.",
   "   Ne dis donc jamais 'c'est enregistre' apres un appel d'outil d'ecriture.",
   "7. Les dates sont au format ISO AAAA-MM-JJ, les heures au format HH:MM. Utilise le calendrier fourni.",
+  "",
+  "8. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
+  "   rappelle l'outil d'ecriture avec la proposition COMPLETE corrigee, pas seulement le champ change.",
   "",
   "Si une reponse ne demande aucun outil, reponds directement, en une phrase.",
 ].join("\n");
@@ -664,20 +669,34 @@ function pruneProposals(data: any): void {
   data.tgProposals = (data.tgProposals || []).filter((p: any) => Date.now() - (p.ts || 0) < 2 * 3600 * 1000);
 }
 
-async function sendProposal(tg: any, data: any, chatId: string, prop: any): Promise<void> {
+async function sendProposal(tg: any, data: any, chatId: string, prop: any): Promise<string> {
   const pid = uid();
   const txt = prop.lines.join("\n") + (prop.warn && prop.warn.length ? "\n\n⚠️ " + prop.warn.join("\n⚠️ ") : "") + "\n\nC'est bien ca ?";
+  let msgId: any = null;
+  try {
+    const r = await tg("sendMessage", {
+      chat_id: chatId,
+      text: txt,
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: "✅ Valider", callback_data: "pok:" + pid }, { text: "❌ Annuler", callback_data: "pno:" + pid }]] },
+    });
+    const jr = await r.json();
+    msgId = jr && jr.result && jr.result.message_id;
+  } catch (_e) { /* ignore */ }
+  // Une seule proposition en attente par chat : les precedentes sont remplacees.
+  let olds: any[] = [];
   await mutate((d: any) => {
     pruneProposals(d);
     d.tgProposals = d.tgProposals || [];
-    d.tgProposals.push({ id: pid, chatId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", text: txt, ts: Date.now() });
+    olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId));
+    d.tgProposals = d.tgProposals.filter((x: any) => String(x.chatId) !== String(chatId));
+    d.tgProposals.push({ id: pid, chatId, msgId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", text: txt, ts: Date.now() });
   });
-  await tg("sendMessage", {
-    chat_id: chatId,
-    text: txt,
-    disable_web_page_preview: true,
-    reply_markup: { inline_keyboard: [[{ text: "✅ Valider", callback_data: "pok:" + pid }, { text: "❌ Annuler", callback_data: "pno:" + pid }]] },
-  });
+  for (const o of olds) {
+    if (!o.msgId) continue;
+    try { await tg("editMessageText", { chat_id: chatId, message_id: o.msgId, text: String(o.text || "").replace(/\n\nC'est bien ca \?$/, "") + "\n\n↩️ Remplace par une version corrigee.", disable_web_page_preview: true }); } catch (_e) { /* ignore */ }
+  }
+  return txt;
 }
 
 // ---- Application d'une proposition validee --------------------------------
@@ -740,16 +759,27 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
   if (!key) return false;
   const model = data.aiAgentModel || "claude-opus-5";
   const conv = (data.tgConv || {})[chatId];
-  const history = (conv && Date.now() - (conv.ts || 0) < 30 * 60 * 1000 && Array.isArray(conv.m)) ? conv.m : [];
-  const messages: any[] = history.concat([{ role: "user", content: userText }]);
-  const system = AGENT_SYSTEM + "\n\n=== DONNEES ===\n" + agentContext(data) + "\n\n" + buildAIContext(data);
+  const history = (conv && Date.now() - (conv.ts || 0) < 60 * 60 * 1000 && Array.isArray(conv.m)) ? conv.m : [];
+  const messages: any[] = history.slice();
+  const last = messages[messages.length - 1];
+  if (last && last.role === "user" && Array.isArray(last.content)) {
+    last.content = last.content.concat([{ type: "text", text: userText }]);
+  } else {
+    messages.push({ role: "user", content: userText });
+  }
+  // Le gros du prompt est stable pendant la boucle -> mis en cache, ca accelere les tours suivants.
+  const system = [{
+    type: "text",
+    text: AGENT_SYSTEM + "\n\n=== DONNEES ===\n" + agentContext(data) + "\n\n" + buildAIContext(data),
+    cache_control: { type: "ephemeral" },
+  }];
 
-  for (let step = 0; step < 6; step++) {
+  for (let step = 0; step < 5; step++) {
     const r = await anthropic(key, {
       model,
-      max_tokens: 8000,
+      max_tokens: 4000,
       thinking: { type: "adaptive" },
-      output_config: { effort: "medium" },
+      output_config: { effort: data.aiAgentEffort || "low" },
       system,
       tools: AGENT_TOOLS,
       messages,
@@ -760,15 +790,15 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
     messages.push({ role: "assistant", content });
 
     const toolUses = content.filter((b: any) => b.type === "tool_use");
+    const txt = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+
     if (!toolUses.length) {
-      const txt = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
-      // On garde le fil seulement si l'agent a pose une question.
-      if (txt.indexOf("?") >= 0) await saveConv(chatId, messages);
-      else await clearConv(chatId);
+      await saveConv(chatId, messages);
       return true;
     }
 
+    // On repond a TOUS les tool_use du tour (sinon la conversation devient invalide au tour suivant).
     const results: any[] = [];
     let proposalSent = false;
     for (const tu of toolUses) {
@@ -779,29 +809,29 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
       }
       const kind = tu.name === "creer_chantier" ? "create" : tu.name === "modifier_chantier" ? "update" : tu.name === "supprimer_chantier" ? "delete" : "";
       if (!kind) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Outil inconnu.", is_error: true }); continue; }
+      if (proposalSent) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Une proposition est deja en attente de validation. Une seule a la fois.", is_error: true }); continue; }
       const prop = buildProposal(data, a, kind);
       if (prop.error) { results.push({ type: "tool_result", tool_use_id: tu.id, content: prop.error, is_error: true }); continue; }
-      const txt = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
-      await sendProposal(tg, data, chatId, prop);
+      const recap = await sendProposal(tg, data, chatId, prop);
       proposalSent = true;
-      break;
+      results.push({ type: "tool_result", tool_use_id: tu.id, content: "Proposition envoyee a l'admin, en attente de sa validation :\n" + recap });
     }
-    if (proposalSent) { await clearConv(chatId); return true; }
     messages.push({ role: "user", content: results });
+
+    // Fiche envoyee : on s'arrete la, MAIS on garde le fil pour que l'admin puisse corriger.
+    if (proposalSent) { await saveConv(chatId, messages); return true; }
   }
+  await saveConv(chatId, messages);
   return false;
 }
 
 async function saveConv(chatId: string, messages: any[]): Promise<void> {
   await mutate((d: any) => {
     d.tgConv = d.tgConv || {};
-    d.tgConv[chatId] = { m: messages.slice(-8), ts: Date.now() };
-    for (const k of Object.keys(d.tgConv)) if (Date.now() - (d.tgConv[k].ts || 0) > 3600 * 1000) delete d.tgConv[k];
+    d.tgConv[chatId] = { m: messages.slice(-12), ts: Date.now() };
+    for (const k of Object.keys(d.tgConv)) if (Date.now() - (d.tgConv[k].ts || 0) > 2 * 3600 * 1000) delete d.tgConv[k];
   });
-}
-async function clearConv(chatId: string): Promise<void> {
-  await mutate((d: any) => { if (d.tgConv) delete d.tgConv[chatId]; });
 }
 
 
@@ -960,7 +990,10 @@ Deno.serve(async (req) => {
           await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Proposition expiree", show_alert: true });
           return new Response("ok");
         }
-        await mutate((d: any) => { d.tgProposals = (d.tgProposals || []).filter((x: any) => x.id !== parts[1]); });
+        await mutate((d: any) => {
+          d.tgProposals = (d.tgProposals || []).filter((x: any) => x.id !== parts[1]);
+          if (d.tgConv) delete d.tgConv[chatId];
+        });
         let tail = "";
         if (action === "pno") {
           tail = "❌ Annule.";
