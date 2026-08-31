@@ -492,7 +492,13 @@ const AGENT_SYSTEM = [
   "   Ne dis donc jamais 'c'est enregistre' apres un appel d'outil d'ecriture.",
   "7. Les dates sont au format ISO AAAA-MM-JJ, les heures au format HH:MM. Utilise le calendrier fourni.",
   "",
-  "8. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
+  "8. VERIFICATION CROISEE : avant de proposer la creation d'un chantier, appelle",
+  "   lire_planning_pere pour ce jour. Si le planning du pere dit autre chose que l'admin",
+  "   (client, lieu, heure, chauffeur, machine), SIGNALE l'ecart en une phrase avant de proposer.",
+  "   Exemple : « Le planning dit eurovia ang, pas Ferroviaire. Je prends lequel ? »",
+  "   Si le planning du pere contient une incoherence (case NUIT cochee sur un chantier de jour),",
+  "   demande-lui de trancher, n'invente pas.",
+  "9. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
   "   rappelle l'outil d'ecriture avec la proposition COMPLETE corrigee, pas seulement le champ change.",
   "",
   "Si une reponse ne demande aucun outil, reponds directement, en une phrase.",
@@ -511,6 +517,15 @@ const AGENT_TOOLS = [
         machine: { type: "string", description: "Optionnel : filtre sur un numero de machine, ex 210" },
       },
       required: ["date_debut", "date_fin"],
+    },
+  },
+  {
+    name: "lire_planning_pere",
+    description: "Lit le planning que le PERE tient dans Google Sheets pour un jour donne. A utiliser pour VERIFIER ce que l'admin dicte (client, lieu, heure, chauffeur, machine, forfait) avant de proposer une ecriture, et pour relever les forfaits.",
+    input_schema: {
+      type: "object",
+      properties: { date: { type: "string", description: "Date ISO AAAA-MM-JJ" } },
+      required: ["date"],
     },
   },
   {
@@ -769,6 +784,152 @@ async function resolveProposal(prop: any, chatId: string, accept: boolean): Prom
   return msg;
 }
 
+// ============================================================================
+// ===== LECTURE DU PLANNING GOOGLE SHEETS DU PERE ============================
+// ----------------------------------------------------------------------------
+// Le pere saisit le planning dans un classeur Google par mois, une feuille par
+// semaine ("SEMAINE 36"...). Le classeur est partage en lecture : aucune cle API.
+// Sert de SOURCE DE VERIFICATION avant d'ecrire dans RoadManager.
+// ============================================================================
+
+const GS_LEFT = { chk: 1, nom: 2, mach: 3, paye: 4, cli: 5, chef: 6, lieu: 7, ff: 8, bon: 9 };
+const GS_RIGHT = { chk: 11, nom: 12, mach: 13, paye: 14, cli: 15, chef: 16, lieu: 17, ff: 18, bon: 19 };
+// Bloc droite : 14 emplacements, les 3 DERNIERS sont les citernes, les 11 premiers les balayeuses.
+const GS_SLOTS = 14, GS_CITERNE_FROM = 11;
+const GS_MARQUES: any = { R: "Renault", V: "Volvo", M: "Mercedes", MA: "Man", VB: "Volvo gros balai", RB: "Renault gros balai", S: "semi" };
+
+function gsParseCsv(txt: string): string[][] {
+  const rows: string[][] = []; let row: string[] = [], cell = "", q = false;
+  for (let i = 0; i < txt.length; i++) {
+    const c = txt[i];
+    if (q) {
+      if (c === '"') { if (txt[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+    else if (c !== "\r") cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+const gsCell = (rows: any, r: number, c: number) => (rows[r] && rows[r][c] != null ? String(rows[r][c]).trim() : "");
+const gsTrue = (v: any) => String(v).trim().toUpperCase() === "TRUE";
+const gsNorm = (s: any) => stripAccents(String(s || "")).toLowerCase().replace(/\s+/g, " ").trim();
+
+function gsIsoWeek(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const day = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  return Math.ceil(((dt.getTime() - y0.getTime()) / 86400000 + 1) / 7);
+}
+function gsDayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" })
+    .format(new Date(Date.UTC(y, m - 1, d, 12)));
+}
+// ATTENTION : si le nom de feuille demande n'existe pas, Google renvoie SILENCIEUSEMENT
+// la premiere feuille. On verifie donc toujours que la date demandee est bien la ; -1 sinon.
+function gsFindDay(rows: any, iso: string): number {
+  const want = gsNorm(gsDayLabel(iso));
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < (rows[r] || []).length; c++) {
+      const v = gsNorm(gsCell(rows, r, c)).replace(/^(\d+)er\b/, "$1");
+      if (v && v === want) return r;
+    }
+  }
+  return -1;
+}
+function gsHeure(lieu: string): string {
+  const m = String(lieu || "").toLowerCase().match(/(\d{1,2})\s*h\s*(\d{2})?/);
+  if (!m) return "";
+  return String(Math.min(23, parseInt(m[1], 10))).padStart(2, "0") + ":" + (m[2] || "00");
+}
+function gsDayJobs(rows: any, start: number): any[] {
+  const out: any[] = [];
+  for (const b of [{ cols: GS_LEFT, type: "raboteuse" }, { cols: GS_RIGHT, type: "" }]) {
+    const C: any = b.cols;
+    for (let s = 0; s < GS_SLOTS; s++) {
+      const k = start + 2 + s * 2;
+      const machRaw = gsCell(rows, k, C.mach) || gsCell(rows, k + 1, C.mach);
+      const nom = gsCell(rows, k, C.nom) || gsCell(rows, k + 1, C.nom);
+      const informe = gsTrue(gsCell(rows, k, C.chk));
+      const nuit = gsTrue(gsCell(rows, k + 1, C.chk));
+      const paye = gsTrue(gsCell(rows, k, C.paye)) || gsTrue(gsCell(rows, k + 1, C.paye));
+      const bon = gsTrue(gsCell(rows, k, C.bon)) || gsTrue(gsCell(rows, k + 1, C.bon));
+      let categorie = b.type, machine = machRaw;
+      if (!categorie) {
+        categorie = s >= GS_CITERNE_FROM ? "citerne" : "balayeuse";
+        machine = (GS_MARQUES[machRaw.toUpperCase()] || machRaw) + (machRaw ? " (" + machRaw + ")" : "");
+      }
+      for (const rr of [k, k + 1]) {
+        const cli = gsCell(rows, rr, C.cli), lieu = gsCell(rows, rr, C.lieu), ff = gsCell(rows, rr, C.ff);
+        if (!cli && !lieu && !ff) continue;
+        out.push({
+          categorie, machine, chauffeur: nom, client: cli, chef: gsCell(rows, rr, C.chef),
+          lieu, heure: gsHeure(lieu), forfait: ff ? ff + "h" : "",
+          nuit, informe, paye, bonEnvoye: bon, ligne: rr + 1,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function gsBooks(data: any): any[] {
+  return (data.gsheetBooks || []).slice().sort((a: any, b: any) => (b.at || 0) - (a.at || 0));
+}
+async function gsFetchSheet(bookId: string, sheetName: string): Promise<string | null> {
+  const u = "https://docs.google.com/spreadsheets/d/" + bookId + "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(sheetName);
+  try { const r = await fetch(u); if (!r.ok) return null; return await r.text(); } catch (_e) { return null; }
+}
+
+// Cherche une date dans les classeurs enregistres. Ne renvoie un resultat que si la
+// date est REELLEMENT presente dans la feuille recuperee.
+async function gsLookupDay(data: any, iso: string): Promise<any> {
+  const books = gsBooks(data);
+  if (!books.length) return { error: "Aucun classeur Google Sheets enregistre. L'admin doit envoyer le lien du classeur du mois." };
+  const w = gsIsoWeek(iso);
+  for (const b of books) {
+    for (const name of ["SEMAINE " + w, " SEMAINE " + w]) {
+      const csv = await gsFetchSheet(b.id, name);
+      if (!csv) continue;
+      const rows = gsParseCsv(csv);
+      const start = gsFindDay(rows, iso);
+      if (start < 0) continue;   // mauvaise feuille renvoyee par Google : on ignore
+      return { jobs: gsDayJobs(rows, start), semaine: w, book: b };
+    }
+  }
+  return { error: "Le " + gsDayLabel(iso) + " (semaine " + w + ") n'a pas ete trouve dans les classeurs enregistres." };
+}
+
+function gsRender(iso: string, res: any): string {
+  if (res.error) return res.error;
+  const L: string[] = ["Planning du pere — " + gsDayLabel(iso) + " (semaine " + res.semaine + ") :"];
+  if (!res.jobs.length) return L[0] + "\n(aucune ligne remplie)";
+  for (const j of res.jobs) {
+    const p = [j.categorie, j.machine || "?", j.chauffeur || "sans chauffeur"];
+    if (j.client) p.push("client " + j.client);
+    if (j.chef) p.push("chef " + j.chef);
+    if (j.lieu) p.push("lieu " + j.lieu);
+    if (j.heure) p.push("heure " + j.heure);
+    if (j.forfait) p.push("forfait " + j.forfait);
+    if (j.nuit) p.push("NUIT");
+    if (j.informe) p.push("chauffeur prevenu");
+    if (j.paye) p.push("client a paye");
+    if (j.bonEnvoye) p.push("bon envoye");
+    // Le pere se trompe parfois de case : on signale l'incoherence au lieu de deviner.
+    if (j.nuit && j.heure && parseInt(j.heure, 10) < 17) p.push("!! case NUIT cochee mais heure " + j.heure + " : a faire confirmer par l'admin");
+    L.push("- " + p.join(" | "));
+  }
+  return L.join("\n");
+}
+
+// Enregistre un classeur a partir d'un lien colle dans Telegram.
+function gsExtractId(txt: string): string { const m = String(txt || "").match(/spreadsheets\/d\/([a-zA-Z0-9-_]{20,})/); return m ? m[1] : ""; }
+
 // ---- Boucle agent (tool use) ----------------------------------------------
 async function anthropic(key: string, body: any): Promise<any> {
   const call = (extraHeaders: any, extraBody: any) => fetch("https://api.anthropic.com/v1/messages", {
@@ -835,6 +996,12 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
       const a = tu.input || {};
       if (tu.name === "lire_planning") {
         results.push({ type: "tool_result", tool_use_id: tu.id, content: toolLirePlanning(data, a) });
+        continue;
+      }
+      if (tu.name === "lire_planning_pere") {
+        const iso = String(a.date || "");
+        const res = await gsLookupDay(data, iso);
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: gsRender(iso, res) });
         continue;
       }
       const kind = tu.name === "creer_chantier" ? "create" : tu.name === "modifier_chantier" ? "update" : tu.name === "supprimer_chantier" ? "delete" : "";
@@ -962,6 +1129,29 @@ Deno.serve(async (req) => {
         const nom = [msg.contact.first_name, msg.contact.last_name].filter(Boolean).join(" ");
         await mutate((d: any) => { d.tgPendingItem = d.tgPendingItem || {}; d.tgPendingItem[chatId] = { type: "contact", nom, tel: msg.contact.phone_number || "", ts: Date.now() }; });
         await tg("sendMessage", { chat_id: chatId, text: "\u{1F477} Contact recu (" + (nom || "?") + "). C'est le chef de quel chantier ? (chauffeur + jour)" });
+        return new Response("ok");
+      }
+      const gsId = gsExtractId(msg.text || "");
+      if (gsId) {
+        const csv = await gsFetchSheet(gsId, "");
+        if (!csv) {
+          await tg("sendMessage", { chat_id: chatId, text: "Je n'arrive pas a lire ce classeur. Verifie qu'il est partage en lecture (« Tout utilisateur disposant du lien »)." });
+          return new Response("ok");
+        }
+        const rows = gsParseCsv(csv);
+        let premier = "";
+        for (let r = 0; r < rows.length && !premier; r++) {
+          for (let c = 0; c < (rows[r] || []).length; c++) {
+            const v = gsCell(rows, r, c);
+            if (/^(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+\d/i.test(v)) { premier = v; break; }
+          }
+        }
+        await mutate((d: any) => {
+          d.gsheetBooks = (d.gsheetBooks || []).filter((b: any) => b.id !== gsId);
+          d.gsheetBooks.push({ id: gsId, at: Date.now(), first: premier });
+          d.gsheetBooks = d.gsheetBooks.slice(-6);
+        });
+        await tg("sendMessage", { chat_id: chatId, text: "Classeur enregistre" + (premier ? " (commence le " + premier + ")" : "") + "." });
         return new Response("ok");
       }
       if (msg.voice || msg.audio) {
