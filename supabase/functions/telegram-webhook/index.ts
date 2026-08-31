@@ -669,7 +669,9 @@ function pruneProposals(data: any): void {
   data.tgProposals = (data.tgProposals || []).filter((p: any) => Date.now() - (p.ts || 0) < 2 * 3600 * 1000);
 }
 
-async function sendProposal(tg: any, data: any, chatId: string, prop: any): Promise<string> {
+// Envoie la fiche sur Telegram. N'ECRIT RIEN en base : l'ecriture est groupee avec
+// la sauvegarde du fil dans commitTurn(), pour ne relire le blob qu'UNE fois par message.
+async function sendProposalMessage(tg: any, chatId: string, prop: any): Promise<any> {
   const pid = uid();
   const txt = prop.lines.join("\n") + (prop.warn && prop.warn.length ? "\n\n⚠️ " + prop.warn.join("\n⚠️ ") : "") + "\n\nC'est bien ca ?";
   let msgId: any = null;
@@ -683,60 +685,86 @@ async function sendProposal(tg: any, data: any, chatId: string, prop: any): Prom
     const jr = await r.json();
     msgId = jr && jr.result && jr.result.message_id;
   } catch (_e) { /* ignore */ }
-  // Une seule proposition en attente par chat : les precedentes sont remplacees.
+  return { id: pid, chatId, msgId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", text: txt, ts: Date.now() };
+}
+
+// UNE seule relecture + ecriture du blob par message recu (proposition ET fil d'un coup).
+// Renvoie les propositions precedentes du chat, devenues caduques.
+async function commitTurn(chatId: string, pending: any, convMessages: any[] | null): Promise<any[]> {
+  if (!pending && !convMessages) return [];
   let olds: any[] = [];
   await mutate((d: any) => {
-    pruneProposals(d);
-    d.tgProposals = d.tgProposals || [];
-    olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId));
-    d.tgProposals = d.tgProposals.filter((x: any) => String(x.chatId) !== String(chatId));
-    d.tgProposals.push({ id: pid, chatId, msgId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", text: txt, ts: Date.now() });
+    if (pending) {
+      pruneProposals(d);
+      d.tgProposals = d.tgProposals || [];
+      // Une seule proposition en attente par chat : les precedentes sont remplacees.
+      olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId));
+      d.tgProposals = d.tgProposals.filter((x: any) => String(x.chatId) !== String(chatId));
+      d.tgProposals.push(pending);
+    }
+    if (convMessages) {
+      d.tgConv = d.tgConv || {};
+      d.tgConv[chatId] = { m: convMessages.slice(-12), ts: Date.now() };
+      for (const k of Object.keys(d.tgConv)) if (Date.now() - (d.tgConv[k].ts || 0) > 2 * 3600 * 1000) delete d.tgConv[k];
+    }
   });
+  return olds;
+}
+
+async function editReplacedProposals(tg: any, chatId: string, olds: any[]): Promise<void> {
   for (const o of olds) {
     if (!o.msgId) continue;
     try { await tg("editMessageText", { chat_id: chatId, message_id: o.msgId, text: String(o.text || "").replace(/\n\nC'est bien ca \?$/, "") + "\n\n↩️ Remplace par une version corrigee.", disable_web_page_preview: true }); } catch (_e) { /* ignore */ }
   }
-  return txt;
 }
 
 // ---- Application d'une proposition validee --------------------------------
-async function applyProposal(prop: any): Promise<string> {
-  let msg = "";
+// Applique la proposition sur l'objet donnees (fonction pure : aucune I/O).
+function applyProposalTo(d: any, prop: any): string {
+  d.jobs = d.jobs || [];
+  if (prop.kind === "delete") {
+    d._tombstones = d._tombstones || {};
+    d._tombstones.jobs = d._tombstones.jobs || {};
+    d._tombstones.jobs[prop.jobId] = Date.now();
+    d.jobs = d.jobs.filter((j: any) => j.id !== prop.jobId);
+    return "Chantier supprime.";
+  }
+  const j = JSON.parse(JSON.stringify(prop.job));
+  // Client cree a la volee, comme le fait l'app quand on tape un nouveau nom.
+  if (prop.newClientName) {
+    const ex = (d.clients || []).find((c: any) => normTxt(c.name) === normTxt(prop.newClientName));
+    if (ex) j.clientId = ex.id;
+    else {
+      const nc = { id: uid(), name: prop.newClientName, forfaitType: "standard", agencies: [], siteManagers: [] };
+      d.clients = (d.clients || []).concat([nc]);
+      j.clientId = nc.id;
+    }
+  }
+  // On memorise le chef de chantier sur la fiche client, comme l'app.
+  if (j.siteManager && j.clientId) {
+    const c = (d.clients || []).find((x: any) => x.id === j.clientId);
+    if (c) {
+      c.siteManagers = c.siteManagers || [];
+      if (!c.siteManagers.some((s: any) => normTxt(s.name) === normTxt(j.siteManager))) {
+        c.siteManagers.push({ name: j.siteManager, phone: j.siteManagerPhone || "" });
+      }
+    }
+  }
+  j._updatedAt = Date.now();
+  const i = d.jobs.findIndex((x: any) => x.id === j.id);
+  if (i >= 0) { d.jobs[i] = j; return "Chantier modifie."; }
+  d.jobs.push(j);
+  return "Chantier ajoute au planning.";
+}
+
+// Valider ou annuler : une SEULE relecture+ecriture du blob (chantier + purge du
+// fil + retrait de la proposition sont faits dans la meme passe).
+async function resolveProposal(prop: any, chatId: string, accept: boolean): Promise<string> {
+  let msg = "Annule.";
   await mutate((d: any) => {
-    d.jobs = d.jobs || [];
-    if (prop.kind === "delete") {
-      d._tombstones = d._tombstones || {};
-      d._tombstones.jobs = d._tombstones.jobs || {};
-      d._tombstones.jobs[prop.jobId] = Date.now();
-      d.jobs = d.jobs.filter((j: any) => j.id !== prop.jobId);
-      msg = "Chantier supprime.";
-      return;
-    }
-    const j = JSON.parse(JSON.stringify(prop.job));
-    // Client cree a la volee, comme le fait l'app quand on tape un nouveau nom.
-    if (prop.newClientName) {
-      const ex = (d.clients || []).find((c: any) => normTxt(c.name) === normTxt(prop.newClientName));
-      if (ex) j.clientId = ex.id;
-      else {
-        const nc = { id: uid(), name: prop.newClientName, forfaitType: "standard", agencies: [], siteManagers: [] };
-        d.clients = (d.clients || []).concat([nc]);
-        j.clientId = nc.id;
-      }
-    }
-    // On memorise le chef de chantier sur la fiche client, comme l'app.
-    if (j.siteManager && j.clientId) {
-      const c = (d.clients || []).find((x: any) => x.id === j.clientId);
-      if (c) {
-        c.siteManagers = c.siteManagers || [];
-        if (!c.siteManagers.some((s: any) => normTxt(s.name) === normTxt(j.siteManager))) {
-          c.siteManagers.push({ name: j.siteManager, phone: j.siteManagerPhone || "" });
-        }
-      }
-    }
-    j._updatedAt = Date.now();
-    const i = d.jobs.findIndex((x: any) => x.id === j.id);
-    if (i >= 0) { d.jobs[i] = j; msg = "Chantier modifie."; }
-    else { d.jobs.push(j); msg = "Chantier ajoute au planning."; }
+    d.tgProposals = (d.tgProposals || []).filter((x: any) => x.id !== prop.id);
+    if (d.tgConv) delete d.tgConv[chatId];
+    if (accept) msg = applyProposalTo(d, prop);
   });
   return msg;
 }
@@ -794,13 +822,15 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
 
     if (!toolUses.length) {
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
-      await saveConv(chatId, messages);
+      // On ne garde le fil que si l'agent attend une reponse. Une simple consultation
+      // ("qui travaille demain ?") n'ecrit alors RIEN du tout en base.
+      if (txt.indexOf("?") >= 0) await commitTurn(chatId, null, messages);
       return true;
     }
 
     // On repond a TOUS les tool_use du tour (sinon la conversation devient invalide au tour suivant).
     const results: any[] = [];
-    let proposalSent = false;
+    let pending: any = null;
     for (const tu of toolUses) {
       const a = tu.input || {};
       if (tu.name === "lire_planning") {
@@ -809,30 +839,27 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
       }
       const kind = tu.name === "creer_chantier" ? "create" : tu.name === "modifier_chantier" ? "update" : tu.name === "supprimer_chantier" ? "delete" : "";
       if (!kind) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Outil inconnu.", is_error: true }); continue; }
-      if (proposalSent) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Une proposition est deja en attente de validation. Une seule a la fois.", is_error: true }); continue; }
+      if (pending) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Une proposition est deja en attente de validation. Une seule a la fois.", is_error: true }); continue; }
       const prop = buildProposal(data, a, kind);
       if (prop.error) { results.push({ type: "tool_result", tool_use_id: tu.id, content: prop.error, is_error: true }); continue; }
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
-      const recap = await sendProposal(tg, data, chatId, prop);
-      proposalSent = true;
-      results.push({ type: "tool_result", tool_use_id: tu.id, content: "Proposition envoyee a l'admin, en attente de sa validation :\n" + recap });
+      pending = await sendProposalMessage(tg, chatId, prop);
+      results.push({ type: "tool_result", tool_use_id: tu.id, content: "Proposition envoyee a l'admin, en attente de sa validation :\n" + pending.text });
     }
     messages.push({ role: "user", content: results });
 
     // Fiche envoyee : on s'arrete la, MAIS on garde le fil pour que l'admin puisse corriger.
-    if (proposalSent) { await saveConv(chatId, messages); return true; }
+    // Proposition + fil sont ecrits ensemble : une seule relecture du blob.
+    if (pending) {
+      const olds = await commitTurn(chatId, pending, messages);
+      await editReplacedProposals(tg, chatId, olds);
+      return true;
+    }
   }
-  await saveConv(chatId, messages);
+  // Boucle epuisee : on ne garde pas un fil incomplet (et on n'ecrit rien).
   return false;
 }
 
-async function saveConv(chatId: string, messages: any[]): Promise<void> {
-  await mutate((d: any) => {
-    d.tgConv = d.tgConv || {};
-    d.tgConv[chatId] = { m: messages.slice(-12), ts: Date.now() };
-    for (const k of Object.keys(d.tgConv)) if (Date.now() - (d.tgConv[k].ts || 0) > 2 * 3600 * 1000) delete d.tgConv[k];
-  });
-}
 
 
 Deno.serve(async (req) => {
@@ -990,19 +1017,9 @@ Deno.serve(async (req) => {
           await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Proposition expiree", show_alert: true });
           return new Response("ok");
         }
-        await mutate((d: any) => {
-          d.tgProposals = (d.tgProposals || []).filter((x: any) => x.id !== parts[1]);
-          if (d.tgConv) delete d.tgConv[chatId];
-        });
-        let tail = "";
-        if (action === "pno") {
-          tail = "❌ Annule.";
-          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Annule" });
-        } else {
-          const res = await applyProposal(prop);
-          tail = "✅ " + res;
-          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ " + res });
-        }
+        const res = await resolveProposal(prop, chatId, action === "pok");
+        const tail = (action === "pok" ? "✅ " : "❌ ") + res;
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: tail });
         if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: (prop.text || "").replace(/\n\nC'est bien ca \?$/, "") + "\n\n" + tail, disable_web_page_preview: true }); } catch (_e) { /* ignore */ } }
         return new Response("ok");
       }
