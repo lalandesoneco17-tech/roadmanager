@@ -513,7 +513,11 @@ const AGENT_SYSTEM = [
   "   Exemple : « Le planning dit eurovia ang, pas Ferroviaire. Je prends lequel ? »",
   "   Si le planning du pere contient une incoherence (case NUIT cochee sur un chantier de jour),",
   "   demande-lui de trancher, n'invente pas.",
-  "9. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
+  "9. SERIE : si l'admin demande de recopier TOUTE une journee (« recopie tout mardi »),",
+  "   appelle comparer_planning puis cree TOUS les chantiers manquants en UNE fois",
+  "   (un appel creer_chantier par chantier, dans le meme tour). Ne t'arrete pas au premier.",
+  "   N'inclus pas les repos, absences, depots et preparations : ce ne sont pas des chantiers.",
+  "10. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
   "   rappelle l'outil d'ecriture avec la proposition COMPLETE corrigee, pas seulement le champ change.",
   "",
   "Si une reponse ne demande aucun outil, reponds directement, en une phrase.",
@@ -725,19 +729,26 @@ async function sendProposalMessage(tg: any, chatId: string, prop: any): Promise<
   return { id: pid, chatId, msgId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", text: txt, ts: Date.now() };
 }
 
-// UNE seule relecture + ecriture du blob par message recu (proposition ET fil d'un coup).
-// Renvoie les propositions precedentes du chat, devenues caduques.
-async function commitTurn(chatId: string, pending: any, convMessages: any[] | null): Promise<any[]> {
-  if (!pending && !convMessages) return [];
+// UNE seule relecture + ecriture du blob par message recu, meme pour une serie de fiches.
+// Renvoie les propositions devenues caduques (remplacees par une version corrigee).
+// Cle de remplacement : jour + chauffeur + machine + lieu. Deux fiches differentes
+// (deux chauffeurs, ou deux chantiers du meme chauffeur) coexistent donc sans s'ecraser.
+function propKey(p: any): string {
+  const j = p.job || {};
+  return [j.date || "", j.employeeId || "", j.machineId || "", normTxt(j.location || "")].join("|");
+}
+async function commitTurn(chatId: string, pendings: any[], convMessages: any[] | null): Promise<any[]> {
+  if ((!pendings || !pendings.length) && !convMessages) return [];
   let olds: any[] = [];
   await mutate((d: any) => {
-    if (pending) {
+    if (pendings && pendings.length) {
       pruneProposals(d);
       d.tgProposals = d.tgProposals || [];
-      // Une seule proposition en attente par chat : les precedentes sont remplacees.
-      olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId));
-      d.tgProposals = d.tgProposals.filter((x: any) => String(x.chatId) !== String(chatId));
-      d.tgProposals.push(pending);
+      const keys = new Set(pendings.map(propKey));
+      olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId) && keys.has(propKey(x)));
+      const oldIds = new Set(olds.map((o: any) => o.id));
+      d.tgProposals = d.tgProposals.filter((x: any) => !oldIds.has(x.id));
+      for (const p of pendings) d.tgProposals.push(p);
     }
     if (convMessages) {
       d.tgConv = d.tgConv || {};
@@ -1061,7 +1072,7 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
   for (let step = 0; step < 5; step++) {
     const r = await anthropic(key, {
       model,
-      max_tokens: 4000,
+      max_tokens: 8000,
       thinking: { type: "adaptive" },
       output_config: { effort: data.aiAgentEffort || "low" },
       system,
@@ -1080,13 +1091,13 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
       // On ne garde le fil que si l'agent attend une reponse. Une simple consultation
       // ("qui travaille demain ?") n'ecrit alors RIEN du tout en base.
-      if (txt.indexOf("?") >= 0) await commitTurn(chatId, null, messages);
+      if (txt.indexOf("?") >= 0) await commitTurn(chatId, [], messages);
       return true;
     }
 
     // On repond a TOUS les tool_use du tour (sinon la conversation devient invalide au tour suivant).
     const results: any[] = [];
-    let pending: any = null;
+    const pendings: any[] = [];
     for (const tu of toolUses) {
       const a = tu.input || {};
       if (tu.name === "lire_planning") {
@@ -1105,20 +1116,23 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
       }
       const kind = tu.name === "creer_chantier" ? "create" : tu.name === "modifier_chantier" ? "update" : tu.name === "supprimer_chantier" ? "delete" : "";
       if (!kind) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Outil inconnu.", is_error: true }); continue; }
-      if (pending) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Une proposition est deja en attente de validation. Une seule a la fois.", is_error: true }); continue; }
       const prop = buildProposal(data, a, kind);
       if (prop.error) { results.push({ type: "tool_result", tool_use_id: tu.id, content: prop.error, is_error: true }); continue; }
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
-      pending = await sendProposalMessage(tg, chatId, prop);
-      results.push({ type: "tool_result", tool_use_id: tu.id, content: "Proposition envoyee a l'admin, en attente de sa validation :\n" + pending.text });
+      const pend = await sendProposalMessage(tg, chatId, prop);
+      pendings.push(pend);
+      results.push({ type: "tool_result", tool_use_id: tu.id, content: "Fiche envoyee a l'admin, en attente de sa validation :\n" + pend.text });
     }
     messages.push({ role: "user", content: results });
 
     // Fiche envoyee : on s'arrete la, MAIS on garde le fil pour que l'admin puisse corriger.
     // Proposition + fil sont ecrits ensemble : une seule relecture du blob.
-    if (pending) {
-      const olds = await commitTurn(chatId, pending, messages);
+    if (pendings.length) {
+      const olds = await commitTurn(chatId, pendings, messages);
       await editReplacedProposals(tg, chatId, olds);
+      if (pendings.length > 1) {
+        await tg("sendMessage", { chat_id: chatId, text: "\u2b06\ufe0f " + pendings.length + " fiches a valider ci-dessus, une par une." });
+      }
       return true;
     }
   }
