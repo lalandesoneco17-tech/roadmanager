@@ -721,7 +721,7 @@ async function sendProposalMessage(tg: any, chatId: string, prop: any): Promise<
       chat_id: chatId,
       text: txt,
       disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [[{ text: "✅ Valider", callback_data: "pok:" + pid }, { text: "❌ Annuler", callback_data: "pno:" + pid }]] },
+      reply_markup: { inline_keyboard: [[{ text: "✅ Valider", callback_data: "pok:" + pid }, { text: "✏️ Corriger", callback_data: "pfix:" + pid }]] },
     });
     const jr = await r.json();
     msgId = jr && jr.result && jr.result.message_id;
@@ -737,7 +737,7 @@ function propKey(p: any): string {
   const j = p.job || {};
   return [j.date || "", j.employeeId || "", j.machineId || "", normTxt(j.location || "")].join("|");
 }
-async function commitTurn(chatId: string, pendings: any[], convMessages: any[] | null): Promise<any[]> {
+async function commitTurn(chatId: string, pendings: any[], convMessages: any[] | null, replaceId?: string): Promise<any[]> {
   if ((!pendings || !pendings.length) && !convMessages) return [];
   let olds: any[] = [];
   await mutate((d: any) => {
@@ -745,7 +745,9 @@ async function commitTurn(chatId: string, pendings: any[], convMessages: any[] |
       pruneProposals(d);
       d.tgProposals = d.tgProposals || [];
       const keys = new Set(pendings.map(propKey));
-      olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId) && keys.has(propKey(x)));
+      // replaceId : l'admin a appuye sur "Corriger" sur CETTE fiche -> c'est elle qu'on remplace,
+      // meme s'il a change le lieu ou la machine (la cle ne correspondrait plus).
+      olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId) && (keys.has(propKey(x)) || (replaceId && x.id === replaceId)));
       const oldIds = new Set(olds.map((o: any) => o.id));
       d.tgProposals = d.tgProposals.filter((x: any) => !oldIds.has(x.id));
       for (const p of pendings) d.tgProposals.push(p);
@@ -1049,7 +1051,7 @@ async function anthropic(key: string, body: any): Promise<any> {
   return r;
 }
 
-async function runAgent(tg: any, data: any, chatId: string, userText: string): Promise<boolean> {
+async function runAgent(tg: any, data: any, chatId: string, userText: string, fixingId?: string): Promise<boolean> {
   const key = data.anthropicApiKey;
   if (!key) return false;
   const model = data.aiAgentModel || "claude-opus-5";
@@ -1128,7 +1130,7 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string): P
     // Fiche envoyee : on s'arrete la, MAIS on garde le fil pour que l'admin puisse corriger.
     // Proposition + fil sont ecrits ensemble : une seule relecture du blob.
     if (pendings.length) {
-      const olds = await commitTurn(chatId, pendings, messages);
+      const olds = await commitTurn(chatId, pendings, messages, fixingId);
       await editReplacedProposals(tg, chatId, olds);
       if (pendings.length > 1) {
         await tg("sendMessage", { chat_id: chatId, text: "\u2b06\ufe0f " + pendings.length + " fiches a valider ci-dessus, une par une." });
@@ -1290,7 +1292,18 @@ Deno.serve(async (req) => {
             if (pend.type === "contact") ask += "\n[Fiche contact recue a l'instant, c'est le chef de chantier : " + pend.nom + " " + pend.tel + "]";
             await mutate((d: any) => { if (d.tgPendingItem) delete d.tgPendingItem[chatId]; });
           }
-          if (await runAgent(tg, data, chatId, ask)) return new Response("ok");
+          // Si l'admin vient d'appuyer sur "Corriger", on rattache sa reponse a CETTE fiche.
+          let fixingId: string | undefined = undefined;
+          const fx = (data.tgFixing || {})[chatId];
+          if (fx && Date.now() - (fx.ts || 0) < 30 * 60 * 1000) {
+            const prop = (data.tgProposals || []).find((x: any) => x.id === fx.propId);
+            if (prop) {
+              fixingId = prop.id;
+              ask = "L'admin corrige la fiche en attente ci-dessous. Renvoie-la COMPLETE et corrigee via l'outil d'ecriture (pas seulement le champ change).\n--- FICHE ---\n" + prop.text + "\n--- CORRECTION DEMANDEE ---\n" + ask;
+            }
+            await mutate((d: any) => { if (d.tgFixing) delete d.tgFixing[chatId]; });
+          }
+          if (await runAgent(tg, data, chatId, ask, fixingId)) return new Response("ok");
           const ai = await askAI(data, msg.text);
           if (ai) { await tg("sendMessage", { chat_id: chatId, text: ai, disable_web_page_preview: true }); return new Response("ok"); }
         }
@@ -1310,6 +1323,17 @@ Deno.serve(async (req) => {
     if (cq && typeof cq.data === "string") {
       const parts = cq.data.split(":");
       const action = parts[0];
+      // Bouton "Corriger" : on retient la fiche visee, la reponse suivante de l'admin la modifiera.
+      if (action === "pfix") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        const prop = (data.tgProposals || []).find((x: any) => x.id === parts[1]);
+        if (!prop) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Fiche expiree", show_alert: true }); return new Response("ok"); }
+        await mutate((d: any) => { d.tgFixing = d.tgFixing || {}; d.tgFixing[chatId] = { propId: prop.id, ts: Date.now() }; });
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Dis-moi ce qu'il faut corriger" });
+        await tg("sendMessage", { chat_id: chatId, text: "✏️ Qu'est-ce qu'il faut corriger ?", reply_markup: { force_reply: true } });
+        return new Response("ok");
+      }
       // Validation / annulation d'une proposition d'ecriture de l'agent
       if (action === "pok" || action === "pno") {
         const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
