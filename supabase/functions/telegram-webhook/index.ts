@@ -1212,8 +1212,9 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   const now = new Date();
   const semaines: any = {};        // cache : une seule requete par feuille
   const nouveaux: any[] = [];
+  const oublier: string[] = [];    // cases decochees : on oublie, pour qu'un recochage renvoie la fiche
 
-  for (let k = 0; k <= 7 && nouveaux.length < 25; k++) {
+  for (let k = 0; k <= 14 && nouveaux.length < 25; k++) {
     const iso = isoParis(new Date(now.getTime() + k * 86400000));
     const w = gsIsoWeek(iso);
     if (!(w in semaines)) {
@@ -1233,15 +1234,22 @@ async function gsWatch(tg: any, data: any): Promise<number> {
     const start = gsFindDay(rows, iso);
     if (start < 0) continue;
     for (const g of gsDayJobs(rows, start)) {
-      if (!g.informe) continue;                 // la case « chauffeur au courant » n'est pas cochee
       if (gsEstNonChantier(g)) continue;        // repos / absence / depot
       const key = gsRowKey(iso, g);
+      if (!g.informe) {
+        // Case decochee : on efface la trace pour qu'un recochage renvoie la fiche.
+        if (seen[key]) oublier.push(key);
+        continue;
+      }
       if (seen[key]) continue;
       nouveaux.push({ key, iso, g });
       if (nouveaux.length >= 25) break;
     }
   }
-  if (!nouveaux.length) return 0;
+  if (!nouveaux.length) {
+    if (oublier.length) await mutate((d: any) => { if (d.gsheetSeen) for (const k of oublier) delete d.gsheetSeen[k]; });
+    return 0;
+  }
 
   // A partir d'ici seulement, on a besoin du bloc complet.
   const full = await loadData();
@@ -1279,6 +1287,7 @@ async function gsWatch(tg: any, data: any): Promise<number> {
 
   await mutate((d: any) => {
     d.gsheetSeen = d.gsheetSeen || {};
+    for (const k of oublier) delete d.gsheetSeen[k];
     for (const n of nouveaux) d.gsheetSeen[n.key] = Date.now();
     // purge au-dela de 60 jours pour ne pas laisser grossir le bloc
     for (const k of Object.keys(d.gsheetSeen)) if (Date.now() - d.gsheetSeen[k] > 60 * 86400000) delete d.gsheetSeen[k];
