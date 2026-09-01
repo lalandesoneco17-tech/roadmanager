@@ -492,6 +492,25 @@ function chercherContact(data: any, nom: string, clientNom?: string): any[] {
   out.sort((a, b) => b.score - a.score);
   return out.slice(0, 6);
 }
+// Recherche unifiee : fiches clients de RoadManager d'abord, puis carnet importe.
+async function chercherContactTout(data: any, nom: string, clientNom?: string): Promise<any[]> {
+  const res = chercherContact(data, nom, clientNom);
+  const vus = new Set(res.map((x: any) => normTxt(x.nom)));
+  const n0 = normTxt(nom);
+  for (const c of await carnetContacts()) {
+    const cn = normTxt(c.n);
+    if (!cn || vus.has(cn)) continue;
+    let sc = 0;
+    if (cn === n0) sc = 100;
+    else if (cn.split(" ").indexOf(n0) >= 0) sc = 88;
+    else if (n0.length >= 4 && cn.indexOf(n0) >= 0) sc = 76;
+    else if (Math.min(cn.length, n0.length) >= 5 && levenshtein(cn, n0) <= 2) sc = 66;
+    if (sc) res.push({ score: sc, nom: c.n, tel: (c.t || []).join(" / "), client: "carnet" });
+  }
+  res.sort((x: any, y: any) => y.score - x.score);
+  return res.slice(0, 8);
+}
+
 function rendreContacts(res: any[], nom: string): string {
   if (!res.length) return "Aucun contact ne ressemble a \"" + nom + "\" dans les fiches clients.";
   const L = ["Contacts trouves pour \"" + nom + "\" (a FAIRE CONFIRMER par l'admin, ne choisis pas seul).", "Source « carnet » = repertoire telephonique importe ; les autres viennent des fiches clients :"];
@@ -631,7 +650,10 @@ const AGENT_SYSTEM = [
   "8bis. CONTACT ou POINT GPS recu : si le chantier vise figure dans FICHES ENVOYEES,",
   "   utilise completer_fiche avec son fiche_id. N'utilise modifier_chantier que pour un",
   "   chantier deja ecrit dans RoadManager (section CHANTIERS, avec un job_id).",
-  "9. CHEF DE CHANTIER : si un nom de chef est donne sans numero, appelle chercher_contact.",
+  "9. CHEF DE CHANTIER : si un nom de chef est donne sans numero et que la fiche figure",
+  "   dans FICHES ENVOYEES, appelle proposer_contacts : l'admin choisira par bouton.",
+  "   Si l'outil dit qu'AUCUN contact n'a ete trouve, dis-le lui franchement et demande le numero.",
+  "   Sinon (hors fiche en attente), appelle chercher_contact.",
   "   Un seul resultat au nom identique -> mets-le dans la fiche et precise d'ou il vient.",
   "   Plusieurs resultats, ou une orthographe differente -> DEMANDE confirmation avant :",
   "   « Pour Scotpa j'ai Crystof 06 12 34 56 78. C'est lui ? »  Ne choisis jamais seul.",
@@ -722,6 +744,19 @@ const AGENT_TOOLS = [
         transfert: { type: "boolean", description: "true si un transfert est facture en plus" },
       },
       required: ["date", "chauffeur", "machine"],
+    },
+  },
+  {
+    name: "proposer_contacts",
+    description: "Cherche un chef de chantier et propose les resultats a l'admin SOUS FORME DE BOUTONS, rattaches a une fiche en attente. A utiliser des qu'un chef est cite sans numero. Si aucun contact n'est trouve, l'outil le dit : previens alors l'admin et demande-lui le numero.",
+    input_schema: {
+      type: "object",
+      properties: {
+        fiche_id: { type: "string", description: "Identifiant de la fiche, pris dans FICHES ENVOYEES" },
+        nom: { type: "string", description: "Nom du chef, meme mal orthographie" },
+        client: { type: "string", description: "Optionnel : nom du client" },
+      },
+      required: ["fiche_id", "nom"],
     },
   },
   {
@@ -1701,22 +1736,25 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       }
       if (tu.name === "chercher_contact") {
         const nom = String(a.nom || "");
-        const res = chercherContact(data, nom, a.client);
-        // Complete avec le carnet importe du PDF (704 fiches), sans doublonner.
-        const vus = new Set(res.map((x: any) => normTxt(x.nom)));
-        const n0 = normTxt(nom);
-        for (const c of await carnetContacts()) {
-          const cn = normTxt(c.n);
-          if (!cn || vus.has(cn)) continue;
-          let sc = 0;
-          if (cn === n0) sc = 100;
-          else if (cn.split(" ").indexOf(n0) >= 0) sc = 88;
-          else if (n0.length >= 4 && cn.indexOf(n0) >= 0) sc = 76;
-          else if (Math.min(cn.length, n0.length) >= 5 && levenshtein(cn, n0) <= 2) sc = 66;
-          if (sc) res.push({ score: sc, nom: c.n, tel: (c.t || []).join(" / "), client: "carnet" });
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: rendreContacts(await chercherContactTout(data, nom, a.client), nom) });
+        continue;
+      }
+      // Propose les contacts trouves SOUS FORME DE BOUTONS, rattaches a une fiche.
+      if (tu.name === "proposer_contacts") {
+        const nom = String(a.nom || "");
+        const p0 = (data.tgProposals || []).find((x: any) => x.id === a.fiche_id && String(x.chatId) === String(chatId));
+        if (!p0) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Fiche introuvable. Verifie fiche_id dans FICHES ENVOYEES.", is_error: true }); continue; }
+        const trouves = (await chercherContactTout(data, nom, a.client)).filter((c: any) => c.tel);
+        if (!trouves.length) {
+          results.push({ type: "tool_result", tool_use_id: tu.id, content: "AUCUN contact trouve pour \"" + nom + "\". Dis-le clairement a l'admin et demande-lui le numero." });
+          continue;
         }
-        res.sort((x: any, y: any) => y.score - x.score);
-        results.push({ type: "tool_result", tool_use_id: tu.id, content: rendreContacts(res.slice(0, 8), nom) });
+        const liste = trouves.slice(0, 5).map((c: any) => ({ nom: c.nom, tel: c.tel, src: c.client }));
+        const kb: any[] = liste.map((c: any, i2: number) => [{ text: c.nom + " — " + c.tel, callback_data: "ct:" + i2 }]);
+        kb.push([{ text: "❌ Aucun de ceux-la", callback_data: "ct:x" }]);
+        await mutate((d: any) => { d.tgContactChoix = d.tgContactChoix || {}; d.tgContactChoix[chatId] = { ficheId: p0.id, liste, ts: Date.now() }; });
+        await tg("sendMessage", { chat_id: chatId, text: "\u{1F477} Contacts trouves pour « " + nom + " » — lequel ?", reply_markup: { inline_keyboard: kb } });
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: liste.length + " contact(s) proposes sous forme de boutons. N'ajoute rien, attends le choix de l'admin." });
         continue;
       }
       if (tu.name === "lire_planning_pere") {
@@ -1979,6 +2017,35 @@ Deno.serve(async (req) => {
     if (cq && typeof cq.data === "string") {
       const parts = cq.data.split(":");
       const action = parts[0];
+      // Choix d'un contact par bouton : on l'applique a la fiche et on la renvoie completee.
+      if (action === "ct") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        const mid = cq.message && cq.message.message_id;
+        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        const ctx = (data.tgContactChoix || {})[chatId];
+        if (!ctx || Date.now() - (ctx.ts || 0) > 3600 * 1000) {
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Choix expire", show_alert: true });
+          return new Response("ok");
+        }
+        await mutate((d: any) => { if (d.tgContactChoix) delete d.tgContactChoix[chatId]; });
+        if (parts[1] === "x") {
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Compris" });
+          if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: "\u{1F477} Aucun de ces contacts. Envoie-moi le bon numero." }); } catch (_e) { /* ignore */ } }
+          return new Response("ok");
+        }
+        const c = (ctx.liste || [])[Number(parts[1])];
+        const p0 = (data.tgProposals || []).find((x: any) => x.id === ctx.ficheId);
+        if (!c || !p0 || !p0.job) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Fiche expiree", show_alert: true }); return new Response("ok"); }
+        const prop = buildProposal(data, { chef: c.nom, telephone_chef: String(c.tel).split(" / ")[0] }, "update", p0.job);
+        if (prop.error) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: prop.error.slice(0, 190), show_alert: true }); return new Response("ok"); }
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "✅ " + c.nom });
+        if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: "\u{1F477} Chef retenu : " + c.nom + " — " + c.tel }); } catch (_e) { /* ignore */ } }
+        const pend = await sendProposalMessage(tg, chatId, prop);
+        pend.remplace = p0.id;
+        const olds = await commitTurn(chatId, [pend], null);
+        await editReplacedProposals(tg, chatId, olds);
+        return new Response("ok");
+      }
       // Bouton "Corriger" : on retient la fiche visee, la reponse suivante de l'admin la modifiera.
       if (action === "pfix") {
         const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
