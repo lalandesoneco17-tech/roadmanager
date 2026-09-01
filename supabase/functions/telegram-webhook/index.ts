@@ -845,7 +845,7 @@ async function commitTurn(chatId: string, pendings: any[], convMessages: any[] |
     }
     if (convMessages) {
       d.tgConv = d.tgConv || {};
-      d.tgConv[chatId] = { m: convMessages.slice(-12), ts: Date.now() };
+      d.tgConv[chatId] = { m: trimConv(convMessages), ts: Date.now() };
       for (const k of Object.keys(d.tgConv)) if (Date.now() - (d.tgConv[k].ts || 0) > 2 * 3600 * 1000) delete d.tgConv[k];
     }
   });
@@ -1312,12 +1312,26 @@ async function anthropic(key: string, body: any): Promise<any> {
   return r;
 }
 
+// Couper le fil a 12 messages peut trancher au milieu d'un appel d'outil : il reste
+// alors une reponse d'outil sans la question correspondante, et l'API refuse (erreur 400).
+// On rogne donc jusqu'a retomber sur un vrai debut de conversation.
+function trimConv(msgs: any[]): any[] {
+  let out = (msgs || []).slice(-12);
+  while (out.length) {
+    const f = out[0];
+    const orphelin = f.role === "user" && Array.isArray(f.content) && f.content.some((b: any) => b && b.type === "tool_result");
+    if (orphelin || f.role !== "user") { out = out.slice(1); continue; }
+    break;
+  }
+  return out;
+}
+
 async function runAgent(tg: any, data: any, chatId: string, userText: string, fixingId?: string): Promise<boolean> {
   const key = data.anthropicApiKey;
   if (!key) return false;
   const model = data.aiAgentModel || "claude-opus-5";
   const conv = (data.tgConv || {})[chatId];
-  const history = (conv && Date.now() - (conv.ts || 0) < 60 * 60 * 1000 && Array.isArray(conv.m)) ? conv.m : [];
+  const history = trimConv((conv && Date.now() - (conv.ts || 0) < 60 * 60 * 1000 && Array.isArray(conv.m)) ? conv.m : []);
   const messages: any[] = history.slice();
   const last = messages[messages.length - 1];
   if (last && last.role === "user" && Array.isArray(last.content)) {
@@ -1345,7 +1359,9 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
     if (!r.ok) {
       let detail = "";
       try { const e = await r.json(); detail = (e && e.error && e.error.message) ? String(e.error.message) : ""; } catch (_e) { /* ignore */ }
-      await tg("sendMessage", { chat_id: chatId, text: "⚠️ L'assistant n'a pas repondu (erreur " + r.status + (detail ? " : " + detail.slice(0, 200) : "") + "). Reessaie." });
+      // On repart d'un fil propre : une conversation abimee reproduirait l'erreur a l'infini.
+      await mutate((d: any) => { if (d.tgConv) delete d.tgConv[chatId]; });
+      await tg("sendMessage", { chat_id: chatId, text: "⚠️ L'assistant a bute (erreur " + r.status + (detail ? " : " + detail.slice(0, 200) : "") + "). J'ai remis le fil a zero, redis-moi ta demande." });
       return true;
     }
     const j = await r.json();
