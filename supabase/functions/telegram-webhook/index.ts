@@ -445,6 +445,22 @@ function levenshtein(a: string, b: string): number {
   }
   return prev[n];
 }
+// Carnet de contacts importe du PDF, range dans une table a part : il n'est lu QUE
+// sur une recherche de chef, jamais avec le reste des donnees.
+let _carnet: any[] | null = null;
+async function carnetContacts(): Promise<any[]> {
+  if (_carnet) return _carnet;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/app_extra?id=eq.contacts&select=data`, {
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+    });
+    if (!r.ok) { _carnet = []; return _carnet; }
+    const rows = await r.json();
+    _carnet = (rows && rows[0] && rows[0].data) || [];
+  } catch (_e) { _carnet = []; }
+  return _carnet;
+}
+
 function chercherContact(data: any, nom: string, clientNom?: string): any[] {
   const n = normTxt(nom);
   if (!n) return [];
@@ -478,7 +494,7 @@ function chercherContact(data: any, nom: string, clientNom?: string): any[] {
 }
 function rendreContacts(res: any[], nom: string): string {
   if (!res.length) return "Aucun contact ne ressemble a \"" + nom + "\" dans les fiches clients.";
-  const L = ["Contacts trouves pour \"" + nom + "\" (a FAIRE CONFIRMER par l'admin, ne choisis pas seul) :"];
+  const L = ["Contacts trouves pour \"" + nom + "\" (a FAIRE CONFIRMER par l'admin, ne choisis pas seul).", "Source « carnet » = repertoire telephonique importe ; les autres viennent des fiches clients :"];
   for (const r of res) {
     L.push("- " + r.nom + (r.tel ? " " + r.tel : " (aucun numero enregistre)") + " | client " + r.client
       + (r.score >= 100 ? " | nom identique" : r.score >= 85 ? " | nom tres proche" : " | orthographe differente"));
@@ -1685,7 +1701,22 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       }
       if (tu.name === "chercher_contact") {
         const nom = String(a.nom || "");
-        results.push({ type: "tool_result", tool_use_id: tu.id, content: rendreContacts(chercherContact(data, nom, a.client), nom) });
+        const res = chercherContact(data, nom, a.client);
+        // Complete avec le carnet importe du PDF (704 fiches), sans doublonner.
+        const vus = new Set(res.map((x: any) => normTxt(x.nom)));
+        const n0 = normTxt(nom);
+        for (const c of await carnetContacts()) {
+          const cn = normTxt(c.n);
+          if (!cn || vus.has(cn)) continue;
+          let sc = 0;
+          if (cn === n0) sc = 100;
+          else if (cn.split(" ").indexOf(n0) >= 0) sc = 88;
+          else if (n0.length >= 4 && cn.indexOf(n0) >= 0) sc = 76;
+          else if (Math.min(cn.length, n0.length) >= 5 && levenshtein(cn, n0) <= 2) sc = 66;
+          if (sc) res.push({ score: sc, nom: c.n, tel: (c.t || []).join(" / "), client: "carnet" });
+        }
+        res.sort((x: any, y: any) => y.score - x.score);
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: rendreContacts(res.slice(0, 8), nom) });
         continue;
       }
       if (tu.name === "lire_planning_pere") {
