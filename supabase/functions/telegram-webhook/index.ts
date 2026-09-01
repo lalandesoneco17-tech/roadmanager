@@ -571,6 +571,12 @@ const AGENT_SYSTEM = [
   "   Pour TOUTE question sur le planning d'un jour (« qui travaille demain », « ou est la 210 »,",
   "   « qu'est-ce qu'il reste a faire »), appelle comparer_planning : il te donne les deux.",
   "   DIS TOUJOURS de quelle source vient ce que tu annonces : « chez le pere » / « dans RoadManager ».",
+  "   Si l'admin dit « chez papa », « chez le pere », « sur le Sheet », « au planning » ->",
+  "   c'est le GOOGLE SHEETS qu'il veut, pas RoadManager.",
+  "   Pour un COMPTAGE sur une periode (« combien de chantiers en septembre »), utilise",
+  "   bilan_planning_pere. Ne boucle jamais jour par jour.",
+  "   RoadManager n'est presque plus alimente depuis juillet : si un comptage y donne zero,",
+  "   dis-le et propose de compter chez le pere plutot que de conclure qu'il n'y a rien.",
   "   Si les deux sources divergent, dis-le au lieu de choisir.",
   "5. Pour modifier ou supprimer, prends le job_id dans la section CHANTIERS (RoadManager).",
   "6. Les outils d'ecriture n'ecrivent RIEN : ils preparent une proposition que l'admin valide par un bouton.",
@@ -622,6 +628,19 @@ const AGENT_TOOLS = [
       type: "object",
       properties: { date: { type: "string", description: "Date ISO AAAA-MM-JJ" } },
       required: ["date"],
+    },
+  },
+  {
+    name: "bilan_planning_pere",
+    description: "Compte les chantiers du planning du PERE sur une periode (semaine, mois...), par chauffeur. A utiliser pour toute question de comptage ou de bilan (« combien X a fait de chantiers en septembre »). Ne pas boucler sur comparer_planning jour par jour.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date_debut: { type: "string", description: "Date ISO AAAA-MM-JJ" },
+        date_fin: { type: "string", description: "Date ISO AAAA-MM-JJ" },
+        chauffeur: { type: "string", description: "Optionnel : limiter a un chauffeur, avec le detail de ses chantiers" },
+      },
+      required: ["date_debut", "date_fin"],
     },
   },
   {
@@ -1175,6 +1194,56 @@ function resolveMachineSheet(data: any, categorie: string, lettre: string, emp: 
   return { error: 'Plusieurs ' + type.toLowerCase() + 's correspondent a "' + lettre + '" : ' + top.map((m: any) => m.name).join(", ") + ". Demande a l'admin laquelle." };
 }
 
+// Bilan du planning du pere sur une periode (une semaine, un mois...).
+// Le detail par jour existe deja ; ici on compte, pour repondre a
+// « combien Charles a fait de chantiers en septembre ».
+async function gsBilan(data: any, d1: string, d2: string, chauffeur?: string): Promise<string> {
+  const books = gsBooks(data);
+  if (!books.length) return "Aucun classeur Google Sheets enregistre.";
+  const cible = chauffeur ? normTxt(chauffeur) : "";
+  const semaines: any = {};
+  const parChauffeur: any = {};
+  const lignes: string[] = [];
+  let jours = 0, absents = 0;
+  const start = new Date(d1 + "T12:00:00Z"), end = new Date(d2 + "T12:00:00Z");
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return "Periode invalide.";
+  for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
+    const iso = new Date(t).toISOString().slice(0, 10);
+    const w = gsIsoWeek(iso);
+    if (!(w in semaines)) {
+      semaines[w] = null;
+      for (const b of books) {
+        for (const nm of ["SEMAINE " + w, " SEMAINE " + w]) {
+          const csv = await gsFetchSheet(b.id, nm);
+          if (!csv) continue;
+          const rows = gsParseCsv(csv);
+          if (gsFindDay(rows, iso) >= 0) { semaines[w] = rows; break; }
+        }
+        if (semaines[w]) break;
+      }
+    }
+    const rows = semaines[w];
+    if (!rows) { absents++; continue; }
+    const st = gsFindDay(rows, iso);
+    if (st < 0) { absents++; continue; }
+    jours++;
+    for (const g of gsDayJobs(rows, st)) {
+      if (gsEstNonChantier(g)) continue;
+      const nom = normTxt(g.chauffeur);
+      if (!nom) continue;
+      if (cible && nom.indexOf(cible) < 0 && cible.indexOf(nom) < 0) continue;
+      parChauffeur[g.chauffeur] = (parChauffeur[g.chauffeur] || 0) + 1;
+      if (cible) lignes.push("- " + iso + " | " + (g.machine || "?") + " | " + (g.client || "-") + " | " + (g.lieu || "-") + (g.nuit ? " | NUIT" : ""));
+    }
+  }
+  const L = ["Planning du pere, du " + d1 + " au " + d2 + " (" + jours + " jour(s) lus" + (absents ? ", " + absents + " jour(s) absents du classeur" : "") + ") :"];
+  const noms = Object.keys(parChauffeur).sort((a, b) => parChauffeur[b] - parChauffeur[a]);
+  if (!noms.length) return L[0] + "\nAucun chantier trouve.";
+  for (const n of noms) L.push("- " + n + " : " + parChauffeur[n] + " chantier(s)");
+  if (lignes.length) { L.push(""); L.push("Detail :"); for (const x of lignes) L.push(x); }
+  return L.join("\n");
+}
+
 function gsRowKey(iso: string, g: any): string {
   return [iso, normTxt(g.chauffeur), normTxt(g.machine), normTxt(g.lieu)].join("|");
 }
@@ -1416,6 +1485,10 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       const a = tu.input || {};
       if (tu.name === "lire_planning") {
         results.push({ type: "tool_result", tool_use_id: tu.id, content: toolLirePlanning(data, a) });
+        continue;
+      }
+      if (tu.name === "bilan_planning_pere") {
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: await gsBilan(data, String(a.date_debut || ""), String(a.date_fin || ""), a.chauffeur) });
         continue;
       }
       if (tu.name === "comparer_planning") {
