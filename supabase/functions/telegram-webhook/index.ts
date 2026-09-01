@@ -393,11 +393,16 @@ function resolveMachine(data: any, q: string, emp?: any): any {
   const list = (data.machines || []).filter((m: any) => m && m.name);
   if (!n) return { error: "Machine non precisee." };
   const numOf = (m: any) => (String(m.name).match(/\d+/) || [])[0] || "";
+  // Le pere ecrit "100 cfi", RoadManager stocke "100cfi" : on compare sans les espaces.
+  const squash = (x: any) => normTxt(x).replace(/ /g, "");
+  const sq = squash(raw);
+  const exact = list.filter((m: any) => squash(m.name) === sq);
+  if (exact.length === 1) return { machine: exact[0] };
   // La MACHINE ATTRIBUEE au chauffeur tranche l'ambiguite : le planning du pere ecrit
   // "210", et RoadManager a 210fi (Jerome) et 210i (Jeremy). Le chauffeur suffit a choisir.
   if (emp && emp.machineId) {
     const own = list.find((m: any) => m.id === emp.machineId);
-    if (own && (normTxt(own.name) === n || (dg && (numOf(own) === dg || getMachineWidth(own) === dg)) || (!dg && n && normTxt(own.name).indexOf(n) >= 0))) {
+    if (own && (squash(own.name) === sq || normTxt(own.name) === n || (dg && (numOf(own) === dg || getMachineWidth(own) === dg)) || (!dg && n && normTxt(own.name).indexOf(n) >= 0))) {
       return { machine: own };
     }
   }
@@ -1318,7 +1323,7 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
     cache_control: { type: "ephemeral" },
   }];
 
-  for (let step = 0; step < 5; step++) {
+  for (let step = 0; step < 7; step++) {
     const r = await anthropic(key, {
       model,
       max_tokens: 8000,
@@ -1328,7 +1333,12 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       tools: AGENT_TOOLS,
       messages,
     });
-    if (!r.ok) return false;
+    if (!r.ok) {
+      let detail = "";
+      try { const e = await r.json(); detail = (e && e.error && e.error.message) ? String(e.error.message) : ""; } catch (_e) { /* ignore */ }
+      await tg("sendMessage", { chat_id: chatId, text: "⚠️ L'assistant n'a pas repondu (erreur " + r.status + (detail ? " : " + detail.slice(0, 200) : "") + "). Reessaie." });
+      return true;
+    }
     const j = await r.json();
     const content = j.content || [];
     messages.push({ role: "assistant", content });
@@ -1390,8 +1400,9 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       return true;
     }
   }
-  // Boucle epuisee : on ne garde pas un fil incomplet (et on n'ecrit rien).
-  return false;
+  // Boucle epuisee : on le dit clairement plutot que de retomber sur le menu generique.
+  await tg("sendMessage", { chat_id: chatId, text: "Je n'ai pas abouti. Reformule en precisant le jour et le chauffeur." });
+  return true;
 }
 
 
