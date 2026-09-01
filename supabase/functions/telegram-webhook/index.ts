@@ -895,12 +895,15 @@ function applyProposalTo(d: any, prop: any): string {
 
 // Valider ou annuler : une SEULE relecture+ecriture du blob (chantier + purge du
 // fil + retrait de la proposition sont faits dans la meme passe).
-async function resolveProposal(prop: any, chatId: string, accept: boolean): Promise<string> {
+async function resolveProposal(prop: any, chatId: string, accept: boolean, sent?: boolean): Promise<string> {
   let msg = "Annule.";
   await mutate((d: any) => {
     d.tgProposals = (d.tgProposals || []).filter((x: any) => x.id !== prop.id);
     if (d.tgConv) delete d.tgConv[chatId];
-    if (accept) msg = applyProposalTo(d, prop);
+    if (accept) {
+      if (sent && prop.job) { prop.job.sent = true; prop.job.ack = false; }
+      msg = applyProposalTo(d, prop);
+    }
   });
   return msg;
 }
@@ -1124,6 +1127,130 @@ async function toolComparerPlanning(data: any, iso: string): Promise<string> {
   return L.join("\n");
 }
 
+// ============================================================================
+// ===== SURVEILLANCE DU PLANNING DU PERE =====================================
+// Quand le pere coche « chauffeur au courant » dans Google Sheets, la fiche part
+// sur Telegram pour validation. Rien n'est ecrit sans l'accord de l'admin.
+// ============================================================================
+
+// Lecture partielle : 208 octets au lieu de 950 Ko. On ne relit le bloc entier
+// que s'il y a reellement une nouvelle case cochee.
+async function loadLight(fields: string[]): Promise<any> {
+  const sel = fields.map((f) => "data->" + f).join(",");
+  const r = await fetch(`${SB_URL}/rest/v1/app_data?id=eq.main&select=${encodeURIComponent(sel)}`, {
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+  });
+  const rows = await r.json();
+  return (rows && rows[0]) || {};
+}
+
+function gsRowKey(iso: string, g: any): string {
+  return [iso, normTxt(g.chauffeur), normTxt(g.machine), normTxt(g.lieu)].join("|");
+}
+
+// Envoie son chantier au chauffeur, au meme format que le bouton de l'application.
+async function envoyerAuChauffeur(tg: any, data: any, job: any): Promise<boolean> {
+  const link = (data.telegramEmpChats || {})[job.employeeId];
+  if (!link || !link.chatId) return false;
+  const drv = (data.employees || []).find((e: any) => e.id === job.employeeId);
+  const prenom = drv && drv.name ? drv.name.split(" ")[0] : "";
+  const cl = (data.clients || []).find((c: any) => c.id === job.clientId);
+  const m = (data.machines || []).find((x: any) => x.id === job.machineId);
+  const L = ["\u{1F44B} Salut " + prenom + " !", "\u{1F4CB} Ton chantier — " + fmtDateFR(job.date) + " :"];
+  L.push("• " + (job.billingStart || "") + " " + (job.location || (cl ? cl.name : "chantier"))
+    + (cl && job.location ? " (" + cl.name + ")" : "") + (m ? " [" + m.name + "]" : ""));
+  if (job.siteManager) L.push("\u{1F477} Chef : " + job.siteManager + (job.siteManagerPhone ? " (" + job.siteManagerPhone + ")" : ""));
+  const co = parseCoordsF(job.gps || job._geocodedGps);
+  if (co) L.push("\u{1F5FA} https://www.google.com/maps?q=" + co[0] + "," + co[1]);
+  L.push("", "\u{1F447} Merci de confirmer que tu as bien lu.");
+  try {
+    const r = await tg("sendMessage", {
+      chat_id: link.chatId, text: L.join("\n"), disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: "✅ J'ai bien lu", callback_data: "ack:" + job.id }]] },
+    });
+    const j = await r.json();
+    return !!(j && j.ok);
+  } catch (_e) { return false; }
+}
+
+// Coeur de la surveillance. Renvoie le nombre de fiches envoyees.
+async function gsWatch(tg: any, data: any): Promise<number> {
+  const books = gsBooks(data);
+  if (!books.length) return 0;
+  const seen = data.gsheetSeen || {};
+  const now = new Date();
+  const semaines: any = {};        // cache : une seule requete par feuille
+  const nouveaux: any[] = [];
+
+  for (let k = 0; k <= 7 && nouveaux.length < 10; k++) {
+    const iso = isoParis(new Date(now.getTime() + k * 86400000));
+    const w = gsIsoWeek(iso);
+    if (!(w in semaines)) {
+      semaines[w] = null;
+      for (const b of books) {
+        for (const nm of ["SEMAINE " + w, " SEMAINE " + w]) {
+          const csv = await gsFetchSheet(b.id, nm);
+          if (!csv) continue;
+          const rows = gsParseCsv(csv);
+          if (gsFindDay(rows, iso) >= 0) { semaines[w] = rows; break; }
+        }
+        if (semaines[w]) break;
+      }
+    }
+    const rows = semaines[w];
+    if (!rows) continue;
+    const start = gsFindDay(rows, iso);
+    if (start < 0) continue;
+    for (const g of gsDayJobs(rows, start)) {
+      if (!g.informe) continue;                 // la case « chauffeur au courant » n'est pas cochee
+      if (gsEstNonChantier(g)) continue;        // repos / absence / depot
+      const key = gsRowKey(iso, g);
+      if (seen[key]) continue;
+      nouveaux.push({ key, iso, g });
+      if (nouveaux.length >= 10) break;
+    }
+  }
+  if (!nouveaux.length) return 0;
+
+  // A partir d'ici seulement, on a besoin du bloc complet.
+  const full = await loadData();
+  const chats = adminChatList(full);
+  let envoyees = 0;
+  const pendings: any[] = [];
+  const echecs: string[] = [];
+
+  for (const n of nouveaux) {
+    const prop = buildProposal(full, {
+      date: n.iso, chauffeur: n.g.chauffeur, machine: n.g.machine.replace(/\s*\(.*\)$/, ""),
+      client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
+      nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
+    }, "create");
+    if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); continue; }
+    prop.lines[0] = "\u{1F4E5} DU PLANNING DE PAPA — a valider";
+    for (const cid of chats) {
+      const p = await sendProposalMessage(tg, cid, prop);
+      p.job = prop.job;                          // meme chantier pour tous : pas de doublon si deux admins valident
+      pendings.push(p);
+    }
+    envoyees++;
+  }
+  for (const e of echecs) {
+    for (const cid of chats) { try { await tg("sendMessage", { chat_id: cid, text: "⚠️ Ligne du planning de papa non recopiee — " + e }); } catch (_e2) { /* ignore */ } }
+  }
+
+  await mutate((d: any) => {
+    d.gsheetSeen = d.gsheetSeen || {};
+    for (const n of nouveaux) d.gsheetSeen[n.key] = Date.now();
+    // purge au-dela de 60 jours pour ne pas laisser grossir le bloc
+    for (const k of Object.keys(d.gsheetSeen)) if (Date.now() - d.gsheetSeen[k] > 60 * 86400000) delete d.gsheetSeen[k];
+    if (pendings.length) {
+      pruneProposals(d);
+      d.tgProposals = (d.tgProposals || []).concat(pendings);
+    }
+  });
+  return envoyees;
+}
+
 // ---- Boucle agent (tool use) ----------------------------------------------
 async function anthropic(key: string, body: any): Promise<any> {
   const call = (extraHeaders: any, extraBody: any) => fetch("https://api.anthropic.com/v1/messages", {
@@ -1249,8 +1376,22 @@ Deno.serve(async (req) => {
         body: JSON.stringify(body),
       });
 
+    // 0pre) Surveillance du planning du pere (source dediee, lecture legere).
+    if (update && update.source === "cron-gsheet") {
+      const light = await loadLight(["telegramBotToken", "gsheetBooks", "gsheetSeen", "telegramAdminChatId", "telegramAdminChats"]);
+      if (!light.telegramBotToken || !(light.gsheetBooks || []).length) return new Response("ok");
+      const tgL = (method: string, body: unknown) =>
+        fetch(`https://api.telegram.org/bot${light.telegramBotToken}/${method}`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+      await gsWatch(tgL, light);
+      return new Response("ok");
+    }
+
     // 0) Cron quotidien : presence des employes de station (declenche par pg_cron, vers 8h Paris)
     if (update && update.source === "cron-presence") {
+      // On profite de ce passage horaire pour surveiller aussi le planning du pere.
+      try { await gsWatch(tg, data); } catch (_e) { /* ignore */ }
       const hourParis = parseInt(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).format(new Date()), 10);
       if (hourParis !== 8) return new Response("ok"); // ne tire qu'a 8h heure de Paris
       if (data.tgNotifyPresence === false) return new Response("ok");
@@ -1435,8 +1576,18 @@ Deno.serve(async (req) => {
           await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Proposition expiree", show_alert: true });
           return new Response("ok");
         }
-        const res = await resolveProposal(prop, chatId, action === "pok");
-        const tail = (action === "pok" ? "✅ " : "❌ ") + res;
+        // On previent le chauffeur AVANT d'ecrire : on sait ainsi si sent=true est exact.
+        let prevenu = false;
+        if (action === "pok" && prop.kind !== "delete" && prop.job && prop.job.employeeId) {
+          prevenu = await envoyerAuChauffeur(tg, data, prop.job);
+        }
+        const res = await resolveProposal(prop, chatId, action === "pok", prevenu);
+        let tail = (action === "pok" ? "✅ " : "❌ ") + res;
+        if (action === "pok" && prop.kind !== "delete") {
+          const drv = (data.employees || []).find((e: any) => e.id === (prop.job || {}).employeeId);
+          const nm = drv && drv.name ? drv.name.split(" ")[0] : "le chauffeur";
+          tail += prevenu ? " " + nm + " a recu son chantier." : " (" + nm + " n'a pas de Telegram lie : previens-le autrement.)";
+        }
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: tail });
         if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: (prop.text || "").replace(/\n\nC'est bien ca \?$/, "") + "\n\n" + tail, disable_web_page_preview: true }); } catch (_e) { /* ignore */ } }
         return new Response("ok");
