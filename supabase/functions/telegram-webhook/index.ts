@@ -1144,6 +1144,32 @@ async function loadLight(fields: string[]): Promise<any> {
   return (rows && rows[0]) || {};
 }
 
+// Le planning du pere donne une CATEGORIE (balayeuse/citerne) et une MARQUE (R, VB, MA...).
+// Les noms de machines de RoadManager sont saisis a la main ("reanult 2", "volova ba"),
+// donc on cherche par type puis par marque, en tolerant les fautes de frappe.
+const GS_MOTS: any = { R: ["renault"], V: ["volvo"], M: ["mercedes"], MA: ["man"], VB: ["volvo", "ba"], RB: ["renault", "ba"], S: ["semi"] };
+function resolveMachineSheet(data: any, categorie: string, lettre: string, emp: any): any {
+  const type = categorie === "citerne" ? "Citerne" : "Balayeuse";
+  const cands = (data.machines || []).filter((m: any) => m && m.name && m.type === type);
+  if (!cands.length) return { error: "Aucune machine de type " + type + " dans RoadManager." };
+  const mots = GS_MOTS[String(lettre || "").toUpperCase()] || [normTxt(lettre)];
+  const score = (m: any) => {
+    const toks = normTxt(m.name).split(" ").filter(Boolean);
+    let n = 0;
+    // Tolerance aux fautes seulement sur des mots assez longs : sinon "2" ressemble a "ba".
+    for (const w of mots) if (toks.some((t: string) => t === w || (t.length >= 4 && w.length >= 4 && levenshtein(t, w) <= 2))) n++;
+    return n;
+  };
+  let best = 0; for (const m of cands) best = Math.max(best, score(m));
+  if (!best) return { error: 'Aucune ' + type.toLowerCase() + ' ne correspond a "' + lettre + '".' };
+  const top = cands.filter((m: any) => score(m) === best);
+  if (top.length === 1) return { machine: top[0] };
+  // Plusieurs machines de la meme marque : celle attribuee au chauffeur tranche.
+  const own = emp && emp.machineId ? top.find((m: any) => m.id === emp.machineId) : null;
+  if (own) return { machine: own };
+  return { error: 'Plusieurs ' + type.toLowerCase() + 's correspondent a "' + lettre + '" : ' + top.map((m: any) => m.name).join(", ") + ". Demande a l'admin laquelle." };
+}
+
 function gsRowKey(iso: string, g: any): string {
   return [iso, normTxt(g.chauffeur), normTxt(g.machine), normTxt(g.lieu)].join("|");
 }
@@ -1182,7 +1208,7 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   const semaines: any = {};        // cache : une seule requete par feuille
   const nouveaux: any[] = [];
 
-  for (let k = 0; k <= 7 && nouveaux.length < 10; k++) {
+  for (let k = 0; k <= 7 && nouveaux.length < 25; k++) {
     const iso = isoParis(new Date(now.getTime() + k * 86400000));
     const w = gsIsoWeek(iso);
     if (!(w in semaines)) {
@@ -1207,7 +1233,7 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       const key = gsRowKey(iso, g);
       if (seen[key]) continue;
       nouveaux.push({ key, iso, g });
-      if (nouveaux.length >= 10) break;
+      if (nouveaux.length >= 25) break;
     }
   }
   if (!nouveaux.length) return 0;
@@ -1220,8 +1246,16 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   const echecs: string[] = [];
 
   for (const n of nouveaux) {
+    let machArg = n.g.machine.replace(/\s*\(.*\)$/, "");
+    if (n.g.categorie !== "raboteuse") {
+      const lettre = (String(n.g.machine).match(/\(([^)]+)\)\s*$/) || [])[1] || "";
+      const e0 = resolveEmployee(full, n.g.chauffeur).emp;
+      const rm = resolveMachineSheet(full, n.g.categorie, lettre, e0);
+      if (rm.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + rm.error); continue; }
+      machArg = rm.machine.name;
+    }
     const prop = buildProposal(full, {
-      date: n.iso, chauffeur: n.g.chauffeur, machine: n.g.machine.replace(/\s*\(.*\)$/, ""),
+      date: n.iso, chauffeur: n.g.chauffeur, machine: machArg,
       client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
       nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
     }, "create");
