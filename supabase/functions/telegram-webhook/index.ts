@@ -681,7 +681,7 @@ const AGENT_TOOLS = [
         forfait: { type: "string", description: "2h, 4h, 6h, 8h, 10h, Demi-journee ou Journee" },
         chef: { type: "string", description: "Nom du chef de chantier" },
         telephone_chef: { type: "string", description: "Telephone du chef de chantier" },
-        gps: { type: "string", description: "Coordonnees 'lat,lon'" },
+        gps: { type: "string", description: "Coordonnees 'lat,lon' OU lien Google Maps colle par l'admin (a recopier tel quel)" },
         transfert: { type: "boolean", description: "true si un transfert est facture en plus" },
       },
       required: ["date", "chauffeur", "machine"],
@@ -1756,6 +1756,24 @@ Deno.serve(async (req) => {
         await tg("sendMessage", { chat_id: chatId, text: "\u{1F477} Contact recu (" + (nom || "?") + "). C'est le chef de quel chantier ? (chauffeur + jour)" });
         return new Response("ok");
       }
+      // Lien Google Maps partage depuis l'application Maps : c'est un point GPS,
+      // exactement comme une position Telegram epinglee.
+      const lienGps = String(msg.text || "").match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+)\/?\S*/i);
+      if (lienGps && !gsExtractId(msg.text || "")) {
+        const url = lienGps[0];
+        const reste = String(msg.text).replace(url, " ").replace(/\s+/g, " ").trim();
+        if (reste.length < 4) {
+          // Message contenant seulement le lien : on le met de cote et on demande pour qui.
+          const coords = await coordsDepuisLien(data, url);
+          await mutate((d: any) => { d.tgPendingItem = d.tgPendingItem || {}; d.tgPendingItem[chatId] = { type: "gps", gps: url, coords, ts: Date.now() }; });
+          await tg("sendMessage", {
+            chat_id: chatId,
+            text: "\u{1F4CD} Point recu" + (coords ? "" : " (coordonnees non lisibles, le lien restera cliquable)") + ".\nC'est pour quel chantier ? (chauffeur + jour)",
+            disable_web_page_preview: true,
+          });
+          return new Response("ok");
+        }
+      }
       const gsId = gsExtractId(msg.text || "");
       if (gsId) {
         const csv = await gsFetchSheet(gsId, "");
@@ -1803,7 +1821,7 @@ Deno.serve(async (req) => {
           let ask = msg.text;
           const pend = (data.tgPendingItem || {})[chatId];
           if (pend && Date.now() - (pend.ts || 0) < 30 * 60 * 1000) {
-            if (pend.type === "gps") ask += "\n[Point GPS recu a l'instant, a poser sur le chantier concerne : " + pend.gps + "]";
+            if (pend.type === "gps") ask += "\n[Point GPS recu a l'instant, a poser tel quel dans le champ gps du chantier concerne : " + pend.gps + "]";
             if (pend.type === "contact") ask += "\n[Fiche contact recue a l'instant, c'est le chef de chantier : " + pend.nom + " " + pend.tel + "]";
             await mutate((d: any) => { if (d.tgPendingItem) delete d.tgPendingItem[chatId]; });
           }
