@@ -509,7 +509,10 @@ function jobRecap(data: any, j: any, extra: any): string[] {
   const cliName = (extra && extra.newClientName) || (cli ? cli.name : "");
   const L: string[] = [];
   L.push(fmtDateFR(j.date) + (j.isNight ? "  \u{1F319} NUIT" : ""));
-  L.push("\u{1F464} " + (emp ? emp.name : "?") + "   \u{1F69C} " + (mac ? mac.name : "?"));
+  // Le type de machine change tout pour le chauffeur : raboteuse, balayeuse ou citerne.
+  const ICONE: any = { Raboteuse: "\u{1F69C}", Balayeuse: "\u{1F9F9}", Citerne: "\u{1F4A7}" };
+  const typ = mac && mac.type ? mac.type : "";
+  L.push("\u{1F464} " + (emp ? emp.name : "?") + "   " + (ICONE[typ] || "\u{1F69C}") + " " + (mac ? mac.name : "?") + (typ ? " (" + typ.toLowerCase() + ")" : ""));
   const lieuLine = [j.location || "", cliName ? "(" + cliName + (extra && extra.newClientName ? " — NOUVEAU CLIENT" : "") + ")" : ""].filter(Boolean).join(" ");
   if (lieuLine) L.push("\u{1F4CD} " + lieuLine);
   const money: string[] = [];
