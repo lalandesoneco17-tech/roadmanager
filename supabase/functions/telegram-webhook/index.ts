@@ -1424,8 +1424,6 @@ Deno.serve(async (req) => {
 
     // 0) Cron quotidien : presence des employes de station (declenche par pg_cron, vers 8h Paris)
     if (update && update.source === "cron-presence") {
-      // On profite de ce passage horaire pour surveiller aussi le planning du pere.
-      try { await gsWatch(tg, data); } catch (_e) { /* ignore */ }
       const hourParis = parseInt(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).format(new Date()), 10);
       if (hourParis !== 8) return new Response("ok"); // ne tire qu'a 8h heure de Paris
       if (data.tgNotifyPresence === false) return new Response("ok");
