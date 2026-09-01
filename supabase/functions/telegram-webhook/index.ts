@@ -528,7 +528,7 @@ function jobRecap(data: any, j: any, extra: any): string[] {
 }
 
 // ---- Contexte transmis a l'agent ------------------------------------------
-function agentContext(data: any): string {
+function agentContext(data: any, chatId?: string): string {
   const now = new Date();
   const cal: string[] = [];
   for (let k = -1; k <= 14; k++) {
@@ -548,9 +548,27 @@ function agentContext(data: any): string {
     "MACHINES : " + (macs.join(", ") || "(aucune)"),
     "CLIENTS : " + (clis.join(", ") || "(aucun)"),
     "",
+    ficheEnAttente(data, chatId),
     "FORFAITS possibles : 2h, 4h, 6h, 8h, 10h (raboteuse/balayeuse) — Demi-journee, Journee (citerne).",
     "Majoration de nuit : +" + (data.nightPct || 30) + "%.",
   ].join("\n");
+}
+
+// Fiches deja envoyees mais pas encore validees : l'admin veut souvent les completer
+// (ajouter le chef de chantier, un point GPS) AVANT de valider.
+function ficheEnAttente(data: any, chatId?: string): string {
+  const ps = (data.tgProposals || []).filter((p: any) => !chatId || String(p.chatId) === String(chatId));
+  if (!ps.length) return "";
+  const L = ["", "FICHES ENVOYEES, EN ATTENTE DE VALIDATION (completables avec completer_fiche) :"];
+  for (const p of ps) {
+    const j = p.job || {};
+    const e = (data.employees || []).find((x: any) => x.id === j.employeeId);
+    const m = (data.machines || []).find((x: any) => x.id === j.machineId);
+    const c = (data.clients || []).find((x: any) => x.id === j.clientId);
+    const d = [j.date || "?", e ? e.name : "?", m ? m.name : "?", c ? c.name : (p.newClientName || ""), j.location || "", j.billingStart || ""].filter(Boolean);
+    L.push("- fiche_id=" + p.id + " | " + d.join(" | ") + (j.siteManager ? " | chef " + j.siteManager : " | SANS CHEF") + ((j.gps || j._geocodedGps) ? " | avec point GPS" : " | SANS POINT GPS"));
+  }
+  return L.join("\n");
 }
 
 const AGENT_SYSTEM = [
@@ -594,6 +612,9 @@ const AGENT_SYSTEM = [
   "   Exemple : « Le planning dit eurovia ang, pas Ferroviaire. Je prends lequel ? »",
   "   Si le planning du pere contient une incoherence (case NUIT cochee sur un chantier de jour),",
   "   demande-lui de trancher, n'invente pas.",
+  "8bis. CONTACT ou POINT GPS recu : si le chantier vise figure dans FICHES ENVOYEES,",
+  "   utilise completer_fiche avec son fiche_id. N'utilise modifier_chantier que pour un",
+  "   chantier deja ecrit dans RoadManager (section CHANTIERS, avec un job_id).",
   "9. CHEF DE CHANTIER : si un nom de chef est donne sans numero, appelle chercher_contact.",
   "   Un seul resultat au nom identique -> mets-le dans la fiche et precise d'ou il vient.",
   "   Plusieurs resultats, ou une orthographe differente -> DEMANDE confirmation avant :",
@@ -688,6 +709,21 @@ const AGENT_TOOLS = [
     },
   },
   {
+    name: "completer_fiche",
+    description: "Complete une fiche DEJA ENVOYEE et pas encore validee (ajouter le chef de chantier, son telephone, un point GPS, une heure...). A utiliser des que l'admin rattache un contact ou un point GPS a un chantier qui figure dans FICHES ENVOYEES. Renvoie la fiche corrigee, qui remplace la precedente.",
+    input_schema: {
+      type: "object",
+      properties: {
+        fiche_id: { type: "string", description: "Identifiant de la fiche, pris dans FICHES ENVOYEES" },
+        chef: { type: "string" }, telephone_chef: { type: "string" },
+        gps: { type: "string", description: "Coordonnees 'lat,lon' OU lien Google Maps, a recopier tel quel" },
+        heure: { type: "string" }, lieu: { type: "string" }, client: { type: "string" },
+        forfait: { type: "string" }, nuit: { type: "boolean" },
+      },
+      required: ["fiche_id"],
+    },
+  },
+  {
     name: "modifier_chantier",
     description: "Prepare la modification d'un chantier existant (y compris pour poser un point GPS ou le contact du chef). N'ECRIT RIEN : renvoie une proposition a valider. Ne renseigne que les champs a changer.",
     input_schema: {
@@ -750,11 +786,12 @@ function toolLirePlanning(data: any, a: any): string {
 }
 
 // Construit le chantier propose (creation ou modification) a partir des champs dictes.
-function buildProposal(data: any, a: any, kind: string): any {
+function buildProposal(data: any, a: any, kind: string, baseJob?: any): any {
   const warn: string[] = [];
   let base: any = null;
   if (kind === "update" || kind === "delete") {
-    base = (data.jobs || []).find((x: any) => x.id === a.job_id);
+    // baseJob : fiche en attente de validation, pas encore ecrite dans RoadManager.
+    base = baseJob || (data.jobs || []).find((x: any) => x.id === a.job_id);
     if (!base) return { error: "Chantier introuvable (job_id " + a.job_id + "). Relis le planning pour recuperer le bon identifiant." };
   }
   if (kind === "delete") {
@@ -862,7 +899,8 @@ async function commitTurn(chatId: string, pendings: any[], convMessages: any[] |
       const keys = new Set(pendings.map(propKey));
       // replaceId : l'admin a appuye sur "Corriger" sur CETTE fiche -> c'est elle qu'on remplace,
       // meme s'il a change le lieu ou la machine (la cle ne correspondrait plus).
-      olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId) && (keys.has(propKey(x)) || (replaceId && x.id === replaceId)));
+      const remplaces = new Set(pendings.map((p: any) => p.remplace).filter(Boolean));
+      olds = d.tgProposals.filter((x: any) => String(x.chatId) === String(chatId) && (keys.has(propKey(x)) || (replaceId && x.id === replaceId) || remplaces.has(x.id)));
       const oldIds = new Set(olds.map((o: any) => o.id));
       d.tgProposals = d.tgProposals.filter((x: any) => !oldIds.has(x.id));
       for (const p of pendings) d.tgProposals.push(p);
@@ -1547,7 +1585,7 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
   // Le gros du prompt est stable pendant la boucle -> mis en cache, ca accelere les tours suivants.
   const system = [{
     type: "text",
-    text: AGENT_SYSTEM + "\n\n=== DONNEES ===\n" + agentContext(data) + "\n\n" + buildAIContext(data),
+    text: AGENT_SYSTEM + "\n\n=== DONNEES ===\n" + agentContext(data, chatId) + "\n\n" + buildAIContext(data),
     cache_control: { type: "ephemeral" },
   }];
 
@@ -1612,13 +1650,21 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
         results.push({ type: "tool_result", tool_use_id: tu.id, content: gsRender(iso, res) });
         continue;
       }
-      const kind = tu.name === "creer_chantier" ? "create" : tu.name === "modifier_chantier" ? "update" : tu.name === "supprimer_chantier" ? "delete" : "";
+      const kind = tu.name === "creer_chantier" ? "create" : (tu.name === "modifier_chantier" || tu.name === "completer_fiche") ? "update" : tu.name === "supprimer_chantier" ? "delete" : "";
       if (!kind) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Outil inconnu.", is_error: true }); continue; }
-      const prop = buildProposal(data, a, kind);
+      // completer_fiche : on repart de la fiche en attente, pas d'un chantier de RoadManager.
+      let base0: any = null, remplace = "";
+      if (tu.name === "completer_fiche") {
+        const p0 = (data.tgProposals || []).find((x: any) => x.id === a.fiche_id && String(x.chatId) === String(chatId));
+        if (!p0 || !p0.job) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Fiche introuvable ou expiree. Verifie fiche_id dans FICHES ENVOYEES.", is_error: true }); continue; }
+        base0 = p0.job; remplace = p0.id;
+      }
+      const prop = buildProposal(data, a, kind, base0);
       if (prop.error) { results.push({ type: "tool_result", tool_use_id: tu.id, content: prop.error, is_error: true }); continue; }
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
       if (kind === "create" || kind === "update") await completerGps(data, prop);
       const pend = await sendProposalMessage(tg, chatId, prop);
+      if (remplace) pend.remplace = remplace;
       pendings.push(pend);
       results.push({ type: "tool_result", tool_use_id: tu.id, content: "Fiche envoyee a l'admin, en attente de sa validation :\n" + pend.text });
     }
