@@ -1038,8 +1038,20 @@ function gsHeure(lieu: string): string {
   if (!m) return "";
   return String(Math.min(23, parseInt(m[1], 10))).padStart(2, "0") + ":" + (m[2] || "00");
 }
-function gsDayJobs(rows: any, start: number): any[] {
+function gsDayJobs(rows: any, start: number, data?: any): any[] {
   const out: any[] = [];
+  // Bloc droite : on affecte les 14 codes du jour aux machines de RoadManager en une passe.
+  let resolues: any[] = [];
+  if (data) {
+    const codes: string[] = [];
+    for (let s = 0; s < GS_SLOTS; s++) {
+      const k = start + 2 + s * 2;
+      codes.push(gsCell(rows, k, GS_RIGHT.mach) || gsCell(rows, k + 1, GS_RIGHT.mach));
+    }
+    const bal = assignerMachines(data, codes.slice(0, GS_CITERNE_FROM), "Balayeuse");
+    const cit = assignerMachines(data, codes.slice(GS_CITERNE_FROM), "Citerne");
+    resolues = bal.concat(cit);
+  }
   for (const b of [{ cols: GS_LEFT, type: "raboteuse" }, { cols: GS_RIGHT, type: "" }]) {
     const C: any = b.cols;
     for (let s = 0; s < GS_SLOTS; s++) {
@@ -1050,16 +1062,19 @@ function gsDayJobs(rows: any, start: number): any[] {
       const nuit = gsTrue(gsCell(rows, k + 1, C.chk));
       const paye = gsTrue(gsCell(rows, k, C.paye)) || gsTrue(gsCell(rows, k + 1, C.paye));
       const bon = gsTrue(gsCell(rows, k, C.bon)) || gsTrue(gsCell(rows, k + 1, C.bon));
-      let categorie = b.type, machine = machRaw;
+      let categorie = b.type, machine = machRaw, machineRM = machRaw;
       if (!categorie) {
         categorie = s >= GS_CITERNE_FROM ? "citerne" : "balayeuse";
+        // Affichage et cle inchanges (sinon toutes les lignes deja vues repartiraient),
+        // mais on transporte le vrai nom RoadManager a cote.
         machine = (GS_MARQUES[machRaw.toUpperCase()] || machRaw) + (machRaw ? " (" + machRaw + ")" : "");
+        machineRM = (resolues[s] && resolues[s].name) || "";
       }
       for (const rr of [k, k + 1]) {
         const cli = gsCell(rows, rr, C.cli), lieu = gsCell(rows, rr, C.lieu), ff = gsCell(rows, rr, C.ff);
         if (!cli && !lieu && !ff) continue;
         out.push({
-          categorie, machine, chauffeur: nom, client: cli, chef: gsCell(rows, rr, C.chef),
+          categorie, machine, machineRM, chauffeur: nom, client: cli, chef: gsCell(rows, rr, C.chef),
           lieu, heure: gsHeure(lieu), forfait: ff ? ff + "h" : "",
           nuit, informe, paye, bonEnvoye: bon, ligne: rr + 1,
         });
@@ -1090,7 +1105,7 @@ async function gsLookupDay(data: any, iso: string): Promise<any> {
       const rows = gsParseCsv(csv);
       const start = gsFindDay(rows, iso);
       if (start < 0) continue;   // mauvaise feuille renvoyee par Google : on ignore
-      return { jobs: gsDayJobs(rows, start), semaine: w, book: b };
+      return { jobs: gsDayJobs(rows, start, data), semaine: w, book: b };
     }
   }
   return { error: "Le " + gsDayLabel(iso) + " (semaine " + w + ") n'a pas ete trouve dans les classeurs enregistres." };
@@ -1214,6 +1229,34 @@ async function loadLight(fields: string[]): Promise<any> {
 // Le planning du pere donne une CATEGORIE (balayeuse/citerne) et une MARQUE (R, VB, MA...).
 // Les noms de machines de RoadManager sont saisis a la main ("reanult 2", "volova ba"),
 // donc on cherche par type puis par marque, en tolerant les fautes de frappe.
+// Les codes du classeur sont les INITIALES des noms de machines de RoadManager :
+// "R"=renault, "R 2"=renault 2, "RB"=renault ba, "MA"=man, "M"=mercedes...
+// On genere les abreviations possibles de chaque machine, puis on affecte les codes du
+// jour en commencant par les plus precis : "MA" prend man, donc "M" revient a mercedes.
+function codesMachine(nom: string): string[] {
+  const n = normTxt(nom);
+  const t = n.split(" ").filter(Boolean);
+  if (!t.length) return [];
+  const out = new Set<string>();
+  out.add(n.replace(/ /g, ""));
+  out.add(t.map((x: string) => x[0]).join(""));
+  for (let k = 1; k <= 3 && k <= t[0].length; k++) out.add(t[0].slice(0, k) + t.slice(1).map((x: string) => x[0]).join(""));
+  out.add(t[0]);
+  return [...out];
+}
+function assignerMachines(data: any, codes: string[], type: string): any[] {
+  const dispo = (data.machines || []).filter((m: any) => m && m.name && m.type === type)
+    .map((m: any) => ({ m, cs: new Set(codesMachine(m.name)) }));
+  const pris = new Set<string>();
+  const res: any[] = codes.map(() => null);
+  const ordre = codes.map((c, i) => ({ c: normTxt(c).replace(/ /g, ""), i })).filter((x) => x.c)
+    .sort((a, b) => b.c.length - a.c.length);
+  for (const o of ordre) {
+    const hit = dispo.find((x: any) => !pris.has(x.m.id) && x.cs.has(o.c));
+    if (hit) { pris.add(hit.m.id); res[o.i] = hit.m; }
+  }
+  return res;
+}
 const GS_MOTS: any = { R: ["renault"], V: ["volvo"], M: ["mercedes"], MA: ["man"], VB: ["volvo", "ba"], RB: ["renault", "ba"], S: ["semi"] };
 function resolveMachineSheet(data: any, categorie: string, lettre: string, emp: any): any {
   const type = categorie === "citerne" ? "Citerne" : "Balayeuse";
@@ -1445,7 +1488,7 @@ async function gsWatch(tg: any, data: any): Promise<number> {
     if (!rows) continue;
     const start = gsFindDay(rows, iso);
     if (start < 0) continue;
-    for (const g of gsDayJobs(rows, start)) {
+    for (const g of gsDayJobs(rows, start, data)) {
       if (gsEstNonChantier(g)) continue;        // repos / absence / depot
       const key = gsRowKey(iso, g);
       if (!g.informe) {
@@ -1473,11 +1516,12 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   for (const n of nouveaux) {
     let machArg = n.g.machine.replace(/\s*\(.*\)$/, "");
     if (n.g.categorie !== "raboteuse") {
-      const lettre = (String(n.g.machine).match(/\(([^)]+)\)\s*$/) || [])[1] || "";
-      const e0 = resolveEmployee(full, n.g.chauffeur).emp;
-      const rm = resolveMachineSheet(full, n.g.categorie, lettre, e0);
-      if (rm.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + rm.error); continue; }
-      machArg = rm.machine.name;
+      if (!n.g.machineRM) {
+        const code = (String(n.g.machine).match(/\(([^)]+)\)\s*$/) || [])[1] || n.g.machine;
+        echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : aucune " + n.g.categorie + " de RoadManager ne correspond au code « " + code + " ».");
+        continue;
+      }
+      machArg = n.g.machineRM;
     }
     const prop = buildProposal(full, {
       date: n.iso, chauffeur: n.g.chauffeur, machine: machArg,
@@ -1704,7 +1748,9 @@ Deno.serve(async (req) => {
 
     // 0pre) Surveillance du planning du pere (source dediee, lecture legere).
     if (update && update.source === "cron-gsheet") {
-      const light = await loadLight(["telegramBotToken", "gsheetBooks", "gsheetSeen", "telegramAdminChatId", "telegramAdminChats"]);
+      // "machines" est necessaire pour resoudre les codes du classeur (R, RB, MA...).
+      // ~4 Ko : la verification periodique reste tres legere.
+      const light = await loadLight(["telegramBotToken", "gsheetBooks", "gsheetSeen", "telegramAdminChatId", "telegramAdminChats", "machines"]);
       if (!light.telegramBotToken || !(light.gsheetBooks || []).length) return new Response("ok");
       const tgL = (method: string, body: unknown) =>
         fetch(`https://api.telegram.org/bot${light.telegramBotToken}/${method}`, {
