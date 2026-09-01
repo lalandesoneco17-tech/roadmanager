@@ -1326,6 +1326,36 @@ function trimConv(msgs: any[]): any[] {
   return out;
 }
 
+// /diag : teste les parametres de la requete un par un pour localiser une erreur 400.
+async function diagnostic(data: any): Promise<string> {
+  const key = data.anthropicApiKey;
+  if (!key) return "Aucune cle API enregistree dans les Reglages.";
+  const model = data.aiAgentModel || "claude-opus-5";
+  const base: any = { model, max_tokens: 64, messages: [{ role: "user", content: "dis OK" }] };
+  const essais: any[] = [
+    ["1. appel minimal", {}],
+    ["2. + thinking adaptive", { thinking: { type: "adaptive" } }],
+    ["3. + effort low", { output_config: { effort: "low" } }],
+    ["4. + systeme en cache", { system: [{ type: "text", text: "Tu es un assistant. ".repeat(60), cache_control: { type: "ephemeral" } }] }],
+    ["5. + un outil", { tools: [{ name: "t", description: "test", input_schema: { type: "object", properties: {}, } }] }],
+    ["6. + fallbacks", { __beta: "server-side-fallback-2026-07-01", fallbacks: "default" }],
+  ];
+  const L: string[] = ["Diagnostic API — modele " + model];
+  for (const [nom, extra] of essais) {
+    const hdr: any = { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" };
+    const body: any = Object.assign({}, base, extra);
+    if (body.__beta) { hdr["anthropic-beta"] = body.__beta; delete body.__beta; }
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: hdr, body: JSON.stringify(body) });
+      if (r.ok) { L.push(nom + " : OK"); continue; }
+      let d = "";
+      try { const j = await r.json(); d = (j && j.error && j.error.message) ? String(j.error.message) : ""; } catch (_e) { /* ignore */ }
+      L.push(nom + " : ECHEC " + r.status + (d ? " — " + d.slice(0, 160) : ""));
+    } catch (e) { L.push(nom + " : ECHEC reseau"); }
+  }
+  return L.join("\n");
+}
+
 async function runAgent(tg: any, data: any, chatId: string, userText: string, fixingId?: string): Promise<boolean> {
   const key = data.anthropicApiKey;
   if (!key) return false;
@@ -1579,6 +1609,11 @@ Deno.serve(async (req) => {
     if (msg && typeof msg.text === "string") {
       const chatId = String(msg.chat.id);
       if (adminChatList(data).includes(chatId)) {
+        if (/^\/?diag\b/i.test(msg.text.trim())) {
+          await tg("sendChatAction", { chat_id: chatId, action: "typing" });
+          await tg("sendMessage", { chat_id: chatId, text: await diagnostic(data) });
+          return new Response("ok");
+        }
         const reply = handleAdminQuery(data, msg.text);
         if (reply) { await tg("sendMessage", { chat_id: chatId, text: reply, disable_web_page_preview: true }); return new Response("ok"); }
         // Question ou ordre libre -> AGENT Claude (lecture + proposition d'ecriture)
