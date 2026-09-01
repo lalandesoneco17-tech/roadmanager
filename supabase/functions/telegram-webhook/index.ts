@@ -956,8 +956,9 @@ function propKey(p: any): string {
   const j = p.job || {};
   return [j.date || "", j.employeeId || "", j.machineId || "", normTxt(j.location || "")].join("|");
 }
+let _cout: any = null;                    // consommation du tour en cours, enregistree avec le reste
 async function commitTurn(chatId: string, pendings: any[], convMessages: any[] | null, replaceId?: string): Promise<any[]> {
-  if ((!pendings || !pendings.length) && !convMessages) return [];
+  if ((!pendings || !pendings.length) && !convMessages && !_cout) return [];
   let olds: any[] = [];
   await mutate((d: any) => {
     if (pendings && pendings.length) {
@@ -972,6 +973,7 @@ async function commitTurn(chatId: string, pendings: any[], convMessages: any[] |
       d.tgProposals = d.tgProposals.filter((x: any) => !oldIds.has(x.id));
       for (const p of pendings) d.tgProposals.push(p);
     }
+    if (_cout) { d.tgDernierCout = _cout; _cout = null; }
     if (convMessages) {
       d.tgConv = d.tgConv || {};
       d.tgConv[chatId] = { m: trimConv(convMessages), ts: Date.now() };
@@ -1693,12 +1695,17 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
   } else {
     messages.push({ role: "user", content: userText });
   }
-  // Le gros du prompt est stable pendant la boucle -> mis en cache, ca accelere les tours suivants.
-  const system = [{
-    type: "text",
-    text: AGENT_SYSTEM + "\n\n=== DONNEES ===\n" + agentContext(data, chatId) + "\n\n" + buildAIContext(data),
-    cache_control: { type: "ephemeral" },
-  }];
+  // Deux blocs mis en cache separement, car ils ne changent pas au meme rythme :
+  //  1. les consignes (jamais) + la definition des outils, qui les precede dans le cache ;
+  //  2. les donnees (a chaque modification du planning), mais STABLES pendant toute la
+  //     boucle d'outils d'un meme message.
+  // Une conversation declenche 3 a 7 appels : sans cela, tout etait renvoye plein tarif
+  // a chaque tour. Aucune perte de capacite, le contenu envoye est identique.
+  const system = [
+    { type: "text", text: AGENT_SYSTEM, cache_control: { type: "ephemeral" } },
+    { type: "text", text: "=== DONNEES ===\n" + agentContext(data, chatId) + "\n\n" + buildAIContext(data), cache_control: { type: "ephemeral" } },
+  ];
+  let entree = 0, cache = 0, sortie = 0;
 
   for (let step = 0; step < 7; step++) {
     const r = await anthropic(key, {
@@ -1719,6 +1726,10 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       return true;
     }
     const j = await r.json();
+    const u = j.usage || {};
+    entree += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    cache += (u.cache_read_input_tokens || 0);
+    sortie += (u.output_tokens || 0);
     const content = j.content || [];
     messages.push({ role: "assistant", content });
 
@@ -1726,10 +1737,11 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
     const txt = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
 
     if (!toolUses.length) {
+      _cout = { appels: step + 1, entree, cache, sortie, gain: Math.round((cache / Math.max(1, entree + cache)) * 100) };
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
       // On ne garde le fil que si l'agent attend une reponse. Une simple consultation
       // ("qui travaille demain ?") n'ecrit alors RIEN du tout en base.
-      if (txt.indexOf("?") >= 0) await commitTurn(chatId, [], messages);
+      await commitTurn(chatId, txt.indexOf("?") >= 0 ? [] : [], txt.indexOf("?") >= 0 ? messages : null);
       return true;
     }
 
@@ -1818,6 +1830,7 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
     // Fiche envoyee : on s'arrete la, MAIS on garde le fil pour que l'admin puisse corriger.
     // Proposition + fil sont ecrits ensemble : une seule relecture du blob.
     if (pendings.length) {
+      _cout = { appels: step + 1, entree, cache, sortie, gain: Math.round((cache / Math.max(1, entree + cache)) * 100) };
       const olds = await commitTurn(chatId, pendings, messages, fixingId);
       await editReplacedProposals(tg, chatId, olds);
       if (pendings.length > 1) {
@@ -2000,6 +2013,17 @@ Deno.serve(async (req) => {
     if (msg && typeof msg.text === "string") {
       const chatId = String(msg.chat.id);
       if (adminChatList(data).includes(chatId)) {
+        if (/^\/?cout\b/i.test(msg.text.trim())) {
+          const c = data.tgDernierCout || null;
+          await tg("sendMessage", { chat_id: chatId, text: c
+            ? ("Dernier echange : " + c.appels + " appel(s)\n"
+              + "- factures plein tarif : " + c.entree + " tokens\n"
+              + "- relus depuis le cache : " + c.cache + " tokens (10x moins chers)\n"
+              + "- reponse : " + c.sortie + " tokens\n"
+              + "- economie du cache : " + c.gain + " %")
+            : "Aucun echange mesure pour l'instant. Pose-moi une question puis refais /cout." });
+          return new Response("ok");
+        }
         if (/^\/?diag\b/i.test(msg.text.trim())) {
           await tg("sendChatAction", { chat_id: chatId, action: "typing" });
           await tg("sendMessage", { chat_id: chatId, text: await diagnostic(data) });
