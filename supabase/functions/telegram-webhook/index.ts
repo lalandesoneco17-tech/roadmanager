@@ -522,7 +522,8 @@ function jobRecap(data: any, j: any, extra: any): string[] {
   if (j.hasTransfer) money.push("+ transfert " + (j.transferPrice || 0) + " €");
   if (money.length) L.push("\u{1F551} " + money.join("  ·  "));
   if (j.siteManager || j.siteManagerPhone) L.push("\u{1F477} Chef : " + (j.siteManager || "?") + (j.siteManagerPhone ? "  " + j.siteManagerPhone : ""));
-  if (j.gps) L.push("\u{1F5FA} https://www.google.com/maps?q=" + j.gps);
+  const lienJ = lienMaps(j);
+  if (lienJ) L.push("\u{1F5FA} " + lienJ);
   return L;
 }
 
@@ -1304,7 +1305,18 @@ async function geocodeLieu(data: any, lieu: string): Promise<any> {
 // ne recoit aucun lien Maps dans son message.
 async function completerGps(data: any, prop: any): Promise<void> {
   const j = prop && prop.job;
-  if (!j || j.gps || j._geocodedGps || !j.location) return;
+  if (!j) return;
+  // Lien Google Maps colle par l'admin : il reste cliquable tel quel pour le chauffeur,
+  // et on en tire des coordonnees pour que la carte de l'application fonctionne aussi.
+  if (j.gps && String(j.gps).indexOf("http") === 0) {
+    if (!j._geocodedGps) {
+      const c = await coordsDepuisLien(data, j.gps);
+      if (c) j._geocodedGps = c;
+      else (prop.warn = prop.warn || []).push("Lien Maps non convertible en coordonnees : la carte de l'app restera vide (le lien, lui, marche).");
+    }
+    return;
+  }
+  if (j.gps || j._geocodedGps || !j.location) return;
   const c = await geocodeLieu(data, j.location);
   if (c && c.gps) {
     j._geocodedGps = c.gps;
@@ -1314,6 +1326,44 @@ async function completerGps(data: any, prop: any): Promise<void> {
   } else {
     (prop.warn = prop.warn || []).push("Lieu non localise : le chauffeur n'aura pas de lien Maps. Envoie-moi le point GPS.");
   }
+}
+
+// L'admin peut envoyer un point Telegram ("lat,lon") OU coller un lien Google Maps.
+// Les deux doivent marcher : le lien reste cliquable pour le chauffeur, et on essaie
+// d'en tirer des coordonnees pour la carte de l'application.
+function estCoords(t: string): boolean {
+  const p = String(t || "").split(",");
+  return p.length === 2 && !isNaN(Number(p[0])) && !isNaN(Number(p[1])) && String(t).indexOf("http") < 0;
+}
+function extraireCoords(u: string): string {
+  for (const re of [/@(-?\d+\.\d+),(-?\d+\.\d+)/, /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/, /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/]) {
+    const m = String(u || "").match(re);
+    if (m) return Number(m[1]).toFixed(6) + "," + Number(m[2]).toFixed(6);
+  }
+  return "";
+}
+// Suit la redirection d'un lien court, puis cherche des coordonnees ; a defaut,
+// recupere le nom de lieu (parametre q) pour le geocoder.
+async function coordsDepuisLien(data: any, url: string): Promise<string> {
+  let fin = url;
+  try { const r = await fetch(url, { redirect: "follow" }); fin = r.url || url; } catch (_e) { /* on garde l'original */ }
+  const c = extraireCoords(fin) || extraireCoords(url);
+  if (c) return c;
+  const m = String(fin).match(/[?&]q=([^&]+)/);
+  if (m) {
+    const lieu = decodeURIComponent(m[1].replace(/\+/g, " ")).trim();
+    if (lieu && !estCoords(lieu)) {
+      const g = await geocodeLieu(data, lieu);
+      if (g && g.gps) return g.gps;
+    }
+  }
+  return "";
+}
+// Le lien a mettre dans le message du chauffeur.
+function lienMaps(j: any): string {
+  if (j.gps && String(j.gps).indexOf("http") === 0) return String(j.gps);
+  const c = j.gps && estCoords(j.gps) ? j.gps : (j._geocodedGps || "");
+  return c ? "https://www.google.com/maps?q=" + c : "";
 }
 
 function gsRowKey(iso: string, g: any): string {
@@ -1332,8 +1382,8 @@ async function envoyerAuChauffeur(tg: any, data: any, job: any): Promise<boolean
   L.push("• " + (job.billingStart || "") + " " + (job.location || (cl ? cl.name : "chantier"))
     + (cl && job.location ? " (" + cl.name + ")" : "") + (m ? " [" + m.name + "]" : ""));
   if (job.siteManager) L.push("\u{1F477} Chef : " + job.siteManager + (job.siteManagerPhone ? " (" + job.siteManagerPhone + ")" : ""));
-  const co = parseCoordsF(job.gps || job._geocodedGps);
-  if (co) L.push("\u{1F5FA} https://www.google.com/maps?q=" + co[0] + "," + co[1]);
+  const lien = lienMaps(job);
+  if (lien) L.push("\u{1F5FA} " + lien);
   L.push("", "\u{1F447} Merci de confirmer que tu as bien lu.");
   try {
     const r = await tg("sendMessage", {
