@@ -1248,6 +1248,74 @@ async function gsBilan(data: any, d1: string, d2: string, chauffeur?: string): P
   return L.join("\n");
 }
 
+// Geocodage du lieu, comme le fait l'application, pour que le chauffeur recoive un
+// lien Google Maps. Biaise autour des depots SONECO : « mazerolles » tout seul existe
+// dans plusieurs departements.
+function distKm(a: number[], b: number[]): number {
+  const R = 6371, r = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+// Le lieu est ecrit a la main ("giratoire rte de cherves rd 48") : on tente la chaine
+// complete, puis des versions allegees, jusqu'a obtenir un point PLAUSIBLE.
+function geoCandidats(lieu: string): string[] {
+  const HEURE = /\ba?\s*\d{1,2}\s*h\s*\d{0,2}\b/g;
+  const CODES = /\b(rd|rn|d|n)\s*\d+\b/g;
+  const BRUIT = /\b(giratoire|rond ?point|carrefour|inter|intersection|rte|route|rue|avenue|av|bd|boulevard|chemin|impasse|allee|allees|place|zone|za|zi|parking|devant|pres|vers|chez)\b/g;
+  const base = String(lieu || "").toLowerCase().replace(HEURE, " ").replace(/\s+/g, " ").trim();
+  const allege = base.replace(CODES, " ").replace(BRUIT, " ").replace(/\s+/g, " ").trim();
+  const mots = allege.split(" ").filter(Boolean);
+  const out = [base, allege, mots.slice(0, 2).join(" ")];
+  return [...new Set(out.filter((x) => x && x.length > 2))].slice(0, 3);
+}
+
+// Geocodage du lieu, comme le fait l'application, pour que le chauffeur recoive un
+// lien Google Maps. Biaise autour des depots SONECO, et REJETTE tout point trop loin :
+// sans ce garde-fou, "rn 141" renvoie un point pres de Rennes, a 280 km.
+async function geocodeLieu(data: any, lieu: string): Promise<any> {
+  const pts = (data.depots || []).map((d: any) => d._coords).filter((c: any) => Array.isArray(c) && c.length === 2);
+  const ancres = pts.length ? pts : [[45.6, -0.9]];
+  const lats = ancres.map((c: any) => c[0]), lons = ancres.map((c: any) => c[1]);
+  const vb = (Math.min(...lons) - 1.2) + "," + (Math.max(...lats) + 1.2) + "," + (Math.max(...lons) + 1.2) + "," + (Math.min(...lats) - 1.2);
+  const cands = geoCandidats(lieu);
+  for (let i = 0; i < cands.length; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 900));   // Nominatim : ~1 requete/seconde
+    const url = "https://nominatim.openstreetmap.org/search?format=json&countrycodes=fr&limit=1"
+      + "&viewbox=" + encodeURIComponent(vb) + "&q=" + encodeURIComponent(cands[i]);
+    try {
+      const r = await fetch(url, { headers: { "User-Agent": "RoadManager-SONECO/1.0 (planning)" } });
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (!j || !j[0] || j[0].lat == null) continue;
+      const p = [Number(j[0].lat), Number(j[0].lon)];
+      const d = Math.min(...ancres.map((a: any) => distKm(a, p)));
+      if (d > 200) continue;                                // hors zone : on n'y croit pas
+      // On renvoie AUSSI le nom trouve : un lieu ecrit a la main peut tomber sur un
+      // homonyme (Cherves en Vienne au lieu de Cherves-Richemont). L'admin verifie.
+      const nom = String(j[0].display_name || "").split(",").slice(0, 3).map((x: string) => x.trim()).join(", ");
+      return { gps: p[0].toFixed(6) + "," + p[1].toFixed(6), nom, km: Math.round(d) };
+    } catch (_e) { /* candidat suivant */ }
+  }
+  return null;
+}
+
+// Complete la fiche avec des coordonnees si elle n'en a pas : sans elles, le chauffeur
+// ne recoit aucun lien Maps dans son message.
+async function completerGps(data: any, prop: any): Promise<void> {
+  const j = prop && prop.job;
+  if (!j || j.gps || j._geocodedGps || !j.location) return;
+  const c = await geocodeLieu(data, j.location);
+  if (c && c.gps) {
+    j._geocodedGps = c.gps;
+    prop.lines.push("\u{1F5FA} " + c.nom + "  (" + c.km + " km du depot)");
+    prop.lines.push("   https://www.google.com/maps?q=" + c.gps);
+    (prop.warn = prop.warn || []).push("Point GPS DEDUIT du texte du lieu : verifie qu'il correspond avant de valider.");
+  } else {
+    (prop.warn = prop.warn || []).push("Lieu non localise : le chauffeur n'aura pas de lien Maps. Envoie-moi le point GPS.");
+  }
+}
+
 function gsRowKey(iso: string, g: any): string {
   return [iso, normTxt(g.chauffeur), normTxt(g.machine), normTxt(g.lieu)].join("|");
 }
@@ -1347,6 +1415,8 @@ async function gsWatch(tg: any, data: any): Promise<number> {
     }, "create");
     if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); continue; }
     prop.lines[0] = "\u{1F4E5} DU PLANNING DE PAPA — a valider";
+    await completerGps(full, prop);
+    await new Promise((r) => setTimeout(r, 1100));   // Nominatim : 1 requete par seconde
     for (const cid of chats) {
       const p = await sendProposalMessage(tg, cid, prop);
       p.job = prop.job;                          // meme chantier pour tous : pas de doublon si deux admins valident
@@ -1515,6 +1585,7 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       const prop = buildProposal(data, a, kind);
       if (prop.error) { results.push({ type: "tool_result", tool_use_id: tu.id, content: prop.error, is_error: true }); continue; }
       if (txt) await tg("sendMessage", { chat_id: chatId, text: txt, disable_web_page_preview: true });
+      if (kind === "create" || kind === "update") await completerGps(data, prop);
       const pend = await sendProposalMessage(tg, chatId, prop);
       pendings.push(pend);
       results.push({ type: "tool_result", tool_use_id: tu.id, content: "Fiche envoyee a l'admin, en attente de sa validation :\n" + pend.text });
