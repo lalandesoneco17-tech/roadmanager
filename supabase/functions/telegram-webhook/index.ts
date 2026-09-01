@@ -667,6 +667,10 @@ const AGENT_SYSTEM = [
   "12. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
   "   rappelle l'outil d'ecriture avec la proposition COMPLETE corrigee, pas seulement le champ change.",
   "",
+  "BOUTONS : des que l'admin doit choisir entre des possibilites que tu connais",
+  "(quel chantier, quelle machine, quel client, quel jour, oui/non), n'ecris pas la",
+  "question en texte : appelle demander_choix. Il repond d'un clic.",
+  "",
   "Si une reponse ne demande aucun outil, reponds directement, en une phrase.",
 ].join("\n");
 
@@ -744,6 +748,18 @@ const AGENT_TOOLS = [
         transfert: { type: "boolean", description: "true si un transfert est facture en plus" },
       },
       required: ["date", "chauffeur", "machine"],
+    },
+  },
+  {
+    name: "demander_choix",
+    description: "Pose une question a l'admin avec des BOUTONS au lieu d'attendre qu'il tape. A utiliser CHAQUE FOIS qu'il doit choisir entre des possibilites que tu connais : quel chantier, quelle machine, quel client, quel jour, oui/non. Sa reponse te reviendra comme s'il l'avait ecrite.",
+    input_schema: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "La question, courte" },
+        options: { type: "array", items: { type: "string" }, description: "2 a 6 reponses possibles, courtes et distinctes" },
+      },
+      required: ["question", "options"],
     },
   },
   {
@@ -1720,6 +1736,7 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
     // On repond a TOUS les tool_use du tour (sinon la conversation devient invalide au tour suivant).
     const results: any[] = [];
     const pendings: any[] = [];
+    let attenteChoix = false;
     for (const tu of toolUses) {
       const a = tu.input || {};
       if (tu.name === "lire_planning") {
@@ -1737,6 +1754,18 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       if (tu.name === "chercher_contact") {
         const nom = String(a.nom || "");
         results.push({ type: "tool_result", tool_use_id: tu.id, content: rendreContacts(await chercherContactTout(data, nom, a.client), nom) });
+        continue;
+      }
+      if (tu.name === "demander_choix") {
+        const opts = (Array.isArray(a.options) ? a.options : []).map((x: any) => String(x).trim()).filter(Boolean).slice(0, 6);
+        if (opts.length < 2) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Il faut au moins 2 options.", is_error: true }); continue; }
+        await mutate((d: any) => { d.tgChoix = d.tgChoix || {}; d.tgChoix[chatId] = { opts, ts: Date.now() }; });
+        await tg("sendMessage", {
+          chat_id: chatId, text: String(a.question || "Lequel ?"),
+          reply_markup: { inline_keyboard: opts.map((o: string, i2: number) => [{ text: o.slice(0, 60), callback_data: "ch:" + i2 }]) },
+        });
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: "Question posee avec boutons. Attends la reponse de l'admin, n'ajoute rien." });
+        attenteChoix = true;
         continue;
       }
       // Propose les contacts trouves SOUS FORME DE BOUTONS, rattaches a une fiche.
@@ -1782,6 +1811,9 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       results.push({ type: "tool_result", tool_use_id: tu.id, content: "Fiche envoyee a l'admin, en attente de sa validation :\n" + pend.text });
     }
     messages.push({ role: "user", content: results });
+
+    // Question a boutons posee : on suspend le tour et on garde le fil pour la reprise.
+    if (attenteChoix && !pendings.length) { await commitTurn(chatId, [], messages); return true; }
 
     // Fiche envoyee : on s'arrete la, MAIS on garde le fil pour que l'admin puisse corriger.
     // Proposition + fil sont ecrits ensemble : une seule relecture du blob.
@@ -2017,6 +2049,25 @@ Deno.serve(async (req) => {
     if (cq && typeof cq.data === "string") {
       const parts = cq.data.split(":");
       const action = parts[0];
+      // Reponse a une question a boutons : on relance l'agent comme si l'admin l'avait ecrite.
+      if (action === "ch") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        const mid = cq.message && cq.message.message_id;
+        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        const ctx = (data.tgChoix || {})[chatId];
+        const rep = ctx && (ctx.opts || [])[Number(parts[1])];
+        if (!rep || Date.now() - (ctx.ts || 0) > 3600 * 1000) {
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Question expiree", show_alert: true });
+          return new Response("ok");
+        }
+        await mutate((d: any) => { if (d.tgChoix) delete d.tgChoix[chatId]; });
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: rep.slice(0, 190) });
+        const base = (cq.message && cq.message.text) || "";
+        if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: base + "\n\n\u{2705} " + rep }); } catch (_e) { /* ignore */ } }
+        await tg("sendChatAction", { chat_id: chatId, action: "typing" });
+        await runAgent(tg, data, chatId, rep);
+        return new Response("ok");
+      }
       // Choix d'un contact par bouton : on l'applique a la fiche et on la renvoie completee.
       if (action === "ct") {
         const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
