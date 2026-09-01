@@ -424,6 +424,71 @@ function resolveClient(data: any, q: string): any {
   return { client: null, isNew: true, newName: raw };
 }
 
+// ---- Recherche d'un chef de chantier dans les fiches contact ----------------
+// Les noms sont saisis a la main et varient ("cristof" / "crystof" / "Christophe"),
+// donc on cherche de facon tolerante et on FAIT CONFIRMER, on ne choisit jamais seul.
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = new Array(n + 1); for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function chercherContact(data: any, nom: string, clientNom?: string): any[] {
+  const n = normTxt(nom);
+  if (!n) return [];
+  const out: any[] = [];
+  for (const c of (data.clients || [])) {
+    for (const s of (c.siteManagers || [])) {
+      const sn = normTxt(s && s.name);
+      if (!sn) continue;
+      let score = 0;
+      const mini = Math.min(sn.length, n.length);
+      if (sn === n) score = 100;
+      // Longueur minimale : sans elle, une fiche nommee "i" ou "f" correspond a tout.
+      else if (mini >= 4 && (sn.indexOf(n) === 0 || n.indexOf(sn) === 0)) score = 85;
+      else if (mini >= 4 && (sn.indexOf(n) >= 0 || n.indexOf(sn) >= 0)) score = 75;
+      else {
+        const d = levenshtein(sn, n);
+        if (d <= 2 && Math.max(sn.length, n.length) >= 5) score = 72 - d * 6;
+      }
+      // Un nom de famille en commun vaut mieux qu'une ressemblance vague ("alin seche" -> "alain seche").
+      const ta = sn.split(" ").filter((x: string) => x.length >= 3);
+      const tb = n.split(" ").filter((x: string) => x.length >= 3);
+      const communs = ta.filter((x: string) => tb.indexOf(x) >= 0).length;
+      if (communs) score = Math.max(score, 80 + communs * 5);
+      if (!score) continue;
+      if (clientNom && normTxt(c.name) === normTxt(clientNom)) score += 12;  // meme client : plus probable
+      out.push({ score, nom: s.name, tel: (s.phone || "").trim(), client: c.name });
+    }
+  }
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, 6);
+}
+function rendreContacts(res: any[], nom: string): string {
+  if (!res.length) return "Aucun contact ne ressemble a \"" + nom + "\" dans les fiches clients.";
+  const L = ["Contacts trouves pour \"" + nom + "\" (a FAIRE CONFIRMER par l'admin, ne choisis pas seul) :"];
+  for (const r of res) {
+    L.push("- " + r.nom + (r.tel ? " " + r.tel : " (aucun numero enregistre)") + " | client " + r.client
+      + (r.score >= 100 ? " | nom identique" : r.score >= 85 ? " | nom tres proche" : " | orthographe differente"));
+  }
+  return L.join("\n");
+}
+// Lieu trop vague pour envoyer un chauffeur : ni numero de rue, ni route/rd, ni GPS.
+function lieuImprecis(lieu: string): boolean {
+  const t = normTxt(lieu);
+  if (!t) return true;
+  if (/\d/.test(t)) return false;                                    // un numero ou une RD
+  if (/\b(rue|route|rte|avenue|av|bd|boulevard|chemin|impasse|place|zone|za|zi|giratoire|rond point|parking|carrefour)\b/.test(t)) return false;
+  return t.split(" ").length <= 3;                                   // juste un nom de commune
+}
+
 // ---- Rendu d'un chantier pour la relecture ---------------------------------
 function fmtDateFR(iso: string): string {
   try {
@@ -513,11 +578,18 @@ const AGENT_SYSTEM = [
   "   Exemple : « Le planning dit eurovia ang, pas Ferroviaire. Je prends lequel ? »",
   "   Si le planning du pere contient une incoherence (case NUIT cochee sur un chantier de jour),",
   "   demande-lui de trancher, n'invente pas.",
-  "9. SERIE : si l'admin demande de recopier TOUTE une journee (« recopie tout mardi »),",
+  "9. CHEF DE CHANTIER : si un nom de chef est donne sans numero, appelle chercher_contact.",
+  "   Un seul resultat au nom identique -> mets-le dans la fiche et precise d'ou il vient.",
+  "   Plusieurs resultats, ou une orthographe differente -> DEMANDE confirmation avant :",
+  "   « Pour Scotpa j'ai Crystof 06 12 34 56 78. C'est lui ? »  Ne choisis jamais seul.",
+  "10. POINT GPS : si le lieu est trop vague pour y envoyer un chauffeur et qu'il n'y a pas",
+  "   de point GPS, demande a l'admin de t'envoyer le point GPS (il peut le transferer",
+  "   directement dans Telegram).",
+  "11. SERIE : si l'admin demande de recopier TOUTE une journee (« recopie tout mardi »),",
   "   appelle comparer_planning puis cree TOUS les chantiers manquants en UNE fois",
   "   (un appel creer_chantier par chantier, dans le meme tour). Ne t'arrete pas au premier.",
   "   N'inclus pas les repos, absences, depots et preparations : ce ne sont pas des chantiers.",
-  "10. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
+  "12. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
   "   rappelle l'outil d'ecriture avec la proposition COMPLETE corrigee, pas seulement le champ change.",
   "",
   "Si une reponse ne demande aucun outil, reponds directement, en une phrase.",
@@ -551,6 +623,18 @@ const AGENT_TOOLS = [
     name: "comparer_planning",
     description: "Compare le planning du PERE (Google Sheets) et celui de RoadManager pour un jour, chauffeur par chauffeur, et dit ce qui reste A RECOPIER. C'est l'outil a utiliser pour toute question sur le planning d'un jour.",
     input_schema: { type: "object", properties: { date: { type: "string", description: "Date ISO AAAA-MM-JJ" } }, required: ["date"] },
+  },
+  {
+    name: "chercher_contact",
+    description: "Cherche un chef de chantier dans les fiches contact (recherche tolerante aux fautes d'orthographe). A utiliser des qu'un nom de chef est donne SANS numero de telephone. Les resultats doivent TOUJOURS etre confirmes par l'admin.",
+    input_schema: {
+      type: "object",
+      properties: {
+        nom: { type: "string", description: "Nom du chef de chantier, meme mal orthographie" },
+        client: { type: "string", description: "Optionnel : nom du client, pour privilegier ses contacts" },
+      },
+      required: ["nom"],
+    },
   },
   {
     name: "creer_chantier",
@@ -700,6 +784,8 @@ function buildProposal(data: any, a: any, kind: string): any {
     warn.push("Cette machine est deja prise ce jour par " + (ce ? ce.name : "quelqu'un") + ".");
   }
   if (!j.location && !newClientName && !j.clientId) warn.push("Ni lieu ni client : le chauffeur verra un chantier vide.");
+  if (!j.gps && lieuImprecis(j.location)) warn.push("Lieu imprecis et aucun point GPS : demander a l'admin d'envoyer le point GPS.");
+  if (j.siteManager && !j.siteManagerPhone) warn.push("Chef sans numero : chercher le contact et le faire confirmer.");
 
   const head = kind === "create" ? "\u{1F195} NOUVEAU CHANTIER" : "✏️ MODIFICATION";
   return { kind, job: j, newClientName, lines: [head].concat(jobRecap(data, j, { newClientName })), warn };
@@ -1108,6 +1194,11 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
       }
       if (tu.name === "comparer_planning") {
         results.push({ type: "tool_result", tool_use_id: tu.id, content: await toolComparerPlanning(data, String(a.date || "")) });
+        continue;
+      }
+      if (tu.name === "chercher_contact") {
+        const nom = String(a.nom || "");
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: rendreContacts(chercherContact(data, nom, a.client), nom) });
         continue;
       }
       if (tu.name === "lire_planning_pere") {
