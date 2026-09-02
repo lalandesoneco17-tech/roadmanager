@@ -653,6 +653,10 @@ const AGENT_SYSTEM = [
   "12. Si l'admin corrige une proposition que tu viens d'envoyer (\'non, plutot 20h\', \'c'est Franck\'),",
   "   rappelle l'outil d'ecriture avec la proposition COMPLETE corrigee, pas seulement le champ change.",
   "",
+  "MESSAGES AUX CHAUFFEURS : « envoie un message a Franck », « previens tout le monde »",
+  "   -> envoyer_message. Redige le texte tel qu'il sera lu (tutoiement, prenom, clair).",
+  "   Rien ne part sans la validation de l'admin.",
+  "",
   "BOUTONS : des que l'admin doit choisir entre des possibilites que tu connais",
   "(quel chantier, quelle machine, quel client, quel jour, oui/non), n'ecris pas la",
   "question en texte : appelle demander_choix. Il repond d'un clic.",
@@ -734,6 +738,18 @@ const AGENT_TOOLS = [
         transfert: { type: "boolean", description: "true si un transfert est facture en plus" },
       },
       required: ["date", "chauffeur", "machine"],
+    },
+  },
+  {
+    name: "envoyer_message",
+    description: "Prepare l'envoi d'un message Telegram a un ou plusieurs chauffeurs. N'ENVOIE RIEN : l'admin voit le message et les destinataires, puis valide par un bouton. Utiliser des qu'il demande de prevenir, informer ou dire quelque chose a quelqu'un.",
+    input_schema: {
+      type: "object",
+      properties: {
+        destinataires: { type: "array", items: { type: "string" }, description: "Prenoms des chauffeurs, ou [\"tous\"] pour tout le monde" },
+        texte: { type: "string", description: "Le message, redige tel qu'il sera lu par le chauffeur" },
+      },
+      required: ["destinataires", "texte"],
     },
   },
   {
@@ -1865,6 +1881,37 @@ async function runAgent(tg: any, data: any, chatId: string, userText: string, fi
         results.push({ type: "tool_result", tool_use_id: tu.id, content: rendreContacts(await chercherContactTout(data, nom, a.client), nom) });
         continue;
       }
+      if (tu.name === "envoyer_message") {
+        const texte = String(a.texte || "").trim();
+        const dl = (Array.isArray(a.destinataires) ? a.destinataires : []).map((x: any) => String(x).trim()).filter(Boolean);
+        if (!texte || !dl.length) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Il faut un texte et au moins un destinataire.", is_error: true }); continue; }
+        const liens = data.telegramEmpChats || {};
+        let cibles: any[] = [];
+        const inconnus: string[] = [];
+        if (dl.some((x: string) => /^(tous|tout le monde|equipe|chauffeurs)$/i.test(normTxt(x)))) {
+          cibles = (data.employees || []).filter((e: any) => e.role !== "mechanic" && liens[e.id] && liens[e.id].chatId);
+        } else {
+          for (const nom of dl) {
+            const r = resolveEmployee(data, nom);
+            if (r.error || !r.emp) { inconnus.push(nom); continue; }
+            if (!liens[r.emp.id] || !liens[r.emp.id].chatId) { inconnus.push(r.emp.name + " (Telegram non lie)"); continue; }
+            if (!cibles.some((c: any) => c.id === r.emp.id)) cibles.push(r.emp);
+          }
+        }
+        if (!cibles.length) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Aucun destinataire joignable" + (inconnus.length ? " : " + inconnus.join(", ") : "") + ".", is_error: true }); continue; }
+        const noms = cibles.map((c: any) => c.name).join(", ");
+        await mutate((d: any) => { d.tgEnvoi = d.tgEnvoi || {}; d.tgEnvoi[chatId] = { ids: cibles.map((c: any) => c.id), texte, ts: Date.now() }; });
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "\u{1F4E4} A ENVOYER a " + cibles.length + " chauffeur(s) : " + noms
+            + (inconnus.length ? "\n\u{26A0}\u{FE0F} Non joignables : " + inconnus.join(", ") : "")
+            + "\n\n\u{1F4AC} « " + texte + " »\n\nJ'envoie ?",
+          reply_markup: { inline_keyboard: [[{ text: "✅ Envoyer", callback_data: "env:ok" }, { text: "✏️ Corriger", callback_data: "env:no" }]] },
+        });
+        results.push({ type: "tool_result", tool_use_id: tu.id, content: "Message soumis a l'admin pour validation (" + cibles.length + " destinataire(s)). N'ajoute rien, attends." });
+        attenteChoix = true;
+        continue;
+      }
       if (tu.name === "demander_choix") {
         const opts = (Array.isArray(a.options) ? a.options : []).map((x: any) => String(x).trim()).filter(Boolean).slice(0, 6);
         if (opts.length < 2) { results.push({ type: "tool_result", tool_use_id: tu.id, content: "Il faut au moins 2 options.", is_error: true }); continue; }
@@ -2206,6 +2253,37 @@ Deno.serve(async (req) => {
         await tg("sendMessage", { chat_id: lien.chatId, text: "\u{26A0}\u{FE0F} Changement " + nm0 + " : le chantier de " + fmtDateFR(anc.date) + " (" + ou + ") n'est plus pour toi, il a ete confie a quelqu'un d'autre.\nNe t'y rends pas. Si tu as un doute, appelle le bureau." });
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: nm0 + " est prevenu \u2705" });
         if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: "\u{2705} " + nm0 + " a ete prevenu que le chantier n'est plus pour lui." }); } catch (_e) { /* ignore */ } }
+        return new Response("ok");
+      }
+      // Validation d'un message a envoyer aux chauffeurs.
+      if (action === "env") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        const mid = cq.message && cq.message.message_id;
+        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        const env = (data.tgEnvoi || {})[chatId];
+        if (!env || Date.now() - (env.ts || 0) > 3600 * 1000) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Message expire", show_alert: true }); return new Response("ok"); }
+        await mutate((d: any) => { if (d.tgEnvoi) delete d.tgEnvoi[chatId]; });
+        const base = ((cq.message && cq.message.text) || "").replace(/\n\nJ'envoie \?$/, "");
+        if (parts[1] === "no") {
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Dis-moi la correction" });
+          if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: base + "\n\n✏️ Non envoye. Redis-moi le message corrige." }); } catch (_e) { /* ignore */ } }
+          return new Response("ok");
+        }
+        const liens = data.telegramEmpChats || {};
+        const ok: string[] = [], ko: string[] = [];
+        for (const id of (env.ids || [])) {
+          const e = (data.employees || []).find((x: any) => x.id === id);
+          const prenom = e && e.name ? e.name.split(" ")[0] : "";
+          const l = liens[id];
+          if (!l || !l.chatId) { ko.push(prenom); continue; }
+          try {
+            const r = await tg("sendMessage", { chat_id: l.chatId, text: "\u{1F4AC} " + env.texte });
+            const j = await r.json();
+            (j && j.ok ? ok : ko).push(prenom);
+          } catch (_e) { ko.push(prenom); }
+        }
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Envoye a " + ok.length + " chauffeur(s)" });
+        if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: base + "\n\n✅ Envoye a : " + (ok.join(", ") || "personne") + (ko.length ? "\n❌ Echec : " + ko.join(", ") : ""), disable_web_page_preview: true }); } catch (_e) { /* ignore */ } }
         return new Response("ok");
       }
       // Reponse a une question a boutons : on relance l'agent comme si l'admin l'avait ecrite.
