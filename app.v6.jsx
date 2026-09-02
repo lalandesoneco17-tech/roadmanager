@@ -5021,7 +5021,7 @@ const doSave=useCallback(async nd=>{const prev=dataRef.current;stampUpdatedAt(pr
 const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);stampUpdatedAt(dataRef.current&&dataRef.current.jobs,prevData&&prevData.jobs);savesInProgress.current++;savingRef.current=true;setData(prevData);dataRef.current=prevData;_liveData=prevData;try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},5000)}},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else if(type==='station'){setScreen('station')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
-if(!data)return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh'}}><div style={{fontSize:48}}>&#128679;</div></div>);
+if(!data)return(<div style={{position:'fixed',inset:0,background:'#000',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9998}}><img src="icone.png" alt="" style={{width:120,height:120,objectFit:'contain',animation:'rm-tourne 1.6s linear infinite'}}/></div>);
 if(screen==='login')return(<LoginScreen data={data} onLogin={onLogin}/>);
 if(screen==='mechanic')return(<MechanicView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
 if(screen==='employee')return(<EmployeeView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
