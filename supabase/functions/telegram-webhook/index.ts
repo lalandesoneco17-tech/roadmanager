@@ -445,22 +445,6 @@ function levenshtein(a: string, b: string): number {
   }
   return prev[n];
 }
-// Carnet de contacts importe du PDF, range dans une table a part : il n'est lu QUE
-// sur une recherche de chef, jamais avec le reste des donnees.
-let _carnet: any[] | null = null;
-async function carnetContacts(): Promise<any[]> {
-  if (_carnet) return _carnet;
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/app_extra?id=eq.contacts&select=data`, {
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-    });
-    if (!r.ok) { _carnet = []; return _carnet; }
-    const rows = await r.json();
-    _carnet = (rows && rows[0] && rows[0].data) || [];
-  } catch (_e) { _carnet = []; }
-  return _carnet;
-}
-
 function chercherContact(data: any, nom: string, clientNom?: string): any[] {
   const n = normTxt(nom);
   if (!n) return [];
@@ -492,23 +476,9 @@ function chercherContact(data: any, nom: string, clientNom?: string): any[] {
   out.sort((a, b) => b.score - a.score);
   return out.slice(0, 6);
 }
-// Recherche unifiee : fiches clients de RoadManager d'abord, puis carnet importe.
+// Les chefs de chantier vivent dans les fiches clients de RoadManager : une seule source.
 async function chercherContactTout(data: any, nom: string, clientNom?: string): Promise<any[]> {
-  const res = chercherContact(data, nom, clientNom);
-  const vus = new Set(res.map((x: any) => normTxt(x.nom)));
-  const n0 = normTxt(nom);
-  for (const c of await carnetContacts()) {
-    const cn = normTxt(c.n);
-    if (!cn || vus.has(cn)) continue;
-    let sc = 0;
-    if (cn === n0) sc = 100;
-    else if (cn.split(" ").indexOf(n0) >= 0) sc = 88;
-    else if (n0.length >= 4 && cn.indexOf(n0) >= 0) sc = 76;
-    else if (Math.min(cn.length, n0.length) >= 5 && levenshtein(cn, n0) <= 2) sc = 66;
-    if (sc) res.push({ score: sc, nom: c.n, tel: (c.t || []).join(" / "), client: "carnet" });
-  }
-  res.sort((x: any, y: any) => y.score - x.score);
-  return res.slice(0, 8);
+  return chercherContact(data, nom, clientNom).slice(0, 8);
 }
 
 function rendreContacts(res: any[], nom: string): string {
