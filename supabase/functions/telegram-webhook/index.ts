@@ -425,7 +425,22 @@ function resolveClient(data: any, q: string): any {
   if (!hits.length) hits = list.filter((c: any) => normTxt(c.name).indexOf(n) === 0);
   if (!hits.length) hits = list.filter((c: any) => normTxt(c.name).indexOf(n) >= 0 || n.indexOf(normTxt(c.name)) >= 0);
   if (hits.length === 1) return { client: hits[0] };
-  if (hits.length > 1) return { error: 'Plusieurs clients correspondent a "' + raw + '" : ' + hits.map((c: any) => c.name).join(", ") + ". Demande a l'admin lequel." };
+  if (hits.length > 1) {
+    // Le planning ecrit toujours CLIENT puis agence (« guintoli saintes ») : on retient
+    // le client par lequel le texte COMMENCE, et le nom le plus long si plusieurs.
+    const usage = (c: any) => (data.jobs || []).filter((x: any) => x.clientId === c.id).length;
+    const debut = hits.filter((c: any) => n.indexOf(normTxt(c.name)) === 0)
+      .sort((a: any, b: any) => (normTxt(b.name).length - normTxt(a.name).length) || (usage(b) - usage(a)));
+    if (debut.length === 1) return { client: debut[0] };
+    if (debut.length > 1) {
+      const l0 = normTxt(debut[0].name).length;
+      if (l0 > normTxt(debut[1].name).length) return { client: debut[0] };
+      // Vrais homonymes (fiches en double) : on retient celle qui sert vraiment.
+      const memeNom = debut.filter((c: any) => normTxt(c.name).length === l0);
+      if (usage(memeNom[0]) > usage(memeNom[1] || {})) return { client: memeNom[0] };
+    }
+    return { error: 'Plusieurs clients correspondent a "' + raw + '" : ' + hits.map((c: any) => c.name).join(", ") + ". Demande a l'admin lequel." };
+  }
   return { client: null, isNew: true, newName: raw };
 }
 
@@ -518,7 +533,8 @@ function jobRecap(data: any, j: any, extra: any): string[] {
   const ICONE: any = { Raboteuse: "\u{1F69C}", Balayeuse: "\u{1F9F9}", Citerne: "\u{1F4A7}" };
   const typ = mac && mac.type ? mac.type : "";
   L.push("\u{1F464} " + (emp ? emp.name : "?") + "   " + (ICONE[typ] || "\u{1F69C}") + " " + (mac ? mac.name : "?") + (typ ? " (" + typ.toLowerCase() + ")" : ""));
-  const lieuLine = [j.location || "", cliName ? "(" + cliName + (extra && extra.newClientName ? " — NOUVEAU CLIENT" : "") + ")" : ""].filter(Boolean).join(" ");
+  const cliAff = cliName ? cliName + (j.agencyName ? " " + j.agencyName : "") : "";
+  const lieuLine = [j.location || "", cliAff ? "(" + cliAff + (extra && extra.newClientName ? " — NOUVEAU CLIENT" : "") + ")" : ""].filter(Boolean).join(" ");
   if (lieuLine) L.push("\u{1F4CD} " + lieuLine);
   const money: string[] = [];
   if (j.billingStart) money.push(j.billingStart);
@@ -848,8 +864,21 @@ function buildProposal(data: any, a: any, kind: string, baseJob?: any): any {
   if (a.client) {
     const r = resolveClient(data, a.client);
     if (r.error) return { error: r.error };
-    if (r.client) j.clientId = r.client.id;
-    else { newClientName = r.newName; j.clientId = ""; }
+    if (r.client) {
+      j.clientId = r.client.id;
+      // Le planning du pere ecrit le client SUIVI d'un diminutif d'agence :
+      // « eurovia ang », « eurovia roy », « eiffage aytre ». On rapproche ce reste
+      // des agences deja enregistrees chez CE client.
+      const reste = normTxt(a.client).replace(normTxt(r.client.name), "").trim();
+      if (reste) {
+        const ags = (r.client.agencies || []).filter(Boolean);
+        const hit = ags.find((x: any) => normTxt(x) === reste)
+          || ags.find((x: any) => normTxt(x).indexOf(reste) === 0)
+          || ags.find((x: any) => reste.indexOf(normTxt(x)) === 0);
+        if (hit) j.agencyName = hit;
+        else warn.push('Agence "' + reste + '" pas encore enregistree chez ' + r.client.name + " : ajoute-la dans l'app si elle compte.");
+      }
+    } else { newClientName = r.newName; j.clientId = ""; }
   }
   if (a.lieu) { j.location = String(a.lieu); j._geocodedGps = ""; }
   if (a.heure) j.billingStart = String(a.heure);
