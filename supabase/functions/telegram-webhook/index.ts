@@ -904,11 +904,27 @@ function buildProposal(data: any, a: any, kind: string, baseJob?: any): any {
     warn.push("Client nouveau : pas de tarif, prix a 0.");
   }
 
+  const nomDe = (id: string) => { const e = (data.employees || []).find((x: any) => x.id === id); return e ? e.name : "?"; };
   // Verification croisee : ce chauffeur a-t-il deja quelque chose ce jour-la ?
   const clash = (data.jobs || []).filter((x: any) => x.employeeId === j.employeeId && x.date === j.date && x.id !== j.id);
   for (const cj of clash) {
     const cm = (data.machines || []).find((x: any) => x.id === cj.machineId);
-    warn.push("Deja au planning ce jour : " + (cj.billingStart || "--") + " " + (cj.location || "chantier") + (cm ? " [" + cm.name + "]" : ""));
+    const dej = cj.ack ? " — DEJA LU par le chauffeur" : cj.sent ? " — DEJA ENVOYE au chauffeur" : "";
+    warn.push("Deja au planning ce jour : " + (cj.billingStart || "--") + " " + (cj.location || "chantier") + (cm ? " [" + cm.name + "]" : "") + dej);
+  }
+  // REAFFECTATION : le meme chantier (meme jour, meme lieu) etait prevu pour QUELQU'UN D'AUTRE.
+  // C'est le cas dangereux : l'ancien chauffeur a pu recevoir le message hier soir.
+  if (j.location) {
+    const repris = (data.jobs || []).filter((x: any) => x.date === j.date && x.id !== j.id
+      && x.employeeId && x.employeeId !== j.employeeId
+      && normTxt(x.location || "") === normTxt(j.location));
+    for (const rj of repris) {
+      const qui = nomDe(rj.employeeId);
+      j.remplaceJobId = rj.id;
+      warn.push(rj.sent || rj.ack
+        ? "\u{21A9} REMPLACE le chantier de " + qui + ", qu'il a DEJA RECU sur Telegram. Il faut le prevenir que ce n'est plus pour lui."
+        : "\u{21A9} Remplace le chantier qui etait prevu pour " + qui + ".");
+    }
   }
   // La machine est-elle deja prise ce jour-la par quelqu'un d'autre ?
   const mclash = (data.jobs || []).filter((x: any) => x.machineId === j.machineId && x.date === j.date && x.id !== j.id && x.employeeId !== j.employeeId);
@@ -2073,6 +2089,24 @@ Deno.serve(async (req) => {
     if (cq && typeof cq.data === "string") {
       const parts = cq.data.split(":");
       const action = parts[0];
+      // Prevenir un chauffeur qu'un chantier ne lui appartient plus.
+      if (action === "annul") {
+        const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
+        const mid = cq.message && cq.message.message_id;
+        if (!adminChatList(data).includes(chatId)) { await tg("answerCallbackQuery", { callback_query_id: cq.id }); return new Response("ok"); }
+        const anc = (data.jobs || []).find((x: any) => x.id === parts[1]);
+        if (!anc) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "Chantier introuvable", show_alert: true }); return new Response("ok"); }
+        const lien = (data.telegramEmpChats || {})[anc.employeeId];
+        const e0 = (data.employees || []).find((x: any) => x.id === anc.employeeId);
+        const nm0 = e0 && e0.name ? e0.name.split(" ")[0] : "";
+        if (!lien || !lien.chatId) { await tg("answerCallbackQuery", { callback_query_id: cq.id, text: nm0 + " n'a pas de Telegram lie", show_alert: true }); return new Response("ok"); }
+        const cl = (data.clients || []).find((c: any) => c.id === anc.clientId);
+        const ou = anc.location || (cl ? cl.name : "chantier");
+        await tg("sendMessage", { chat_id: lien.chatId, text: "\u{26A0}\u{FE0F} Changement " + nm0 + " : le chantier de " + fmtDateFR(anc.date) + " (" + ou + ") n'est plus pour toi, il a ete confie a quelqu'un d'autre.\nNe t'y rends pas. Si tu as un doute, appelle le bureau." });
+        await tg("answerCallbackQuery", { callback_query_id: cq.id, text: nm0 + " est prevenu \u2705" });
+        if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: "\u{2705} " + nm0 + " a ete prevenu que le chantier n'est plus pour lui." }); } catch (_e) { /* ignore */ } }
+        return new Response("ok");
+      }
       // Reponse a une question a boutons : on relance l'agent comme si l'admin l'avait ecrite.
       if (action === "ch") {
         const chatId = String((cq.message && cq.message.chat && cq.message.chat.id) || "");
@@ -2156,6 +2190,20 @@ Deno.serve(async (req) => {
         }
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: tail });
         if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: (prop.text || "").replace(/\n\nC'est bien ca \?$/, "") + "\n\n" + tail, disable_web_page_preview: true }); } catch (_e) { /* ignore */ } }
+        // Chantier repris a un autre chauffeur qui l'avait deja recu : on propose de le
+        // prevenir. Jamais automatique : c'est un message qui part chez un salarie.
+        if (action === "pok" && prop.job && prop.job.remplaceJobId) {
+          const anc = (data.jobs || []).find((x: any) => x.id === prop.job.remplaceJobId);
+          if (anc && (anc.sent || anc.ack)) {
+            const e0 = (data.employees || []).find((x: any) => x.id === anc.employeeId);
+            const nm0 = e0 && e0.name ? e0.name.split(" ")[0] : "le chauffeur";
+            await tg("sendMessage", {
+              chat_id: chatId,
+              text: "\u{26A0}\u{FE0F} " + nm0 + " avait deja recu ce chantier sur Telegram. Il ne sait pas qu'il ne l'a plus.",
+              reply_markup: { inline_keyboard: [[{ text: "\u{1F4E8} Prevenir " + nm0, callback_data: "annul:" + anc.id }]] },
+            });
+          }
+        }
         return new Response("ok");
       }
       if (action === "q") {
