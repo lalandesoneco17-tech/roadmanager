@@ -1,11 +1,11 @@
 {
   "version": "0.0.1",
   "configurations": [
-    {
-      "name": "roadmanager",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8899"],
-      "port": 8899
-    }
+    { "name": "apercu-logo", "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8901", "--directory",
+        "/private/tmp/claude-501/-Users-lalande-dev-roadmanager/35b4952f-d3c7-4d32-b6af-166ecf2fbc6b/scratchpad"],
+      "port": 8901 },
+    { "name": "roadmanager", "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8899"], "port": 8899 }
   ]
 }

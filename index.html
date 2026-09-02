@@ -7,6 +7,13 @@
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
 <title>RoadManager</title>
+<link rel="icon" type="image/png" href="icone.png"/>
+<link rel="apple-touch-icon" href="icone-180.png"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<meta name="theme-color" content="#000000"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<meta name="apple-mobile-web-app-title" content="RoadManager"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <!-- babel (3140 Ko) est charge a la demande, uniquement si la traduction n est pas deja en memoire -->
@@ -15,6 +22,9 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+@keyframes rm-tourne{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes rm-part{to{opacity:0;visibility:hidden}}
+#ecran-demarrage.fini{animation:rm-part .35s ease forwards}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc;color:#1e293b}
 input,select,textarea,button{font-family:inherit;font-size:inherit}
 @media(max-width:768px){
@@ -33,6 +43,9 @@ input,select,textarea,button{font-family:inherit;font-size:inherit}
 </style>
 </head>
 <body>
+<div id="ecran-demarrage" style="position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:9999">
+  <img src="icone.png" alt="" style="width:120px;height:120px;object-fit:contain;animation:rm-tourne 1.6s linear infinite" onerror="this.style.display='none'"/>
+</div>
 <div id="root"></div>
 <script>
 // Supabase client init
@@ -56,6 +69,16 @@ set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve
 // reutilise la traduction et Babel (3 Mo) n'est meme pas telecharge.
 // En cas de pepin, on retombe sur l'ancienne methode : l'app demarre toujours.
 // ---------------------------------------------------------------------------
+// Retire l'ecran noir des que l'application est affichee.
+(function(){
+  var e=document.getElementById('ecran-demarrage');
+  if(!e) return;
+  var t0=Date.now();
+  var iv=setInterval(function(){
+    var r=document.getElementById('root');
+    if((r&&r.children.length)||Date.now()-t0>30000){clearInterval(iv);e.className='fini';setTimeout(function(){e.remove();},400);}
+  },80);
+})();
 (function(){
   var SRC='app.v6.jsx', CLE='rm-compile-';
   function repli(){

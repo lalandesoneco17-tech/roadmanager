@@ -2100,6 +2100,19 @@ Deno.serve(async (req) => {
         await tg("sendMessage", { chat_id: chatId, text: "Classeur enregistre" + (premier ? " (commence le " + premier + ")" : "") + "." });
         return new Response("ok");
       }
+      // Photo envoyee par un admin : on retient sa reference pour pouvoir la recuperer
+      // (logo, plan de chantier, photo de terrain...).
+      if (msg.photo && msg.photo.length) {
+        const gr = msg.photo[msg.photo.length - 1];   // la plus grande version
+        await mutate((d: any) => { d.tgDernierePhoto = { fileId: gr.file_id, w: gr.width, h: gr.height, at: Date.now() }; });
+        await tg("sendMessage", { chat_id: chatId, text: "\u{1F4F7} Photo recue (" + gr.width + "x" + gr.height + "). Elle est a disposition." });
+        return new Response("ok");
+      }
+      if (msg.document && msg.document.mime_type && String(msg.document.mime_type).indexOf("image/") === 0) {
+        await mutate((d: any) => { d.tgDernierePhoto = { fileId: msg.document.file_id, nom: msg.document.file_name || "", at: Date.now() }; });
+        await tg("sendMessage", { chat_id: chatId, text: "\u{1F4F7} Image recue (" + (msg.document.file_name || "sans nom") + "). Elle est a disposition." });
+        return new Response("ok");
+      }
       if (msg.voice || msg.audio) {
         await tg("sendMessage", { chat_id: chatId, text: "\u{1F3A4} Je ne sais pas encore ecouter les vocaux. Ecris-moi le chantier pour l'instant." });
         return new Response("ok");
