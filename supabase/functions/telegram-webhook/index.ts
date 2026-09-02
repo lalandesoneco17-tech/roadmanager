@@ -969,6 +969,9 @@ async function sendProposalMessage(tg: any, chatId: string, prop: any): Promise<
 // Cle de remplacement : jour + chauffeur + machine + lieu. Deux fiches differentes
 // (deux chauffeurs, ou deux chantiers du meme chauffeur) coexistent donc sans s'ecraser.
 function propKey(p: any): string {
+  // Une suppression n'a pas d'objet chantier : sans cle propre, toutes les suppressions
+  // auraient la meme et se seraient ecrasees entre elles.
+  if (p.kind === "delete") return "del|" + (p.jobId || "");
   const j = p.job || {};
   return [j.date || "", j.employeeId || "", j.machineId || "", normTxt(j.location || "")].join("|");
 }
@@ -1654,6 +1657,10 @@ async function gsWatch(tg: any, data: any): Promise<number> {
     const j0 = (full.jobs || []).find((x: any) => x.date === iso0 && x.employeeId === e0.id
       && (!lieu0 || normTxt(x.location || "") === lieu0));
     if (!j0) continue;
+    // Decocher puis recocher declenche deux verifications coup sur coup : on evite
+    // d'envoyer deux fois la meme demande de suppression.
+    if ((full.tgProposals || []).some((x: any) => x.kind === "delete" && x.jobId === j0.id)) continue;
+    if (pendings.some((x: any) => x.kind === "delete" && x.jobId === j0.id)) continue;
     const prop = buildProposal(full, { job_id: j0.id }, "delete");
     if (prop.error) continue;
     prop.lines[0] = "\u{1F5D1} EFFACE DU PLANNING DE PAPA — supprimer ce chantier ?";
