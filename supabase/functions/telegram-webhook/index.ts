@@ -1553,6 +1553,8 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   const semaines: any = {};        // cache : une seule requete par feuille
   const nouveaux: any[] = [];
   const oublier: string[] = [];    // cases decochees : on oublie, pour qu'un recochage renvoie la fiche
+  const presentes = new Set<string>();   // lignes encore renseignees dans le classeur
+  const joursLus = new Set<string>();
 
   for (let k = 0; k <= 14 && nouveaux.length < 25; k++) {
     const iso = isoParis(new Date(now.getTime() + k * 86400000));
@@ -1573,9 +1575,11 @@ async function gsWatch(tg: any, data: any): Promise<number> {
     if (!rows) continue;
     const start = gsFindDay(rows, iso);
     if (start < 0) continue;
+    joursLus.add(iso);
     for (const g of gsDayJobs(rows, start, data)) {
       if (gsEstNonChantier(g)) continue;        // repos / absence / depot
       const key = gsRowKey(iso, g);
+      presentes.add(key);                        // la ligne existe encore, cochee ou non
       if (!g.informe) {
         // Case decochee : on efface la trace pour qu'un recochage renvoie la fiche.
         if (seen[key]) oublier.push(key);
@@ -1586,7 +1590,14 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       if (nouveaux.length >= 25) break;
     }
   }
-  if (!nouveaux.length) {
+  // Ligne effacee du classeur (et non simplement decochee) : le chantier n'existe plus.
+  const disparues: string[] = [];
+  for (const k of Object.keys(seen)) {
+    const iso0 = String(k).split("|")[0];
+    if (!joursLus.has(iso0) || presentes.has(k)) continue;
+    disparues.push(k);
+  }
+  if (!nouveaux.length && !disparues.length) {
     if (oublier.length) await mutate((d: any) => { if (d.gsheetSeen) for (const k of oublier) delete d.gsheetSeen[k]; });
     return 0;
   }
@@ -1608,18 +1619,49 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       }
       machArg = n.g.machineRM;
     }
-    const prop = buildProposal(full, {
+    // DEPLACEMENT : le meme chantier (meme jour, meme lieu) est deja attribue a
+    // quelqu'un d'autre -> on DEPLACE la ligne existante au lieu d'en creer une seconde.
+    let baseDeplacee: any = null;
+    if (n.g.lieu) {
+      const e1 = resolveEmployee(full, n.g.chauffeur).emp;
+      baseDeplacee = (full.jobs || []).find((x: any) => x.date === n.iso && x.employeeId && (!e1 || x.employeeId !== e1.id)
+        && normTxt(x.location || "") === normTxt(n.g.lieu)) || null;
+    }
+    const prop = baseDeplacee ? buildProposal(full, {
+      job_id: baseDeplacee.id, chauffeur: n.g.chauffeur, machine: machArg,
+      client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
+      nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
+    }, "update", baseDeplacee) : buildProposal(full, {
       date: n.iso, chauffeur: n.g.chauffeur, machine: machArg,
       client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
       nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
     }, "create");
     if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); continue; }
-    prop.lines[0] = "\u{1F4E5} DU PLANNING DE PAPA — a valider";
+    prop.lines[0] = baseDeplacee ? "\u{1F504} CHANTIER DEPLACE — a valider" : "\u{1F4E5} DU PLANNING DE PAPA — a valider";
     await completerGps(full, prop);
     for (const cid of chats) {
       const p = await sendProposalMessage(tg, cid, prop);
       p.job = prop.job;                          // meme chantier pour tous : pas de doublon si deux admins valident
       pendings.push(p);
+    }
+    envoyees++;
+  }
+  // Suppressions : une ligne effacee du classeur dont le chantier existe encore.
+  for (const k of disparues) {
+    const [iso0, ch0, , lieu0] = String(k).split("|");
+    const e0 = resolveEmployee(full, ch0).emp;
+    if (!e0) continue;
+    const j0 = (full.jobs || []).find((x: any) => x.date === iso0 && x.employeeId === e0.id
+      && (!lieu0 || normTxt(x.location || "") === lieu0));
+    if (!j0) continue;
+    const prop = buildProposal(full, { job_id: j0.id }, "delete");
+    if (prop.error) continue;
+    prop.lines[0] = "\u{1F5D1} EFFACE DU PLANNING DE PAPA — supprimer ce chantier ?";
+    if (j0.sent || j0.ack) (prop.warn = prop.warn || []).push("Le chauffeur a DEJA RECU ce chantier : previens-le apres suppression.");
+    for (const cid of chats) {
+      const pp = await sendProposalMessage(tg, cid, prop);
+      pp.job = prop.job || null; pp.jobId = j0.id;
+      pendings.push(pp);
     }
     envoyees++;
   }
@@ -1630,6 +1672,7 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   await mutate((d: any) => {
     d.gsheetSeen = d.gsheetSeen || {};
     for (const k of oublier) delete d.gsheetSeen[k];
+    for (const k of disparues) delete d.gsheetSeen[k];
     for (const n of nouveaux) d.gsheetSeen[n.key] = Date.now();
     // purge au-dela de 60 jours pour ne pas laisser grossir le bloc
     for (const k of Object.keys(d.gsheetSeen)) if (Date.now() - d.gsheetSeen[k] > 60 * 86400000) delete d.gsheetSeen[k];
