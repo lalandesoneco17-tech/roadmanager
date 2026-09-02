@@ -961,7 +961,7 @@ async function sendProposalMessage(tg: any, chatId: string, prop: any): Promise<
     const jr = await r.json();
     msgId = jr && jr.result && jr.result.message_id;
   } catch (_e) { /* ignore */ }
-  return { id: pid, chatId, msgId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", text: txt, ts: Date.now() };
+  return { id: pid, chatId, msgId, kind: prop.kind, job: prop.job || null, jobId: prop.jobId || (prop.job && prop.job.id) || null, newClientName: prop.newClientName || "", ancien: prop.ancien || "", text: txt, ts: Date.now() };
 }
 
 // UNE seule relecture + ecriture du blob par message recu, meme pour une serie de fiches.
@@ -1523,14 +1523,17 @@ function gsRowKey(iso: string, g: any): string {
 }
 
 // Envoie son chantier au chauffeur, au meme format que le bouton de l'application.
-async function envoyerAuChauffeur(tg: any, data: any, job: any): Promise<boolean> {
+async function envoyerAuChauffeur(tg: any, data: any, job: any, ancien?: string): Promise<boolean> {
   const link = (data.telegramEmpChats || {})[job.employeeId];
   if (!link || !link.chatId) return false;
   const drv = (data.employees || []).find((e: any) => e.id === job.employeeId);
   const prenom = drv && drv.name ? drv.name.split(" ")[0] : "";
   const cl = (data.clients || []).find((c: any) => c.id === job.clientId);
   const m = (data.machines || []).find((x: any) => x.id === job.machineId);
-  const L = ["\u{1F44B} Salut " + prenom + " !", "\u{1F4CB} Ton chantier — " + fmtDateFR(job.date) + " :"];
+  const L = ["\u{1F44B} Salut " + prenom + " !"];
+  // Le chauffeur avait deja recu autre chose : il faut que le changement lui saute aux yeux.
+  if (ancien) { L.push("\u{26A0}\u{FE0F} CHANGEMENT — le chantier prevu (" + ancien + ") est annule."); L.push("\u{1F4CB} A la place, " + fmtDateFR(job.date) + " :"); }
+  else L.push("\u{1F4CB} Ton chantier — " + fmtDateFR(job.date) + " :");
   L.push("• " + (job.billingStart || "") + " " + (job.location || (cl ? cl.name : "chantier"))
     + (cl && job.location ? " (" + cl.name + ")" : "") + (m ? " [" + m.name + "]" : ""));
   if (job.siteManager) L.push("\u{1F477} Chef : " + job.siteManager + (job.siteManagerPhone ? " (" + job.siteManagerPhone + ")" : ""));
@@ -1595,6 +1598,7 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   }
   // Ligne effacee du classeur (et non simplement decochee) : le chantier n'existe plus.
   const disparues: string[] = [];
+  const traitees = new Set<string>();   // suppressions absorbees par une fiche de remplacement
   for (const k of Object.keys(seen)) {
     const iso0 = String(k).split("|")[0];
     if (!joursLus.has(iso0) || presentes.has(k)) continue;
@@ -1622,6 +1626,25 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       }
       machArg = n.g.machineRM;
     }
+    // REMPLACEMENT SUR PLACE : l'admin a efface une ligne et retape une autre au meme
+    // endroit (meme jour, meme chauffeur, meme machine). Une seule fiche, une seule
+    // validation, et le chauffeur est prevenu du changement.
+    let ancienTexte = "";
+    const memeSlot = disparues.find((k: string) => {
+      const a = String(k).split("|"), b = String(n.key).split("|");
+      return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] !== b[3];
+    });
+    let baseRemplacee: any = null;
+    if (memeSlot) {
+      const pa = String(memeSlot).split("|");
+      const e2 = resolveEmployee(full, pa[1]).emp;
+      if (e2) baseRemplacee = (full.jobs || []).find((x: any) => x.date === pa[0] && x.employeeId === e2.id
+        && (!pa[3] || normTxt(x.location || "") === pa[3])) || null;
+      if (baseRemplacee) {
+        ancienTexte = baseRemplacee.location || "chantier";
+        traitees.add(memeSlot);
+      }
+    }
     // DEPLACEMENT : le meme chantier (meme jour, meme lieu) est deja attribue a
     // quelqu'un d'autre -> on DEPLACE la ligne existante au lieu d'en creer une seconde.
     let baseDeplacee: any = null;
@@ -1630,17 +1653,24 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       baseDeplacee = (full.jobs || []).find((x: any) => x.date === n.iso && x.employeeId && (!e1 || x.employeeId !== e1.id)
         && normTxt(x.location || "") === normTxt(n.g.lieu)) || null;
     }
-    const prop = baseDeplacee ? buildProposal(full, {
-      job_id: baseDeplacee.id, chauffeur: n.g.chauffeur, machine: machArg,
+    const socle = baseRemplacee || baseDeplacee;
+    const prop = socle ? buildProposal(full, {
+      job_id: socle.id, chauffeur: n.g.chauffeur, machine: machArg,
       client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
       nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
-    }, "update", baseDeplacee) : buildProposal(full, {
+    }, "update", socle) : buildProposal(full, {
       date: n.iso, chauffeur: n.g.chauffeur, machine: machArg,
       client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
       nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
     }, "create");
     if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); continue; }
-    prop.lines[0] = baseDeplacee ? "\u{1F504} CHANTIER DEPLACE — a valider" : "\u{1F4E5} DU PLANNING DE PAPA — a valider";
+    prop.lines[0] = baseRemplacee ? "\u{1F504} CHANTIER REMPLACE — a valider"
+      : baseDeplacee ? "\u{1F504} CHANTIER DEPLACE — a valider"
+      : "\u{1F4E5} DU PLANNING DE PAPA — a valider";
+    if (ancienTexte) {
+      prop.ancien = ancienTexte;
+      prop.lines.splice(1, 0, "\u{274C} Ancien : " + ancienTexte + " (supprime)");
+    }
     await completerGps(full, prop);
     for (const cid of chats) {
       const p = await sendProposalMessage(tg, cid, prop);
@@ -1650,7 +1680,9 @@ async function gsWatch(tg: any, data: any): Promise<number> {
     envoyees++;
   }
   // Suppressions : une ligne effacee du classeur dont le chantier existe encore.
+  // Celles deja absorbees par une fiche « CHANTIER REMPLACE » sont ignorees ici.
   for (const k of disparues) {
+    if (traitees.has(k)) continue;
     const [iso0, ch0, , lieu0] = String(k).split("|");
     const e0 = resolveEmployee(full, ch0).emp;
     if (!e0) continue;
@@ -2229,7 +2261,21 @@ Deno.serve(async (req) => {
         // On previent le chauffeur AVANT d'ecrire : on sait ainsi si sent=true est exact.
         let prevenu = false;
         if (action === "pok" && prop.kind !== "delete" && prop.job && prop.job.employeeId) {
-          prevenu = await envoyerAuChauffeur(tg, data, prop.job);
+          prevenu = await envoyerAuChauffeur(tg, data, prop.job, prop.ancien || "");
+        }
+        // Suppression validee : le chauffeur qui avait recu le chantier doit etre averti.
+        if (action === "pok" && prop.kind === "delete") {
+          const anc = (data.jobs || []).find((x: any) => x.id === prop.jobId);
+          const lien = anc ? (data.telegramEmpChats || {})[anc.employeeId] : null;
+          if (anc && (anc.sent || anc.ack) && lien && lien.chatId) {
+            const e1 = (data.employees || []).find((x: any) => x.id === anc.employeeId);
+            const p1 = e1 && e1.name ? e1.name.split(" ")[0] : "";
+            const c1 = (data.clients || []).find((c: any) => c.id === anc.clientId);
+            try {
+              await tg("sendMessage", { chat_id: lien.chatId, text: "\u{26A0}\u{FE0F} " + p1 + ", ton chantier du " + fmtDateFR(anc.date) + " (" + (anc.location || (c1 ? c1.name : "chantier")) + ") est ANNULE.\nNe t'y rends pas. En cas de doute, appelle le bureau." });
+              prevenu = true;
+            } catch (_e) { /* ignore */ }
+          }
         }
         const res = await resolveProposal(prop, chatId, action === "pok", prevenu);
         let tail = (action === "pok" ? "✅ " : "❌ ") + res;
@@ -2238,6 +2284,7 @@ Deno.serve(async (req) => {
           const nm = drv && drv.name ? drv.name.split(" ")[0] : "le chauffeur";
           tail += prevenu ? " " + nm + " a recu son chantier." : " (" + nm + " n'a pas de Telegram lie : previens-le autrement.)";
         }
+        if (action === "pok" && prop.kind === "delete") tail += prevenu ? " Le chauffeur a ete prevenu de l'annulation." : " (Le chauffeur n'avait pas recu ce chantier, rien a annuler chez lui.)";
         await tg("answerCallbackQuery", { callback_query_id: cq.id, text: tail });
         if (mid) { try { await tg("editMessageText", { chat_id: chatId, message_id: mid, text: (prop.text || "").replace(/\n\nC'est bien ca \?$/, "") + "\n\n" + tail, disable_web_page_preview: true }); } catch (_e) { /* ignore */ } }
         // Chantier repris a un autre chauffeur qui l'avait deja recu : on propose de le
