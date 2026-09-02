@@ -2108,9 +2108,16 @@ Deno.serve(async (req) => {
         await tg("sendMessage", { chat_id: chatId, text: "\u{1F4F7} Photo recue (" + gr.width + "x" + gr.height + "). Elle est a disposition." });
         return new Response("ok");
       }
-      if (msg.document && msg.document.mime_type && String(msg.document.mime_type).indexOf("image/") === 0) {
-        await mutate((d: any) => { d.tgDernierePhoto = { fileId: msg.document.file_id, nom: msg.document.file_name || "", at: Date.now() }; });
-        await tg("sendMessage", { chat_id: chatId, text: "\u{1F4F7} Image recue (" + (msg.document.file_name || "sans nom") + "). Elle est a disposition." });
+      // Tout fichier joint : Telegram n'annonce pas toujours le bon type, donc on ne
+      // filtre pas dessus. Mieux vaut retenir un fichier de trop que de l'ignorer en silence.
+      if (msg.document && msg.document.file_id) {
+        const nm = msg.document.file_name || "sans nom";
+        await mutate((d: any) => { d.tgDernierePhoto = { fileId: msg.document.file_id, nom: nm, mime: msg.document.mime_type || "", at: Date.now() }; });
+        await tg("sendMessage", { chat_id: chatId, text: "\u{1F4CE} Fichier recu (" + nm + "). Il est a disposition." });
+        return new Response("ok");
+      }
+      if (msg.video || msg.animation || msg.sticker) {
+        await tg("sendMessage", { chat_id: chatId, text: "Je ne sais pas quoi faire de ca. Envoie-moi une photo, un fichier, un point GPS ou un contact." });
         return new Response("ok");
       }
       if (msg.voice || msg.audio) {
