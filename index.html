@@ -9,7 +9,7 @@
 <title>RoadManager</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
+<!-- babel (3140 Ko) est charge a la demande, uniquement si la traduction n est pas deja en memoire -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -48,6 +48,52 @@ set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}return Promise.resolve
 }
 </script>
 <!-- xlsx (952 Ko) et jszip (98 Ko) sont charges a la demande, au moment d un import telematique -->
-<script>document.write('<script type="text/babel" src="app.v6.jsx?t='+Date.now()+'"><\/script>')</script>
+<script>
+// ---------------------------------------------------------------------------
+// Demarrage : la traduction du fichier par Babel prend 6 a 10 s sur telephone et
+// etait refaite a CHAQUE ouverture. On la garde donc en memoire dans l'appareil,
+// rangee sous une empreinte du fichier source : si le code n'a pas change, on
+// reutilise la traduction et Babel (3 Mo) n'est meme pas telecharge.
+// En cas de pepin, on retombe sur l'ancienne methode : l'app demarre toujours.
+// ---------------------------------------------------------------------------
+(function(){
+  var SRC='app.v6.jsx', CLE='rm-compile-';
+  function repli(){
+    var pose=function(){var s=document.createElement('script');s.type='text/babel';s.src=SRC+'?t='+Date.now();document.head.appendChild(s);};
+    if(window.Babel) return pose();
+    var b=document.createElement('script');
+    b.src='https://unpkg.com/@babel/standalone@7.29.7/babel.min.js';
+    b.onload=pose; document.head.appendChild(b);
+  }
+  function empreinte(t){var h=5381;for(var i=0;i<t.length;i++){h=((h*33)^t.charCodeAt(i))>>>0;}return h.toString(36)+'-'+t.length;}
+  function executer(code){
+    try{
+      var b=new Blob([code],{type:'text/javascript'});
+      var s=document.createElement('script');
+      s.src=URL.createObjectURL(b);
+      s.onerror=repli;
+      document.head.appendChild(s);
+    }catch(e){repli();}
+  }
+  function babelPuisExecuter(src,cle){
+    var s=document.createElement('script');
+    s.src='https://unpkg.com/@babel/standalone@7.29.7/babel.min.js';
+    s.onload=function(){
+      try{
+        var code=window.Babel.transform(src,{presets:['react']}).code;
+        try{ for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i); if(k&&k.indexOf(CLE)===0&&k!==cle) localStorage.removeItem(k);} localStorage.setItem(cle,code); }catch(e2){}
+        executer(code);
+      }catch(e){repli();}
+    };
+    s.onerror=repli;
+    document.head.appendChild(s);
+  }
+  fetch(SRC,{cache:'no-cache'}).then(function(r){return r.text();}).then(function(src){
+    var cle=CLE+empreinte(src), cache=null;
+    try{cache=localStorage.getItem(cle);}catch(e){}
+    if(cache){executer(cache);} else {babelPuisExecuter(src,cle);}
+  }).catch(repli);
+})();
+</script>
 </body>
 </html>
