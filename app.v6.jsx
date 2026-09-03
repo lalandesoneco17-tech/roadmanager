@@ -2551,19 +2551,47 @@ const endJob=(j)=>{
   const nd=JSON.parse(JSON.stringify(_liveData||data));
   const jj=nd.jobs.find(x=>x.id===j.id);
   if(!jj)return;
-  const billStart=_toM(j.billingStart);
+  // le temps passe part du VRAI debut du chantier : la fin du chantier precedent,
+  // sinon l'heure d'embauche. L'heure prevue au planning n'est qu'un dernier recours.
+  const te=(nd.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&t.startTime);
+  const prec=(nd.jobs||[]).filter(x=>x.employeeId===j.employeeId&&x.date===j.date&&x.id!==j.id&&x.signature&&x.signature.signedAt)
+    .sort((a,b)=>new Date(a.signature.signedAt)-new Date(b.signature.signedAt)).pop();
+  const now=new Date();
+  let debutM=null;
+  if(prec){const dp=new Date(prec.signature.signedAt);debutM=dp.getHours()*60+dp.getMinutes()}
+  else if(te&&te.startTime)debutM=_toM(te.startTime);
+  else debutM=_toM(j.billingStart);
   let dur=null,pauseDeducted=0;
-  if(billStart!=null){
-    const now=new Date();let endMin=now.getHours()*60+now.getMinutes();if(endMin<billStart)endMin+=1440;
-    dur=endMin-billStart;
-    const te=(nd.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&(t.breakStart||t.pauseStart||t.pauseMin));
-    if(te){const pS=_toM(te.breakStart||te.pauseStart);const pE=_toM(te.breakEnd||te.pauseEnd);const pM=(pS!=null&&pE!=null&&pE>pS)?(pE-pS):(te.pauseMin?Number(te.pauseMin):0);if(pS!=null&&pS>=billStart&&pM>0){dur-=pM;pauseDeducted=pM}}
-    dur=Math.max(0,dur);
+  if(debutM!=null){
+    let endMin=now.getHours()*60+now.getMinutes();
+    if(endMin<debutM)endMin+=1440;
+    dur=endMin-debutM;
+    const ps=(te&&Array.isArray(te.pauses)&&te.pauses.length)?te.pauses
+      :((te&&te.breakStart&&te.breakEnd)?[{d:te.breakStart,f:te.breakEnd}]:[]);
+    ps.forEach(p=>{
+      if(!p||!p.d||!p.f)return;
+      let a=_toM(p.d),b=_toM(p.f);
+      if(a==null||b==null)return;
+      if(a<debutM)a+=1440;
+      if(b<a)b+=1440;
+      const d1=Math.max(a,debutM),f1=Math.min(b,endMin);
+      if(f1>d1)pauseDeducted+=f1-d1;
+    });
+    dur=Math.max(0,dur-pauseDeducted);
   }
   jj.signature={signedBy:(emp&&emp.name)||'',signedAt:new Date().toISOString(),durationMin:dur,pauseDeducted,autoForfait:null,endedBy:'employee'};
   save(nd);
-  // Notification Telegram a l'admin : fin de chantier + temps de route (depot/domicile) + planning du lendemain (sans forfait)
-  (async()=>{try{const cfg=_liveData||data;const tok=cfg.telegramBotToken;if(!tok||cfg.tgNotifySign===false)return;const who=(emp&&emp.name)||'Un salarie';const loc=j.location||jj.location||'chantier';const cln=jj.clientId?((nd.clients.find(c=>c.id===jj.clientId)||{}).name||''):'';const dm=jj.signature.durationMin;const durTxt=dm!=null?Math.floor(dm/60)+'h'+String(dm%60).padStart(2,'0'):'—';const lines=['🏁 '+who+' — fin de chantier','📍 '+loc+(cln?' ('+cln+')':''),'⏱ Temps passé : '+durTxt];const eta=min=>{const a=new Date(Date.now()+min*60000);return pad2(a.getHours())+'h'+pad2(a.getMinutes())};const depC=d=>d._coords?parseCoords(typeof d._coords==='string'?d._coords:d._coords.join(',')):null;const jc=parseCoords(j.gps||j._geocodedGps);const hc=getEmpCoords(cfg,empId);const dests=[];(cfg.depots||[]).forEach(d=>dests.push({label:d.name||'Dépôt',coords:depC(d),emoji:'🏭'}));dests.push({label:'Domicile',coords:hc,emoji:'🏠'});if(jc){lines.push('','🚗 Retour depuis le chantier :');for(const ds of dests){if(ds.coords){const r=await osmRoute(jc,ds.coords);lines.push(ds.emoji+' '+ds.label+' : '+r.min+' min → arrivée ~'+eta(r.min)+' ('+r.km+' km)')}else{lines.push(ds.emoji+' '+ds.label+' : (adresse non renseignée)')}}}else{lines.push('','🚗 (pas de GPS sur le chantier — temps de route indisponibles)')}const jobLine=nj=>{const c=(cfg.clients||[]).find(x=>x.id===nj.clientId);const mc=(cfg.machines||[]).find(x=>x.id===nj.machineId);return (nj.billingStart||'')+' '+(nj.location||(c?c.name:'chantier'))+(c&&nj.location?' ('+c.name+')':'')+(mc?' ['+mc.name+']':'')};const sameDay=(cfg.jobs||[]).filter(nj=>nj.employeeId===empId&&nj.date===j.date&&nj.id!==j.id&&nj.type!=='depot'&&nj.type!=='repos').sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));const next2=sameDay.find(nj=>!nj.signature);if(next2){lines.push('','🛣 Prochain chantier aujourd\'hui :','• '+jobLine(next2));const n2c=parseCoords(next2.gps||next2._geocodedGps);if(jc&&n2c){const r=await osmRoute(jc,n2c);lines.push('🚗 Route vers ce chantier : '+r.min+' min → arrivée ~'+eta(r.min)+' ('+r.km+' km)')}else{lines.push('🚗 (pas de GPS sur le prochain chantier)')}}else{const base=new Date((j.date||fmtDateISO(new Date()))+'T12:00:00');let fISO=null,fJobs=[];for(let k=1;k<=10;k++){const dd=new Date(base);dd.setDate(dd.getDate()+k);const iso=fmtDateISO(dd);const jj2=(cfg.jobs||[]).filter(nj=>nj.employeeId===empId&&nj.date===iso);if(jj2.length){fISO=iso;fJobs=jj2;break}}if(fISO){lines.push('','📅 Prochain jour de travail — '+fmtDate(new Date(fISO+'T12:00:00'))+' :');fJobs.forEach(nj=>lines.push('• '+jobLine(nj)));const ncoo=parseCoords(fJobs[0].gps||fJobs[0]._geocodedGps);if(ncoo){let bestD=null;dests.forEach(ds=>{if(ds.coords){const km=haversine(ncoo,ds.coords);if(!bestD||km<bestD.km)bestD={label:ds.label,km:Math.round(km)}}});if(bestD)lines.push('→ Le plus proche de ce chantier : '+bestD.label+' (~'+bestD.km+' km)')}}else{lines.push('','📅 Rien de prévu dans les 10 prochains jours')}}const kb=[];if(next2)kb.push([{text:'🛣 Va au prochain chantier',callback_data:'next:'+next2.id+':'+empId}]);(cfg.depots||[]).forEach(d=>kb.push([{text:'🏭 Rentre à '+(d.name||'dépôt'),callback_data:'r:'+d.id+':'+empId}]));kb.push([{text:'🏠 Rentre à la maison',callback_data:'r:home:'+empId}]);kb.push([{text:'📅 Lui envoyer son planning de demain',callback_data:'plan:'+empId}]);const _mainText=lines.join('\n');const _sent1=await tgSendAdmins(cfg,_mainText,{reply_markup:{inline_keyboard:kb}});const _grp=[];if(_sent1&&_sent1.length)_grp.push({id:uid(),text:_mainText,msgs:_sent1,ts:Date.now(),doneBy:null,doneAt:null});const m2f=(cfg.machines||[]).find(x=>x.id===jj.machineId);const fbtns=[];['2h','4h','6h','8h','10h','Demi-journee','Journee','Transfert'].forEach(ft=>{const pr=getForfaitPrice(cfg,jj.clientId,m2f,ft,jj.citOption,jj.isNight);if(pr>0)fbtns.push({text:ft+' — '+pr+'€',callback_data:'ff:'+jj.id+':'+ft+':'+pr})});if(fbtns.length){const frows=[];for(let fi=0;fi<fbtns.length;fi+=2)frows.push(fbtns.slice(fi,fi+2));const _ffText='💰 Quel forfait mettre sur le planning pour ce chantier ?\n📍 '+loc+' — '+who+(m2f?' ('+m2f.name+')':'')+'\n⏱ Temps passé : '+durTxt+(jj.forfaitType?'\nForfait actuel : '+jj.forfaitType:'');const _sent2=await tgSendAdmins(cfg,_ffText,{reply_markup:{inline_keyboard:frows}});if(_sent2&&_sent2.length)_grp.push({id:uid(),text:_ffText,msgs:_sent2,ts:Date.now(),doneBy:null,doneAt:null})}if(_grp.length){const _nd=JSON.parse(JSON.stringify(_liveData||data));_nd.tgGroups=[...(_nd.tgGroups||[]),..._grp];save(_nd)}}catch(e){}})();
+  // Notification a l'admin : fin de chantier, le lieu, le temps passe. Rien d'autre.
+  (async()=>{try{
+    const cfg=_liveData||data;const tok=cfg.telegramBotToken;
+    if(!tok||cfg.tgNotifySign===false)return;
+    const who=(emp&&emp.name)||'Un salarie';
+    const loc=j.location||jj.location||'chantier';
+    const cln=jj.clientId?((nd.clients.find(c=>c.id===jj.clientId)||{}).name||''):'';
+    const dm=jj.signature.durationMin;
+    const durTxt=dm!=null?Math.floor(dm/60)+'h'+String(dm%60).padStart(2,'0'):'—';
+    await tgSendAdmins(cfg,'🏁 '+who+' — fin de chantier\n📍 '+loc+(cln?' ('+cln+')':'')+'\n⏱ Temps passé : '+durTxt);
+  }catch(e){}})();
   alert('✓ Fin de chantier enregistree !');
 };
 const selectedMachine=(data.machines||[]).find(m=>m.id===selectedMachineId)||null;
