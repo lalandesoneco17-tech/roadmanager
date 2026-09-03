@@ -2464,6 +2464,8 @@ Suggestions de ce que tu peux ecrire :<br/>
 
 // ======== EMPLOYEE VIEW ========
 const EmployeeView=({data,save,empId,onLogout})=>{
+const[feuille,setFeuille]=useState(null);
+const[demainOuvert,setDemainOuvert]=useState(false);
 const[vue,setVue]=useState('jour');
 const emp=(data.employees||[]).find(e=>e.id===empId);
 const[view,setView]=useState('Jour');const[offset,setOffset]=useState(0);
@@ -2603,23 +2605,73 @@ const empBtnS={padding:'14px 20px',fontSize:15,fontWeight:600,borderRadius:10,bo
 const empTglBtn=(active,activeColor)=>({padding:'14px 16px',fontSize:15,fontWeight:700,borderRadius:10,border:'2px solid '+(active?activeColor:'#e2e8f0'),background:active?activeColor:'#fff',color:active?'#fff':C.dim,cursor:'pointer',flex:1,boxShadow:active?'0 2px 4px rgba(0,0,0,.1)':'none'});
 const _mesJobs=(data.jobs||[]).filter(j=>j.employeeId===empId);
 const _jourJobs=_mesJobs.filter(j=>j.date===today).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
-const _demain=(()=>{const d=new Date();d.setDate(d.getDate()+1);return fmtDateISO(d)})();
-const _demainJobs=_mesJobs.filter(j=>j.date===_demain).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
-const _nomCli=j=>{const c=(data.clients||[]).find(x=>x.id===j.clientId);return c?c.name:''};
-const _nomMach=j=>{const m=(data.machines||[]).find(x=>x.id===j.machineId);return m?m.name+(m.type?' · '+m.type:''):''};
-const _enCours=(status!=='off'&&lastEntry&&lastEntry.startTime&&!lastEntry.endTime)?(()=>{const n=new Date();const[h,m]=lastEntry.startTime.split(':').map(Number);let d=(n.getHours()*60+n.getMinutes())-(h*60+m);if(d<0)d+=1440;return Math.max(0,d-(lastEntry.pauseMin||0))})():0;
-const _cumulJour=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+_enCours;
-const _cumulSemaine=weeklyTotal+_enCours;
+const _demainISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return fmtDateISO(d)})();
+const _demainJobs=_mesJobs.filter(j=>j.date===_demainISO).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
+const _cli=j=>{const c=(data.clients||[]).find(x=>x.id===j.clientId);return c?c.name:''};
+const _mach=j=>{const m=(data.machines||[]).find(x=>x.id===j.machineId);return m?m.name+(m.type?' · '+m.type:''):''};
+const _gpsDe=j=>j.gps||'';
 const _hm=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
+const _duree=m=>m==null?'—':(m<60?Math.round(m)+' min':_hm(m));
+const _mn=(a,b)=>{const[h1,m1]=a.split(':').map(Number);const[h2,m2]=b.split(':').map(Number);let d=(h2*60+m2)-(h1*60+m1);if(d<0)d+=1440;return d};
+const _hDe=iso=>{try{const d=new Date(iso);return pad2(d.getHours())+':'+pad2(d.getMinutes())}catch(e){return ''}};
+const _enCours=(status!=='off'&&lastEntry&&lastEntry.startTime&&!lastEntry.endTime)?Math.max(0,_mn(lastEntry.startTime,pad2(new Date().getHours())+':'+pad2(new Date().getMinutes()))-(lastEntry.pauseMin||0)):0;
+const _cumulJour=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+_enCours;
+const _cumulSem=weeklyTotal+_enCours;
 const _dateLongue=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
-const _pastilleS={width:40,height:40,borderRadius:12,background:C.accent,color:'#fff',display:'grid',placeItems:'center',fontWeight:800,fontSize:19,border:'none',cursor:'pointer',flexShrink:0};
-const _carteS={background:C.card,border:'1px solid '+C.border,borderRadius:16,padding:13,marginBottom:11,position:'relative',zIndex:1};
-const _etiqS={fontSize:12,fontWeight:800,letterSpacing:'.1em',textTransform:'uppercase',color:C.dim,display:'flex',justifyContent:'space-between',gap:8};
-const _gpsDe=j=>j.gps||'';  // uniquement un vrai point, jamais deduit du texte du lieu
-const _itemS={width:'100%',background:'none',border:'none',borderTop:'1px solid '+C.border,padding:'12px 13px',minHeight:52,display:'flex',gap:11,alignItems:'center',textAlign:'left',cursor:'pointer',fontSize:14,fontWeight:600,color:C.text};
+const _demainLongue=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric'})})();
+const _pauses=t=>{if(Array.isArray(t.pauses)&&t.pauses.length)return t.pauses;if(t.breakStart&&t.breakEnd)return[{d:t.breakStart,f:t.breakEnd}];return[]};
+
+// la journee comme une suite d'instants, pour l'ecran Mes heures
+const _chaine=(dte,te)=>{
+  const jbs=_mesJobs.filter(j=>j.date===dte).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
+  const mil=[];
+  jbs.forEach(j=>{
+    if(j.billingStart) mil.push({k:'ch1',t:j.location||_cli(j)||'Chantier',sub:[_cli(j),_mach(j)].filter(Boolean).join(' · '),h:j.billingStart,fige:true});
+    if(j.signature&&j.signature.signedAt) mil.push({k:'ch2',t:'Fin · '+(j.location||_cli(j)||'chantier'),h:_hDe(j.signature.signedAt),job:j});
+  });
+  (te?_pauses(te):[]).forEach(p=>{
+    if(p.d) mil.push({k:'pa1',t:'Pause'+(te.mealType?' · '+te.mealType.toLowerCase():''),h:p.d,pause:p,te:te});
+    if(p.f) mil.push({k:'pa2',t:'Reprise',h:p.f,pause:p,te:te});
+  });
+  // on classe depuis l'embauche : un chantier de nuit traverse minuit
+  const _ref=(te&&te.startTime)||'00:00';
+  mil.forEach((e,i)=>{e.i=i;e.k2=e.h?_mn(_ref,e.h):9999});
+  mil.sort((a,b)=>a.k2-b.k2||a.i-b.i);
+  const ev=[].concat(te&&te.startTime?[{k:'emb',t:'Embauche',h:te.startTime,te:te,cle:'startTime'}]:[],mil,te&&te.endTime?[{k:'deb',t:'Débauche',h:te.endTime,te:te,cle:'endTime'}]:[]);
+  const out=[];let dans=false;
+  ev.forEach((e,i)=>{
+    if(e.k==='ch1')dans=true;
+    out.push({ev:e,dans:dans});
+    if(e.k==='ch2')dans=false;
+    const n=ev[i+1];if(!n)return;
+    out.push({nat:e.k==='pa1'?'pause':(dans?'chantier':'trajet'),d:(e.h&&n.h)?_mn(e.h,n.h):null});
+  });
+  return out;
+};
+
+const _joursHeures=(()=>{
+  const par={};
+  (hist30||[]).forEach(t=>{par[t.date]=t});
+  _mesJobs.filter(j=>j.date<=today&&j.date>=(()=>{const d=new Date();d.setDate(d.getDate()-30);return fmtDateISO(d)})()).forEach(j=>{if(!par[j.date])par[j.date]=null});
+  return Object.keys(par).sort().reverse().slice(0,14).map(dte=>({date:dte,te:par[dte]}));
+})();
+
+const _fermerFeuille=()=>setFeuille(null);
+const _feuilleChef=j=>setFeuille({type:'chef',job:j});
+const _feuilleGps=j=>setFeuille({type:'gps',job:j});
+const _feuilleManque=j=>setFeuille({type:'manque',job:j});
+const MANQUES=['Le point GPS du chantier',"Le chef de chantier et son numéro","L'heure exacte de rendez-vous",'Comment accéder au chantier','Autre chose'];
+const _envoyerManque=(j,quoi)=>{
+  const nd=JSON.parse(JSON.stringify(_liveData||data));
+  if(!nd.messages)nd.messages=[];
+  const txt=emp.name+' — '+(j.location||_cli(j))+' ('+(j.billingStart||'')+', '+_cli(j)+') : il me manque '+quoi+'.';
+  nd.messages.push({id:uid(),fromEmpId:empId,toEmpId:null,date:new Date().toISOString(),content:txt,read:false,kind:'manque'});
+  save(nd);
+  setFeuille({type:'envoye',texte:txt});
+};
 
 return(
-<div style={{maxWidth:520,margin:'0 auto',padding:'12px 13px 20px',fontSize:14,position:'relative',minHeight:'100vh'}}>
+<div className="rmc">
 <div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',zIndex:9999,display:'flex',flexDirection:'column',gap:6,maxWidth:'92vw',width:'420px'}}>
 {toasts.map(t=>(
 <div key={t.id} onClick={()=>setToasts(ts=>ts.filter(x=>x.id!==t.id))} style={{background:t.kind==='new'?C.green:C.orange,color:'#fff',padding:'12px 16px',borderRadius:10,boxShadow:'0 6px 20px rgba(0,0,0,.25)',fontWeight:700,fontSize:14,cursor:'pointer'}}>
@@ -2870,197 +2922,235 @@ return(
 </Mod>)})()}
 {empPhotoLightbox&&<div onClick={()=>setEmpPhotoLightbox(null)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.92)',zIndex:5000,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}><img src={empPhotoLightbox} alt="" style={{maxWidth:'95vw',maxHeight:'95vh',objectFit:'contain'}}/><button onClick={e=>{e.stopPropagation();setEmpPhotoLightbox(null)}} style={{position:'absolute',top:20,right:20,background:'#fff',border:'none',borderRadius:'50%',width:44,height:44,fontSize:22,cursor:'pointer',fontWeight:700,boxShadow:'0 2px 10px rgba(0,0,0,.3)'}}>×</button></div>}
 
-{vue==='heures'?(<React.Fragment>
-<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
-<button onClick={()=>setVue('jour')} style={{background:'none',border:'2px solid '+C.border,color:C.dim,padding:'6px 12px',borderRadius:10,fontSize:15,cursor:'pointer'}}>←</button>
-<div style={{fontWeight:800,fontSize:20}}>Mes heures</div>
+<div className="vue" hidden={vue!=='jour'}>
+<div className="filigrane" aria-hidden="true"><i></i></div>
+<div className="corps">
+<div className="barre-id">
+<button className="pastille" onClick={()=>setVue('profil')} title="Mon espace">{(emp.name||'?').charAt(0).toUpperCase()}</button>
+<div className="qui">{_dateLongue}<small>{_jourJobs.length?_jourJobs.length+(_jourJobs.length>1?' chantiers':' chantier'):'aucun chantier'}</small></div>
+<div className="totaux">
+<div className="tb"><b>{_hm(_cumulJour)}</b><small>aujourd'hui</small></div>
+<div className="tb sem"><b>{_hm(_cumulSem)}</b><small>semaine</small></div>
 </div>
-<React.Fragment>
-{(()=>{const statusLbl=status==='on'?'En activite':status==='pause'?'En pause':'Debauche';const statusCol=status==='on'?C.green:status==='pause'?C.orange:C.muted;const todayWorked=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+(status==='on'&&lastEntry&&lastEntry.startTime?Math.max(0,(new Date().getHours()*60+new Date().getMinutes())-(()=>{const[h,m]=lastEntry.startTime.split(':').map(Number);return h*60+m})()):0);return(
-<div style={{background:C.card,borderRadius:14,padding:16,border:'1px solid '+C.border,marginBottom:16,boxShadow:'0 2px 8px rgba(0,0,0,.04)'}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,gap:10}}>
-<div>
-<div style={{fontSize:12,color:C.dim,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:2}}>{fmtDate(new Date())}</div>
-<div style={{fontSize:30,fontWeight:800,color:C.text,lineHeight:1}}>{fmtDuration(todayWorked)}<span style={{fontSize:14,color:C.dim,fontWeight:500,marginLeft:6}}>aujourd'hui</span></div>
 </div>
-<div style={{background:statusCol,color:'#fff',padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:800,textTransform:'uppercase',letterSpacing:'0.5px',boxShadow:'0 2px 4px rgba(0,0,0,.15)'}}>● {statusLbl}</div>
+<div className="zonefil">
+<div className="fil">
+
+{isNightShift&&<div className="noeud"><div className="alerte" onClick={()=>setVue('heures')} style={{cursor:'pointer'}}><b>⚠</b><span>Journée du {fmtDate(new Date(lastEntry.date))} encore ouverte — vérifie tes heures.</span></div></div>}
+
+<div className={'noeud '+(status==='off'?'actif':'fait')}>
+<div className={'carte'+(status==='off'?' actif':'')}>
+<div className="etiquette"><span>{status==='off'?'Maintenant':status==='pause'?'En pause':'Embauche'}</span><span className="h">{status==='off'?(pad2(new Date().getHours())+':'+pad2(new Date().getMinutes())):(lastEntry&&lastEntry.startTime)||''}</span></div>
+{status==='off'&&<div style={{marginTop:9}}><button onClick={()=>doTime('start')}>▶ Je commence</button></div>}
+{status!=='off'&&<div className="meta">Journée commencée.</div>}
+{status!=='off'&&<div style={{marginTop:9,display:'flex',gap:7,alignItems:'center',flexWrap:'wrap'}}>
+<span style={{fontFamily:'"Barlow Condensed",sans-serif',fontWeight:600,fontSize:11.5,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--ink-3)'}}>Repas</span>
+{['PANIER','RESTO'].map(m=><button key={m} className={'chip'+(lastEntry&&lastEntry.mealType===m?'':' creux')} onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.mealType=m;save(nd)}}}>{m==='PANIER'?'🥪 Panier':'🍽 Resto'}</button>)}
+</div>}
 </div>
-{isNightShift&&<div style={{background:'#fef3c7',border:'2px solid #f59e0b',borderRadius:10,padding:'10px 14px',marginBottom:10,fontSize:13,color:'#92400e',fontWeight:700}}>🌙 Shift de nuit en cours depuis {fmtDate(new Date(lastEntry.date))} — pensez a cliquer "Fin de journee" pour le terminer</div>}
-<div style={{display:'flex',flexDirection:'column',gap:6}}>
-{(isNightShift?[lastEntry,...dayEntries]:dayEntries).map(t=>{const wm=calcWorkedMin(t);const crossedMidnight=t.endDate&&t.endDate!==t.date;return(
-<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',background:'#f8fafc',borderRadius:10,border:'1px solid '+C.border,gap:8,flexWrap:'wrap'}}>
-<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-{t.date!==today&&<span style={{fontSize:11,color:C.dim,fontWeight:600,background:'#fff',padding:'2px 8px',borderRadius:6,border:'1px solid '+C.border}}>{fmtDate(new Date(t.date))}</span>}
-<span style={{fontWeight:800,fontSize:16,color:C.text}}>{t.startTime||'--:--'} → {t.endTime||'...'}</span>
-{crossedMidnight&&<span style={{fontSize:10,color:'#fff',background:C.purple,padding:'2px 6px',borderRadius:6,fontWeight:700}}>🌙 lendemain</span>}
-{t.pauseMin>0&&<span style={{fontSize:11,color:C.orange,background:C.orange+'18',padding:'2px 8px',borderRadius:6,fontWeight:700}}>⏸ {t.pauseMin}min</span>}
-{wm>0&&<span style={{fontSize:13,color:'#fff',background:C.accent,padding:'2px 10px',borderRadius:6,fontWeight:800}}>{fmtDuration(wm)}</span>}
 </div>
-<div style={{display:'flex',gap:6}}>
-<button onClick={()=>setEditTE({...t})} style={{background:'#fff',border:'1px solid '+C.accent,color:C.accent,borderRadius:8,padding:'6px 10px',cursor:'pointer',fontSize:12,fontWeight:700}}>✎</button>
-<button onClick={()=>delTE(t.id)} style={{background:'#fff',border:'1px solid '+C.red,color:C.red,borderRadius:8,padding:'6px 10px',cursor:'pointer',fontSize:12,fontWeight:700}}>🗑</button>
+
+{_jourJobs.length===0&&<div className="noeud"><div className="carte"><div className="meta" style={{textAlign:'center'}}>Aucun chantier prévu aujourd'hui.</div></div></div>}
+
+{_jourJobs.map((j,k)=>{const fini=!!j.signature;const actif=!fini&&status!=='off';const gps=_gpsDe(j);const complet=j.siteManager&&j.siteManagerPhone&&gps;
+return(
+<div key={j.id} className={'noeud '+(fini?'fait':(actif?'actif':''))}>
+<div className={'carte'+(actif?' actif':'')+(fini?' fini':'')}>
+<div className="etiquette"><span>{fini?'Chantier '+(k+1)+' terminé':'Chantier '+(k+1)+' sur '+_jourJobs.length}</span><span className="h">{j.billingStart||''}</span></div>
+<div className="tete">
+<div className="gros">{j.location||_cli(j)||'Chantier'}</div>
+<div className="ident">
+<div className="client">{_cli(j)}</div>
+<div className="machine">{_mach(j)}</div>
+{j.forfaitType?<div className="forfait">{j.forfaitType}</div>:null}
+</div>
+</div>
+{!fini&&<div className="contacts">
+<button className={'contact'+(j.siteManager?'':' vide')} onClick={()=>j.siteManager?_feuilleChef(j):_feuilleManque(j)}>
+<span className="ic">📞</span><span className="txt"><b>{j.siteManager||'Chef non indiqué'}</b><small>{j.siteManager?(j.siteManagerPhone||'numéro manquant'):'personne à appeler'}</small></span></button>
+<button className={'contact'+(gps?'':' vide')} onClick={()=>gps?_feuilleGps(j):_feuilleManque(j)}>
+<span className="ic">📍</span><span className="txt"><b>{gps?'Itinéraire':'Pas de point GPS'}</b><small>{gps?'point enregistré':'adresse seule'}</small></span></button>
+</div>}
+{!fini&&<button className={'manque'+(complet?' discret':'')} onClick={()=>_feuilleManque(j)}>⚠ Il me manque une info</button>}
+{fini&&<div className="fin"><span>Terminé</span><b>{j.signature.signedAt?_hDe(j.signature.signedAt):'✓'}</b></div>}
+{actif&&<div style={{marginTop:11,display:'flex',flexDirection:'column',gap:9}}>
+{status==='pause'
+ ?<button onClick={()=>doTime('resume')}>▶ Reprise</button>
+ :<button className="pausebtn" onClick={()=>doTime('pause_start')}>⏸ Pause</button>}
+{status!=='pause'&&<button className="creux" onClick={()=>endJob(j)}>🏁 {k+1<_jourJobs.length?'Fin · passer au suivant':'Fin de chantier'}</button>}
+</div>}
+</div>
+</div>)})}
+
+{status!=='off'&&_jourJobs.every(j=>j.signature)&&<div className="noeud actif">
+<div className="carte actif">
+<div className="etiquette"><span>Maintenant</span><span className="h">{pad2(new Date().getHours())+':'+pad2(new Date().getMinutes())}</span></div>
+<div style={{marginTop:9,display:'flex',flexDirection:'column',gap:9}}>
+{status==='pause'?<button onClick={()=>doTime('resume')}>▶ Reprise</button>:<button className="pausebtn" onClick={()=>doTime('pause_start')}>⏸ Pause</button>}
+{status!=='pause'&&<button className="rouge" onClick={()=>doTime('done')}>🌙 Je débauche</button>}
+</div>
+</div>
+</div>}
+
+</div>
+</div>
+</div>
+
+<div className={'pied-fixe'+(demainOuvert?' ouvert':'')+((_demainJobs.length&&_demainJobs.every(j=>j.ack))?' confirme':'')}>
+<div className="demain">
+<div className="dem-tete">
+<span>Demain · {_demainLongue} · {_demainJobs.length?_demainJobs.length+(_demainJobs.length>1?' chantiers':' chantier'):'rien de prévu'}</span>
+{_demainJobs.length>0&&(_demainJobs.every(j=>j.ack)
+ ?<span className="vu">✓ Vu</span>
+ :<button className="chip" onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(_liveData||data));_demainJobs.forEach(x=>{const jj=nd.jobs.find(y=>y.id===x.id);if(jj){jj.ack=true;jj.ackDate=new Date().toISOString();jj._updatedAt=Date.now()}});save(nd)}}>✓ J'ai vu</button>)}
+</div>
+<div className="dem-liste">
+{!demainOuvert&&_demainJobs.map(j=>(
+<button key={j.id} className="dl" onClick={()=>setDemainOuvert(true)}>
+<b>{j.billingStart||'--:--'}</b><span className="dl-lieu">{j.location||_cli(j)}</span><span className="dl-cli">{_cli(j)}</span>
+</button>))}
+{demainOuvert&&_demainJobs.map(j=>{const g=_gpsDe(j);return(
+<div key={j.id} className="df">
+<div className="df-h">{j.billingStart||'--:--'}</div>
+<div className="df-txt">
+<div className="df-lieu">{j.location||_cli(j)}</div>
+<div className="df-sous">{[_cli(j),_mach(j),j.siteManager?'chef '+j.siteManager:'chef non indiqué'].filter(Boolean).join(' · ')}</div>
+</div>
+<div className="df-act">
+<button className={'ico'+(j.siteManagerPhone?'':' vide')} onClick={()=>j.siteManager?_feuilleChef(j):_feuilleManque(j)}>📞</button>
+<button className={'ico'+(g?'':' vide')} onClick={()=>g?_feuilleGps(j):_feuilleManque(j)}>📍</button>
+<button className={'ico'+((j.siteManager&&j.siteManagerPhone&&g)?'':' alerte')} onClick={()=>_feuilleManque(j)}>⚠</button>
 </div>
 </div>)})}
 </div>
-</div>);})()}
-<div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap',background:'#f1f5f9',padding:6,borderRadius:10}}>
-{['Jour','Semaine'].map(v=><button key={v} onClick={()=>{setView(v);setOffset(0)}} style={{padding:'8px 14px',borderRadius:8,border:'none',background:view===v?C.accent:'transparent',color:view===v?'#fff':C.dim,fontWeight:view===v?800:600,fontSize:13,cursor:'pointer',boxShadow:view===v?'0 1px 3px rgba(0,0,0,.12)':'none'}}>{v}</button>)}
-<button onClick={()=>setOffset(o=>o-1)} style={{padding:'6px 12px',borderRadius:8,border:'none',background:'transparent',color:C.dim,fontWeight:700,fontSize:14,cursor:'pointer'}}>‹</button>
-<span style={{fontWeight:700,fontSize:14,flex:1,textAlign:'center',color:C.text}}>{range.label}</span>
-<button onClick={()=>setOffset(o=>o+1)} style={{padding:'6px 12px',borderRadius:8,border:'none',background:'transparent',color:C.dim,fontWeight:700,fontSize:14,cursor:'pointer'}}>›</button>
+{demainOuvert&&<button className="replier" onClick={()=>setDemainOuvert(false)}>⌄ Réduire</button>}
 </div>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
-<div style={{background:'#fff',borderRadius:12,padding:'14px 12px',border:'2px solid '+C.accent+'30',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}><div style={{fontSize:11,color:C.dim,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>⏱ Travail</div><div style={{fontSize:22,fontWeight:800,color:C.accent,lineHeight:1}}>{fmtDuration(totalWork)}</div></div>
-<div style={{background:'#fff',borderRadius:12,padding:'14px 12px',border:'2px solid '+C.orange+'30',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}><div style={{fontSize:11,color:C.dim,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>⏸ Pause</div><div style={{fontSize:22,fontWeight:800,color:C.orange,lineHeight:1}}>{fmtDuration(totalPause)}</div></div>
+<button className="creux heures" onClick={()=>setVue('heures')}>⏱ Mes heures</button>
 </div>
-{dates.filter(d=>periodTE.some(t=>t.date===d)).map(date=>{const tes=periodTE.filter(t=>t.date===date);return(
-<div key={date} style={{background:C.card,borderRadius:12,padding:0,marginBottom:10,border:'1px solid '+C.border,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}>
-<div style={{fontWeight:800,fontSize:14,padding:'8px 14px',background:C.accent+'10',color:C.accent,borderBottom:'1px solid '+C.accent+'20',textTransform:'uppercase',letterSpacing:'0.5px'}}>{fmtDate(new Date(date))}</div>
-<div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:6}}>
-{tes.map(t=>{const wm=calcWorkedMin(t);const crossed=t.endDate&&t.endDate!==t.date;return(
-<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:14,padding:'8px 10px',background:'#f8fafc',borderRadius:8,gap:8,flexWrap:'wrap'}}>
-<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-<span style={{fontWeight:800,fontSize:15,color:C.text}}>{t.startTime} → {t.endTime||'...'}</span>
-{crossed&&<span style={{fontSize:10,color:'#fff',background:C.purple,padding:'2px 6px',borderRadius:6,fontWeight:700}}>🌙 lendemain</span>}
-{t.pauseMin>0&&<span style={{fontSize:11,color:C.orange,background:C.orange+'18',padding:'2px 8px',borderRadius:6,fontWeight:700}}>⏸ {t.pauseMin}min</span>}
-{wm>0&&<span style={{fontSize:13,color:'#fff',background:C.accent,padding:'2px 10px',borderRadius:6,fontWeight:800}}>{fmtDuration(wm)}</span>}
 </div>
-<div style={{display:'flex',gap:6}}>
-<button onClick={()=>setEditTE({...t})} style={{background:'#fff',border:'1px solid '+C.accent,color:C.accent,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontSize:12,fontWeight:700}}>✎</button>
-<button onClick={()=>delTE(t.id)} style={{background:'#fff',border:'1px solid '+C.red,color:C.red,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontSize:12,fontWeight:700}}>🗑</button>
+
+<div className="vue" hidden={vue!=='heures'}>
+<div className="tete-vue">
+<button className="retour" onClick={()=>setVue('jour')}>←</button>
+<h3>Mes heures</h3>
 </div>
+<div className="liste-jours">
+{_joursHeures.length===0&&<div className="aide">Aucun pointage sur les 30 derniers jours.</div>}
+{_joursHeures.map(({date:dte,te})=>{
+ const ch=_chaine(dte,te);
+ const paye=te?calcWorkedMin(te):0;
+ const souci=te&&te.startTime&&!te.endTime&&dte<today;
+ return(
+<div key={dte} className={'jour'+(souci?' souci':'')}>
+<div className="jour-tete"><span>{fmtDate(new Date(dte))}</span><span className="tot">{paye?_hm(paye):'—'}</span></div>
+{souci&&<div className="mot-souci">Journée jamais clôturée : la débauche manque. Touche l'heure pour la corriger.</div>}
+<div className="chaine">
+{ch.map((x,i)=>{
+ if(!x.ev)return(<div key={'g'+i} className={'gap '+x.nat}><span className="gap-t">{x.nat}</span><span className="gap-d">{_duree(x.d)}</span></div>);
+ const e=x.ev;
+ let cls='ev';
+ if(e.k==='emb'||e.k==='deb')cls+=' borne';
+ if(e.k==='ch2')cls+=' fin';
+ if(e.k==='pa1'||e.k==='pa2')cls+=' pa';
+ if(e.k==='pa2')cls+=' reprise';
+ if(e.k==='ch1')cls+=' arrivee';
+ if(x.dans&&e.k!=='pa1'&&e.k!=='pa2')cls+=' dans';
+ return(<React.Fragment key={'e'+i}>
+<div className={cls}>
+<span className="bar"></span>
+<div className="ev-txt">
+<div className="ev-haut"><div className="ev-t">{e.t}</div>{e.fige?<span className="prevu">{'prévu '+(e.h||'--:--')}</span>:null}</div>
+{e.sub?<div className="ev-s">{e.sub}</div>:null}
+</div>
+{e.fige?null:<button className={'hchip'+(e.h?'':' vide')+(souci&&e.k==='deb'?' souci':'')} onClick={()=>{if(te){setEditTE({...te});}}}>{e.h||'--:--'}</button>}
+</div>
+{e.k==='ch2'?<div className="sep"></div>:null}
+</React.Fragment>)})}
+</div>
+{te&&<button className="ajout" onClick={()=>{setEditTE({...te})}}>✎ Corriger cette journée</button>}
 </div>)})}
-</div>
-</div>)})}
-<div style={{background:C.card,borderRadius:14,padding:0,border:'1px solid '+C.border,marginTop:16,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}>
-<div style={{padding:'12px 16px',background:'#f8fafc',borderBottom:'1px solid '+C.border,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-<h3 style={{margin:0,fontSize:16,fontWeight:800}}>📅 Historique 30 jours</h3>
-<div style={{display:'flex',gap:10,fontSize:11,color:C.dim}}>
-<span>Semaine <b style={{color:C.accent,fontSize:13}}>{fmtDuration(weeklyTotal)}</b></span>
-<span>Mois <b style={{color:C.green,fontSize:13}}>{fmtDuration(monthlyTotal)}</b></span>
+<div className="aide">Touche une heure pour la corriger.</div>
 </div>
 </div>
-<div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:6}}>
-{hist30.length===0&&<div style={{fontSize:14,color:C.dim,textAlign:'center',padding:16}}>Aucun pointage</div>}
-{hist30.map(t=>{const wm2=calcWorkedMin(t);const crossed2=t.endDate&&t.endDate!==t.date;return(
-<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:'#f8fafc',borderRadius:8,gap:8,flexWrap:'wrap'}}>
-<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-<span style={{fontWeight:600,fontSize:12,color:C.dim,background:'#fff',padding:'3px 8px',borderRadius:6,border:'1px solid '+C.border}}>{fmtDate(new Date(t.date))}</span>
-<span style={{fontWeight:800,fontSize:15,color:C.text}}>{t.startTime||'--'} → {t.endTime||'--'}</span>
-{crossed2&&<span style={{fontSize:10,color:'#fff',background:C.purple,padding:'2px 6px',borderRadius:6,fontWeight:700}}>🌙</span>}
-{t.pauseMin>0&&<span style={{fontSize:11,color:C.orange,background:C.orange+'18',padding:'2px 8px',borderRadius:6,fontWeight:700}}>⏸ {t.pauseMin}min</span>}
-{wm2>0&&<span style={{fontSize:13,color:'#fff',background:C.accent,padding:'2px 10px',borderRadius:6,fontWeight:800}}>{fmtDuration(wm2)}</span>}
+
+<div className="vue" hidden={vue!=='profil'}>
+<div className="tete-vue">
+<button className="retour" onClick={()=>setVue('jour')}>←</button>
+<h3>{emp.name}<span className="sous">{[(emp.role==='employee'||!emp.role)?'chauffeur':emp.role,_mach({machineId:emp.machineId})].filter(Boolean).join(' · ')}</span></h3>
 </div>
-<div style={{display:'flex',gap:6}}>
-<button onClick={()=>setEditTE({...t})} style={{background:'#fff',border:'1px solid '+C.accent,color:C.accent,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontSize:12,fontWeight:700}}>✎</button>
-<button onClick={()=>delTE(t.id)} style={{background:'#fff',border:'1px solid '+C.red,color:C.red,borderRadius:8,padding:'5px 10px',cursor:'pointer',fontSize:12,fontWeight:700}}>🗑</button>
-</div>
-</div>)})}
-</div>
-</div>
-</React.Fragment>}
-</React.Fragment>):vue==='profil'?(
-<React.Fragment>
-<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
-<button onClick={()=>setVue('jour')} style={{background:'none',border:'2px solid '+C.border,color:C.dim,padding:'6px 12px',borderRadius:10,fontSize:15,cursor:'pointer'}}>←</button>
-<div style={{minWidth:0}}>
-<div style={{fontWeight:800,fontSize:20,lineHeight:1.1,textTransform:'capitalize'}}>{emp.name}</div>
-<div style={{fontSize:12,color:C.dim}}>{[(emp.role==='employee'||!emp.role)?'chauffeur':emp.role,_nomMach({machineId:emp.machineId})].filter(Boolean).join(' · ')}</div>
-</div>
-</div>
+<div className="liste-jours">
 {[
  {t:'Ma journée',items:[
-   {ic:'📅',l:'Absence ou rendez-vous',s:'congé, maladie, RTT, formation…',f:()=>setShowRdv(true)},
-   {ic:'⏱',l:'Saisir mes heures à la main',s:'journée oubliée ou à corriger',f:()=>setShowManual(true)}]},
+  {ic:'📅',l:'Absence ou rendez-vous',s:'congé, maladie, RTT, formation…',f:()=>{setShowRdv(true);setRdvType('absence')}},
+  {ic:'⏱',l:'Saisir mes heures à la main',s:'journée oubliée ou à corriger',f:()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}}]},
  {t:'Ma machine',items:[
-   {ic:'⚠',l:'Signaler une panne',s:'équipement, gravité, description',f:()=>{setPanneEquip(emp.machineId||'');setPanneSev('normal');setPanneDesc('');setShowPanne(true)}},
-   {ic:'🔧',l:'Demander un entretien',s:'vidange, graissage, révision…',f:()=>{setSelectedMachineId(emp.machineId||'');setEntFaireDesc('');setShowEntFaire(true)}},
-   {ic:'🔩',l:'Prendre une pièce au stock',s:'sort la pièce du stock du dépôt',f:()=>{setTakePartEquip(emp.machineId||'');setTakePartId('');setTakePartQte(1);setTakePartReason('');setShowTakePart(true)}},
-   {ic:'📋',l:'Vérifier mon équipement',s:'ce qui est présent, ce qui manque',f:()=>{setSelectedMachineId(emp.machineId||'');setShowEquip(true)}}]},
+  {ic:'⚠',l:'Signaler une panne',s:'équipement, gravité, description',f:()=>{setPanneEquip(emp.machineId||'');setPanneSev('normal');setPanneDesc('');setShowPanne(true)}},
+  {ic:'🔧',l:'Demander un entretien',s:'vidange, graissage, révision…',f:()=>{setSelectedMachineId(emp.machineId||'');setEntFaireDesc('');setShowEntFaire(true)}},
+  {ic:'🔩',l:'Prendre une pièce au stock',s:'sort la pièce du stock du dépôt',f:()=>{setTakePartEquip(emp.machineId||'');setTakePartId('');setTakePartQte(1);setTakePartReason('');setShowTakePart(true)}},
+  {ic:'📋',l:'Vérifier mon équipement',s:'ce qui est présent, ce qui manque',f:()=>{setSelectedMachineId(emp.machineId||'');setShowEquip(true)}}]},
  {t:'Moi',items:[
-   {ic:'💬',l:"Messages de l'admin",nb:unreadCount,f:openInbox},
-   {ic:'🔄',l:'Actualiser mes données',s:'récupérer le planning à jour',f:()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}},
-   {ic:'🚪',l:'Me déconnecter',sortie:true,f:onLogout}]}
+  {ic:'💬',l:"Messages de l'admin",nb:unreadCount,f:openInbox},
+  {ic:'🔄',l:'Actualiser mes données',s:'récupérer le planning à jour',f:()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}},
+  {ic:'🚪',l:'Me déconnecter',sortie:true,f:onLogout}]}
 ].map(g=>(
-<div key={g.t} style={{marginBottom:14}}>
-<div style={{fontSize:11.5,fontWeight:800,letterSpacing:'.12em',textTransform:'uppercase',color:C.dim,margin:'0 0 6px 2px'}}>{g.t}</div>
-<div style={{background:C.card,border:'1px solid '+C.border,borderRadius:13,overflow:'hidden'}}>
-{g.items.map((it,n)=>(
-<button key={it.l} onClick={it.f} style={{..._itemS,borderTop:n===0?'none':'1px solid '+C.border,color:it.sortie?C.red:C.text}}>
-<span style={{fontSize:16,width:26,textAlign:'center',flexShrink:0}}>{it.ic}</span>
-<span style={{flex:1,minWidth:0}}>{it.l}{it.s?<small style={{display:'block',fontWeight:500,fontSize:11.5,color:C.dim,marginTop:1}}>{it.s}</small>:null}</span>
-{it.nb>0?<span style={{background:C.accent,color:'#fff',borderRadius:999,fontSize:12,fontWeight:800,padding:'1px 8px'}}>{it.nb}</span>:null}
-{it.sortie?null:<span style={{color:C.muted,fontSize:16}}>›</span>}
+<div key={g.t} className="groupe">
+<h4>{g.t}</h4>
+<div className="menu">
+{g.items.map(it=>(
+<button key={it.l} className={'item'+(it.sortie?' sortie':'')} onClick={it.f}>
+<span className="ic">{it.ic}</span>
+<span className="lb">{it.l}{it.s?<small>{it.s}</small>:null}</span>
+{it.nb>0?<span className="pastille-nb">{it.nb}</span>:null}
+{it.sortie?null:<span className="fl">›</span>}
 </button>))}
 </div>
 </div>))}
-</React.Fragment>
-):(
-<React.Fragment>
-<img src="icone.png" alt="" aria-hidden="true" style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(94vw,500px)',opacity:.055,pointerEvents:'none',zIndex:0}}/>
-
-<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,position:'relative',zIndex:1}}>
-<button onClick={()=>setVue('profil')} title="Mon espace" style={_pastilleS}>{(emp.name||'?').charAt(0).toUpperCase()}</button>
-<div style={{minWidth:0,flex:1}}>
-<div style={{fontWeight:800,fontSize:21,lineHeight:1.05,textTransform:'capitalize'}}>{_dateLongue}</div>
-<div style={{fontSize:11.5,color:C.dim,marginTop:1}}>{_jourJobs.length?_jourJobs.length+(_jourJobs.length>1?' chantiers':' chantier'):'aucun chantier'}</div>
-</div>
-<div style={{display:'flex',gap:13,textAlign:'right',flexShrink:0}}>
-<div><div style={{fontWeight:800,fontSize:21,lineHeight:1,color:C.accent}}>{_hm(_cumulJour)}</div><div style={{fontSize:10,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',color:C.dim,marginTop:2}}>aujourd'hui</div></div>
-<div><div style={{fontWeight:800,fontSize:18,lineHeight:1,color:C.dim}}>{_hm(_cumulSemaine)}</div><div style={{fontSize:10,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',color:C.dim,marginTop:2}}>semaine</div></div>
 </div>
 </div>
 
-{isNightShift&&<div style={{background:'#fef3c7',border:'2px solid '+C.orange,borderRadius:12,padding:'9px 11px',marginBottom:11,fontSize:12.5,color:C.text,position:'relative',zIndex:1}}>⚠ Journée du {fmtDate(new Date(lastEntry.date))} encore ouverte — pense à la terminer.</div>}
-
-<div style={{..._carteS,borderColor:status==='off'?C.accent:C.border,boxShadow:status==='off'?'0 0 0 3px '+C.accent+'22':'none'}}>
-<div style={_etiqS}><span>{status==='off'?'Maintenant':status==='pause'?'En pause':'Embauché'}</span><span style={{color:C.accent}}>{lastEntry&&lastEntry.startTime?lastEntry.startTime:''}</span></div>
-{status==='off'&&<button onClick={()=>doTime('start')} style={{...empBtnP(C.green),width:'100%',marginTop:9}}>▶ Je commence</button>}
-{status==='pause'&&<button onClick={()=>doTime('resume')} style={{...empBtnP(C.green),width:'100%',marginTop:9}}>▶ Reprise</button>}
-{status==='on'&&<div style={{display:'flex',flexDirection:'column',gap:8,marginTop:9}}>
-<button onClick={()=>doTime('pause_start')} style={{...empBtnP(C.orange),width:'100%'}}>⏸ Pause</button>
-<button onClick={()=>doTime('done')} style={{...empBtnS,width:'100%',color:C.red,borderColor:C.red+'55'}}>🌙 Je débauche</button>
-</div>}
-{status!=='off'&&lastEntry&&<div style={{display:'flex',gap:7,alignItems:'center',marginTop:9,flexWrap:'wrap'}}>
-<span style={{fontSize:11.5,color:C.dim,fontWeight:700}}>REPAS</span>
-{['PANIER','RESTO'].map(m=><button key={m} onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.mealType=m;save(nd)}}} style={{padding:'5px 12px',borderRadius:999,border:'1.5px solid '+(lastEntry.mealType===m?C.orange:C.border),background:lastEntry.mealType===m?C.orange+'18':'transparent',color:lastEntry.mealType===m?C.orange:C.dim,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{m==='PANIER'?'🥪 Panier':'🍽 Resto'}</button>)}
-</div>}
+<div className={'voile'+(feuille?' on':'')} onClick={_fermerFeuille}></div>
+<div className={'feuille'+(feuille?' on':'')}>
+<div className="f-poignee"></div>
+{feuille&&feuille.type==='chef'&&<React.Fragment>
+<div className="f-titre">{feuille.job.siteManager}</div>
+<div className="f-sous">{'Chef de chantier · '+(feuille.job.location||_cli(feuille.job))}</div>
+{feuille.job.siteManagerPhone
+ ?<React.Fragment>
+   <div className="f-tel">{feuille.job.siteManagerPhone}</div>
+   <div className="f-actions"><div className="f-duo">
+   <button onClick={()=>{location.href='tel:'+String(feuille.job.siteManagerPhone).replace(/\s/g,'')}}>📞 Appeler</button>
+   <button className="creux" onClick={()=>{location.href='sms:'+String(feuille.job.siteManagerPhone).replace(/\s/g,'')}}>💬 SMS</button>
+   </div></div>
+  </React.Fragment>
+ :<React.Fragment>
+   <div className="f-sous">Son numéro n'est pas renseigné dans le planning.</div>
+   <div className="f-actions"><button className="manque" onClick={()=>_envoyerManque(feuille.job,'le numéro du chef de chantier')}>⚠ Demander son numéro</button></div>
+  </React.Fragment>}
+</React.Fragment>}
+{feuille&&feuille.type==='gps'&&<React.Fragment>
+<div className="f-titre">{feuille.job.location||_cli(feuille.job)}</div>
+<div className="f-sous">{_cli(feuille.job)+' · point GPS '+_gpsDe(feuille.job)}</div>
+<div className="f-carte">📍</div>
+<div className="f-actions">
+<button onClick={()=>{window.open('https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_gpsDe(feuille.job)),'_blank');_fermerFeuille()}}>🧭 Ouvrir dans Maps</button>
+<button className="creux" onClick={_fermerFeuille}>Fermer</button>
+</div>
+</React.Fragment>}
+{feuille&&feuille.type==='manque'&&<React.Fragment>
+<div className="f-titre">Qu'est-ce qui te manque ?</div>
+<div className="f-sous">{(feuille.job.location||_cli(feuille.job))+' · '+_cli(feuille.job)+' · '+(feuille.job.billingStart||'')}</div>
+<div className="f-choix">
+{MANQUES.map(m=><button key={m} className="choix" onClick={()=>_envoyerManque(feuille.job,m.charAt(0).toLowerCase()+m.slice(1))}>{m}</button>)}
+</div>
+</React.Fragment>}
+{feuille&&feuille.type==='envoye'&&<React.Fragment>
+<div className="f-titre">Envoyé</div>
+<div className="f-sous">L'admin le reçoit dans ses messages.</div>
+<div className="f-envoye">{feuille.texte}</div>
+<div className="f-actions"><button className="creux" onClick={_fermerFeuille}>Fermer</button></div>
+</React.Fragment>}
 </div>
 
-{_jourJobs.length===0&&<div style={{..._carteS,textAlign:'center',color:C.dim,fontSize:13.5}}>Aucun chantier prévu aujourd'hui.</div>}
-{_jourJobs.map((j,k)=>{const fini=!!j.signature;const gps=_gpsDe(j);
-return(<div key={j.id} style={{..._carteS,opacity:fini?.72:1,borderColor:!fini&&status!=='off'?C.accent:C.border}}>
-<div style={_etiqS}><span>{fini?'Chantier '+(k+1)+' terminé':'Chantier '+(k+1)+' sur '+_jourJobs.length}</span><span style={{color:C.accent}}>{j.billingStart||''}</span></div>
-<div style={{display:'flex',gap:14,alignItems:'flex-start',marginTop:5}}>
-<div style={{fontWeight:800,fontSize:23,lineHeight:1.06,flex:1,minWidth:0}}>{j.location||_nomCli(j)||'Chantier'}</div>
-<div style={{textAlign:'right',flexShrink:0,maxWidth:'52%'}}>
-<div style={{fontSize:17,fontWeight:700,lineHeight:1.15}}>{_nomCli(j)}</div>
-<div style={{fontSize:14,color:C.dim,marginTop:2}}>{_nomMach(j)}</div>
-{j.forfaitType?<div style={{fontSize:12,color:C.muted,marginTop:2}}>{j.forfaitType}</div>:null}
-</div>
-</div>
-{!fini&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:11}}>
-<button onClick={()=>{if(j.siteManagerPhone)location.href='tel:'+String(j.siteManagerPhone).replace(/\s/g,'');else alert("Le numéro du chef n'est pas renseigné sur ce chantier.")}} style={{background:'#f1f5f9',border:'1px solid '+(j.siteManagerPhone?C.border:C.muted),borderStyle:j.siteManagerPhone?'solid':'dashed',borderRadius:12,padding:'8px 10px',minHeight:54,display:'flex',gap:9,alignItems:'center',textAlign:'left',cursor:'pointer',minWidth:0}}>
-<span style={{fontSize:19,flexShrink:0}}>📞</span><span style={{minWidth:0}}><b style={{display:'block',fontSize:13.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.siteManager||'Chef non indiqué'}</b><small style={{display:'block',fontSize:11.5,color:C.dim}}>{j.siteManagerPhone||'pas de numéro'}</small></span></button>
-<button onClick={()=>{if(gps)window.open('https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(gps),'_blank');else alert("Pas de point GPS sur ce chantier.")}} style={{background:'#f1f5f9',border:'1px solid '+(gps?C.border:C.muted),borderStyle:gps?'solid':'dashed',borderRadius:12,padding:'8px 10px',minHeight:54,display:'flex',gap:9,alignItems:'center',textAlign:'left',cursor:'pointer',minWidth:0}}>
-<span style={{fontSize:19,flexShrink:0}}>📍</span><span style={{minWidth:0}}><b style={{display:'block',fontSize:13.5}}>{gps?'Itinéraire':'Pas de GPS'}</b><small style={{display:'block',fontSize:11.5,color:C.dim}}>{gps?'point enregistré':'adresse seule'}</small></span></button>
-</div>}
-{!fini&&status!=='off'&&<button onClick={()=>endJob(j)} style={{...empBtnS,width:'100%',marginTop:8,color:C.red,borderColor:C.red+'55'}}>🏁 Fin de chantier</button>}
-{fini&&<div style={{marginTop:9,borderTop:'1px dashed '+C.border,paddingTop:8,display:'flex',justifyContent:'flex-end',gap:10,alignItems:'baseline',fontSize:13.5,color:C.dim}}><span>Terminé</span><b style={{fontSize:19,color:C.accent}}>{j.signature.durationMin!=null?_hm(j.signature.durationMin):'✓'}</b></div>}
-</div>)})}
-
-<div style={{background:'#f1f5f9',border:'1px solid '+C.border,borderRadius:14,padding:'8px 11px 9px',marginTop:14,position:'relative',zIndex:1}}>
-<div style={{fontSize:11,fontWeight:800,letterSpacing:'.1em',textTransform:'uppercase',color:C.dim,marginBottom:4}}>Demain · {_demainJobs.length?_demainJobs.length+(_demainJobs.length>1?' chantiers':' chantier'):'rien de prévu'}</div>
-{_demainJobs.map(j=>(<div key={j.id} style={{display:'flex',gap:9,alignItems:'baseline',fontSize:12.5,lineHeight:1.4}}>
-<b style={{color:C.accent,minWidth:38,fontWeight:800}}>{j.billingStart||'--:--'}</b>
-<span style={{fontWeight:700,flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.location||_nomCli(j)}</span>
-<span style={{color:C.dim,fontSize:12,whiteSpace:'nowrap'}}>{_nomCli(j)}</span>
-</div>))}
-</div>
-
-<button onClick={()=>setVue('heures')} style={{...empBtnS,width:'100%',marginTop:9,position:'relative',zIndex:1}}>⏱ Mes heures</button>
-</React.Fragment>
-)}
 </div>);};
 
 const MechanicView=({data,save,empId,onLogout})=>{
