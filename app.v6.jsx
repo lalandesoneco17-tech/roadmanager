@@ -2656,6 +2656,28 @@ const _joursHeures=(()=>{
   return Object.keys(par).sort().reverse().slice(0,14).map(dte=>({date:dte,te:par[dte]}));
 })();
 
+const _repasFait=!!(lastEntry&&Array.isArray(lastEntry.pauses)&&lastEntry.pauses.some(p=>p&&p.repas));
+const _attenteRepas=(status==='pause')&&!_repasFait;
+const _choisirRepas=m=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const e=(nd.timeEntries||[]).find(t=>t.id===lastEntry.id);
+ if(e){e.mealType=m;const lp=Array.isArray(e.pauses)?e.pauses.slice():[];if(lp.length)lp[lp.length-1]={...lp[lp.length-1],repas:m};e.pauses=lp;save(nd)}};
+const _blocActions=(job,dernier)=>(
+ _attenteRepas
+ ?<div style={{marginTop:11,display:'flex',flexDirection:'column',gap:9}}>
+   <div className="meta">Panier ou resto ?</div>
+   <div className="duo">
+   <button className="pausebtn mini" onClick={()=>_choisirRepas('PANIER')}>🥪 Panier</button>
+   <button className="pausebtn mini" onClick={()=>_choisirRepas('RESTO')}>🍽 Resto</button>
+   </div></div>
+ :<div style={{marginTop:11,display:'flex',flexDirection:'column',gap:9}}>
+   {status==='pause'
+    ?<button onClick={()=>doTime('resume')}>▶ Reprise</button>
+    :<React.Fragment>
+      <button className="pausebtn" onClick={()=>doTime('pause_start')}>⏸ Pause</button>
+      {job
+       ?<button className="creux" onClick={()=>endJob(job)}>{'🏁 '+(dernier?'Fin de chantier':'Fin · passer au suivant')}</button>
+       :<button className="rouge" onClick={()=>doTime('done')}>🌙 Je débauche</button>}
+     </React.Fragment>}
+   </div>);
 const _fermerFeuille=()=>setFeuille(null);
 const _feuilleChef=j=>setFeuille({type:'chef',job:j});
 const _feuilleGps=j=>setFeuille({type:'gps',job:j});
@@ -2943,10 +2965,7 @@ return(
 <div className="etiquette"><span>{status==='off'?'Maintenant':status==='pause'?'En pause':'Embauche'}</span><span className="h">{status==='off'?(pad2(new Date().getHours())+':'+pad2(new Date().getMinutes())):(lastEntry&&lastEntry.startTime)||''}</span></div>
 {status==='off'&&<div style={{marginTop:9}}><button onClick={()=>doTime('start')}>▶ Je commence</button></div>}
 {status!=='off'&&<div className="meta">Journée commencée.</div>}
-{status!=='off'&&<div style={{marginTop:9,display:'flex',gap:7,alignItems:'center',flexWrap:'wrap'}}>
-<span style={{fontFamily:'"Barlow Condensed",sans-serif',fontWeight:600,fontSize:11.5,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--ink-3)'}}>Repas</span>
-{['PANIER','RESTO'].map(m=><button key={m} className={'chip'+(lastEntry&&lastEntry.mealType===m?'':' creux')} onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.mealType=m;save(nd)}}}>{m==='PANIER'?'🥪 Panier':'🍽 Resto'}</button>)}
-</div>}
+
 </div>
 </div>
 
@@ -2973,22 +2992,14 @@ return(
 </div>}
 {!fini&&<button className={'manque'+(complet?' discret':'')} onClick={()=>_feuilleManque(j)}>⚠ Il me manque une info</button>}
 {fini&&<div className="fin"><span>Terminé</span><b>{j.signature.signedAt?_hDe(j.signature.signedAt):'✓'}</b></div>}
-{actif&&<div style={{marginTop:11,display:'flex',flexDirection:'column',gap:9}}>
-{status==='pause'
- ?<button onClick={()=>doTime('resume')}>▶ Reprise</button>
- :<button className="pausebtn" onClick={()=>doTime('pause_start')}>⏸ Pause</button>}
-{status!=='pause'&&<button className="creux" onClick={()=>endJob(j)}>🏁 {k+1<_jourJobs.length?'Fin · passer au suivant':'Fin de chantier'}</button>}
-</div>}
+{actif&&_blocActions(j,k+1>=_jourJobs.length)}
 </div>
 </div>)})}
 
 {status!=='off'&&_jourJobs.every(j=>j.signature)&&<div className="noeud actif">
 <div className="carte actif">
 <div className="etiquette"><span>Maintenant</span><span className="h">{pad2(new Date().getHours())+':'+pad2(new Date().getMinutes())}</span></div>
-<div style={{marginTop:9,display:'flex',flexDirection:'column',gap:9}}>
-{status==='pause'?<button onClick={()=>doTime('resume')}>▶ Reprise</button>:<button className="pausebtn" onClick={()=>doTime('pause_start')}>⏸ Pause</button>}
-{status!=='pause'&&<button className="rouge" onClick={()=>doTime('done')}>🌙 Je débauche</button>}
-</div>
+{_blocActions(null,false)}
 </div>
 </div>}
 
