@@ -2615,7 +2615,7 @@ const _dateLongue=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'num
 const _pastilleS={width:40,height:40,borderRadius:12,background:C.accent,color:'#fff',display:'grid',placeItems:'center',fontWeight:800,fontSize:19,border:'none',cursor:'pointer',flexShrink:0};
 const _carteS={background:C.card,border:'1px solid '+C.border,borderRadius:16,padding:13,marginBottom:11,position:'relative',zIndex:1};
 const _etiqS={fontSize:12,fontWeight:800,letterSpacing:'.1em',textTransform:'uppercase',color:C.dim,display:'flex',justifyContent:'space-between',gap:8};
-const _gpsDe=j=>j.gps||j._geocodedGps||'';
+const _gpsDe=j=>j.gps||'';  // uniquement un vrai point, jamais deduit du texte du lieu
 const _itemS={width:'100%',background:'none',border:'none',borderTop:'1px solid '+C.border,padding:'12px 13px',minHeight:52,display:'flex',gap:11,alignItems:'center',textAlign:'left',cursor:'pointer',fontSize:14,fontWeight:600,color:C.text};
 
 return(
