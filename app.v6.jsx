@@ -2464,6 +2464,7 @@ Suggestions de ce que tu peux ecrire :<br/>
 
 // ======== EMPLOYEE VIEW ========
 const EmployeeView=({data,save,empId,onLogout})=>{
+const[vue,setVue]=useState('jour');
 const emp=(data.employees||[]).find(e=>e.id===empId);
 const[view,setView]=useState('Jour');const[offset,setOffset]=useState(0);
 const[editTE,setEditTE]=useState(null);
@@ -2600,27 +2601,31 @@ const empLabelS={fontSize:11,fontWeight:700,color:C.dim,textTransform:'uppercase
 const empBtnP=(bg)=>({padding:'14px 20px',fontSize:16,fontWeight:800,borderRadius:10,border:'none',cursor:'pointer',flex:1,color:'#fff',boxShadow:'0 2px 6px rgba(0,0,0,.12)',background:bg||C.accent});
 const empBtnS={padding:'14px 20px',fontSize:15,fontWeight:600,borderRadius:10,border:'2px solid #cbd5e1',background:'#fff',color:'#475569',cursor:'pointer',flex:1};
 const empTglBtn=(active,activeColor)=>({padding:'14px 16px',fontSize:15,fontWeight:700,borderRadius:10,border:'2px solid '+(active?activeColor:'#e2e8f0'),background:active?activeColor:'#fff',color:active?'#fff':C.dim,cursor:'pointer',flex:1,boxShadow:active?'0 2px 4px rgba(0,0,0,.1)':'none'});
+const _mesJobs=(data.jobs||[]).filter(j=>j.employeeId===empId);
+const _jourJobs=_mesJobs.filter(j=>j.date===today).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
+const _demain=(()=>{const d=new Date();d.setDate(d.getDate()+1);return fmtDateISO(d)})();
+const _demainJobs=_mesJobs.filter(j=>j.date===_demain).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
+const _nomCli=j=>{const c=(data.clients||[]).find(x=>x.id===j.clientId);return c?c.name:''};
+const _nomMach=j=>{const m=(data.machines||[]).find(x=>x.id===j.machineId);return m?m.name+(m.type?' · '+m.type:''):''};
+const _enCours=(status!=='off'&&lastEntry&&lastEntry.startTime&&!lastEntry.endTime)?(()=>{const n=new Date();const[h,m]=lastEntry.startTime.split(':').map(Number);let d=(n.getHours()*60+n.getMinutes())-(h*60+m);if(d<0)d+=1440;return Math.max(0,d-(lastEntry.pauseMin||0))})():0;
+const _cumulJour=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+_enCours;
+const _cumulSemaine=weeklyTotal+_enCours;
+const _hm=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
+const _dateLongue=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+const _pastilleS={width:40,height:40,borderRadius:12,background:C.accent,color:'#fff',display:'grid',placeItems:'center',fontWeight:800,fontSize:19,border:'none',cursor:'pointer',flexShrink:0};
+const _carteS={background:C.card,border:'1px solid '+C.border,borderRadius:16,padding:13,marginBottom:11,position:'relative',zIndex:1};
+const _etiqS={fontSize:12,fontWeight:800,letterSpacing:'.1em',textTransform:'uppercase',color:C.dim,display:'flex',justifyContent:'space-between',gap:8};
+const _gpsDe=j=>j.gps||j._geocodedGps||'';
+const _itemS={width:'100%',background:'none',border:'none',borderTop:'1px solid '+C.border,padding:'12px 13px',minHeight:52,display:'flex',gap:11,alignItems:'center',textAlign:'left',cursor:'pointer',fontSize:14,fontWeight:600,color:C.text};
+
 return(
-<div style={{maxWidth:700,margin:'0 auto',padding:16,fontSize:14}}>
+<div style={{maxWidth:520,margin:'0 auto',padding:'12px 13px 20px',fontSize:14,position:'relative',minHeight:'100vh'}}>
 <div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',zIndex:9999,display:'flex',flexDirection:'column',gap:6,maxWidth:'92vw',width:'420px'}}>
 {toasts.map(t=>(
 <div key={t.id} onClick={()=>setToasts(ts=>ts.filter(x=>x.id!==t.id))} style={{background:t.kind==='new'?C.green:C.orange,color:'#fff',padding:'12px 16px',borderRadius:10,boxShadow:'0 6px 20px rgba(0,0,0,.25)',fontWeight:700,fontSize:14,cursor:'pointer'}}>
 {t.kind==='new'?'🆕 ':'✏️ '}{t.text}
 </div>
 ))}
-</div>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,background:C.accent,color:'#fff',padding:'10px 12px',borderRadius:10,boxShadow:'0 2px 6px rgba(0,0,0,.08)',gap:8,flexWrap:'wrap'}}>
-<div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0,minWidth:0}}>
-<div style={{width:36,height:36,borderRadius:'50%',background:'#fff3',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:16,flexShrink:0}}>{(emp.name||'?')[0].toUpperCase()}</div>
-<div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:16,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:140}}>{emp.name}</div><div style={{fontSize:11,opacity:.8}}>Espace chauffeur</div></div>
-</div>
-<img src="logo.png" alt="SONECO" style={{height:56,maxWidth:'30%',objectFit:'contain',flexShrink:1,minWidth:0}}/>
-<div style={{display:'flex',gap:4,flexShrink:0}}>
-<button onClick={openInbox} title="Messages" style={{position:'relative',background:'#fff3',border:'none',color:'#fff',padding:'8px 11px',borderRadius:8,cursor:'pointer',fontWeight:600,fontSize:16,lineHeight:1}}>🔔{unreadCount>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#ef4444',color:'#fff',borderRadius:'50%',minWidth:18,height:18,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{unreadCount}</span>}</button>
-<button onClick={()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}} title="Actualiser" style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 11px',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:16,lineHeight:1}}>↻</button>
-<button onClick={async()=>{const tok=(data.telegramBotToken||'');if(!tok){alert('Le bot Telegram n est pas encore configure par l administrateur.');return}const me=await tgGetMe(tok);if(!me.ok){alert('Bot Telegram introuvable : '+me.error);return}window.open('https://t.me/'+me.username+'?start=emp_'+empId,'_blank')}} title={((data.telegramEmpChats||{})[empId])?'Telegram lié ✓':'Lier mon Telegram pour recevoir les messages'} style={{background:((data.telegramEmpChats||{})[empId])?'#16a34a':'#fff3',border:'none',color:'#fff',padding:'8px 11px',borderRadius:8,cursor:'pointer',fontWeight:600,fontSize:16,lineHeight:1}}>{((data.telegramEmpChats||{})[empId])?'✓📱':'📱'}</button>
-<button onClick={onLogout} title="Deconnexion" style={{background:'#fff3',border:'none',color:'#fff',padding:'8px 11px',borderRadius:8,cursor:'pointer',fontWeight:600,fontSize:16,lineHeight:1}}>🚪</button>
-</div>
 </div>
 {showInbox&&<Mod title={'Mes messages ('+myMsgs.length+')'} onClose={()=>setShowInbox(false)} width={500}>
 {myMsgs.length===0?<div style={{textAlign:'center',color:C.muted,padding:'20px 0',fontSize:14}}>Aucun message</div>:myMsgs.map(m=>(
@@ -2630,9 +2635,6 @@ return(
 </div>
 ))}
 </Mod>}
-<div style={{display:'flex',gap:4,marginBottom:16,background:'#f1f5f9',padding:4,borderRadius:12}}>
-{[{k:'heures',l:'Heures',i:'⏱'},{k:'chantier',l:'Chantier',i:'🚧'},{k:'machine',l:'Machine',i:'⚙️'}].map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{flex:1,fontSize:14,padding:'12px 8px',border:'none',cursor:'pointer',borderRadius:8,background:tab===x.k?C.accent:'transparent',color:tab===x.k?'#fff':C.dim,fontWeight:tab===x.k?800:600,boxShadow:tab===x.k?'0 2px 6px rgba(0,0,0,.15)':'none',letterSpacing:'0.3px'}}>{x.i} {x.l}</button>)}
-</div>
 {showManual&&<Mod title="⏱ Saisir mes heures" onClose={()=>setShowManual(false)} width={460}>
 <div style={{display:'flex',flexDirection:'column',gap:16}}>
   <div>
@@ -2867,7 +2869,13 @@ return(
 </div>
 </Mod>)})()}
 {empPhotoLightbox&&<div onClick={()=>setEmpPhotoLightbox(null)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.92)',zIndex:5000,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out'}}><img src={empPhotoLightbox} alt="" style={{maxWidth:'95vw',maxHeight:'95vh',objectFit:'contain'}}/><button onClick={e=>{e.stopPropagation();setEmpPhotoLightbox(null)}} style={{position:'absolute',top:20,right:20,background:'#fff',border:'none',borderRadius:'50%',width:44,height:44,fontSize:22,cursor:'pointer',fontWeight:700,boxShadow:'0 2px 10px rgba(0,0,0,.3)'}}>×</button></div>}
-{tab==='heures'&&<React.Fragment>
+
+{vue==='heures'?(<React.Fragment>
+<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+<button onClick={()=>setVue('jour')} style={{background:'none',border:'2px solid '+C.border,color:C.dim,padding:'6px 12px',borderRadius:10,fontSize:15,cursor:'pointer'}}>←</button>
+<div style={{fontWeight:800,fontSize:20}}>Mes heures</div>
+</div>
+<React.Fragment>
 {(()=>{const statusLbl=status==='on'?'En activite':status==='pause'?'En pause':'Debauche';const statusCol=status==='on'?C.green:status==='pause'?C.orange:C.muted;const todayWorked=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+(status==='on'&&lastEntry&&lastEntry.startTime?Math.max(0,(new Date().getHours()*60+new Date().getMinutes())-(()=>{const[h,m]=lastEntry.startTime.split(':').map(Number);return h*60+m})()):0);return(
 <div style={{background:C.card,borderRadius:14,padding:16,border:'1px solid '+C.border,marginBottom:16,boxShadow:'0 2px 8px rgba(0,0,0,.04)'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,gap:10}}>
@@ -2876,22 +2884,6 @@ return(
 <div style={{fontSize:30,fontWeight:800,color:C.text,lineHeight:1}}>{fmtDuration(todayWorked)}<span style={{fontSize:14,color:C.dim,fontWeight:500,marginLeft:6}}>aujourd'hui</span></div>
 </div>
 <div style={{background:statusCol,color:'#fff',padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:800,textTransform:'uppercase',letterSpacing:'0.5px',boxShadow:'0 2px 4px rgba(0,0,0,.15)'}}>● {statusLbl}</div>
-</div>
-<div style={{display:'grid',gridTemplateColumns:status==='on'?'1fr 1fr':'1fr',gap:8,marginBottom:12}}>
-{status==='off'&&<button onClick={()=>doTime('start')} style={{...empBtnP(C.green),fontSize:17,padding:'16px 18px'}}>▶ Debut de journee</button>}
-{status==='on'&&<button onClick={()=>doTime('pause_start')} style={{...empBtnP(C.orange),fontSize:16,padding:'14px 12px'}}>⏸ Pause</button>}
-{status==='on'&&<button onClick={()=>doTime('done')} style={{...empBtnP(C.red),fontSize:16,padding:'14px 12px'}}>■ Fin de journee</button>}
-{status==='pause'&&<button onClick={()=>doTime('resume')} style={{...empBtnP(C.green),fontSize:17,padding:'16px 18px'}}>▶ Reprise</button>}
-</div>
-{status!=='off'&&lastEntry&&<div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center',padding:'8px 12px',background:'#f8fafc',borderRadius:10,border:'1px solid '+C.border}}>
-<span style={{fontSize:12,color:C.dim,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.3px'}}>🍽 Repas :</span>
-<div style={{display:'flex',gap:6,flex:1}}>
-{['PANIER','RESTO'].map(m=><button key={m} onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.mealType=m;save(nd)}}} style={{...empTglBtn(lastEntry.mealType===m,m==='PANIER'?C.accent:C.orange),padding:'6px 12px',fontSize:13,flex:1}}>{m}</button>)}
-</div>
-</div>}
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
-<button onClick={()=>{setShowManual(true);setManDate(today);setManStart('');setManEnd('');setManPause(0)}} style={{padding:'12px 14px',borderRadius:10,border:'2px solid '+C.accent,background:C.accent+'10',color:C.accent,cursor:'pointer',fontSize:14,fontWeight:700}}>⏱ Saisir mes heures</button>
-<button onClick={()=>{setShowRdv(true);setRdvType('rdv');const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);setRdvDate(fmtDateISO(tomorrow));setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')}} style={{padding:'12px 14px',borderRadius:10,border:'2px solid '+C.orange,background:C.orange+'10',color:C.orange,cursor:'pointer',fontSize:14,fontWeight:700}}>📅 RDV / Absence</button>
 </div>
 {isNightShift&&<div style={{background:'#fef3c7',border:'2px solid #f59e0b',borderRadius:10,padding:'10px 14px',marginBottom:10,fontSize:13,color:'#92400e',fontWeight:700}}>🌙 Shift de nuit en cours depuis {fmtDate(new Date(lastEntry.date))} — pensez a cliquer "Fin de journee" pour le terminer</div>}
 <div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -2967,296 +2959,110 @@ return(
 </div>
 </div>
 </React.Fragment>}
-{tab==='chantier'&&<React.Fragment>
-<div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,flexWrap:'wrap',background:'#f1f5f9',padding:6,borderRadius:10}}>
-{['Jour','Semaine'].map(v=><button key={v} onClick={()=>{setView(v);setOffset(0)}} style={{padding:'8px 14px',borderRadius:8,border:'none',background:view===v?C.accent:'transparent',color:view===v?'#fff':C.dim,fontWeight:view===v?800:600,fontSize:13,cursor:'pointer',boxShadow:view===v?'0 1px 3px rgba(0,0,0,.12)':'none'}}>{v}</button>)}
-<button onClick={()=>setOffset(o=>o-1)} style={{padding:'6px 12px',borderRadius:8,border:'none',background:'transparent',color:C.dim,fontWeight:700,fontSize:14,cursor:'pointer'}}>‹</button>
-<span style={{fontWeight:700,fontSize:14,flex:1,textAlign:'center',color:C.text}}>{range.label}</span>
-<button onClick={()=>setOffset(o=>o+1)} style={{padding:'6px 12px',borderRadius:8,border:'none',background:'transparent',color:C.dim,fontWeight:700,fontSize:14,cursor:'pointer'}}>›</button>
-</div>
-<div style={{background:'#fff',borderRadius:12,padding:'14px 12px',border:'2px solid '+C.accent+'30',textAlign:'center',marginBottom:16,boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}><div style={{fontSize:11,color:C.dim,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>🚧 Missions sur la periode</div><div style={{fontSize:30,fontWeight:800,color:C.accent,lineHeight:1}}>{periodJobs.length}</div></div>
-{dates.filter(d=>periodJobs.some(j=>j.date===d)).length===0&&<div style={{fontSize:14,color:C.dim,textAlign:'center',padding:32,background:'#f8fafc',borderRadius:12,border:'1px dashed #cbd5e1'}}>Aucun chantier sur la periode.</div>}
-{dates.filter(d=>periodJobs.some(j=>j.date===d)).map(date=>{const jbs=periodJobs.filter(j=>j.date===date);return(
-<div key={date} style={{background:C.card,borderRadius:12,padding:0,marginBottom:10,border:'1px solid '+C.border,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}>
-<div style={{fontWeight:800,fontSize:14,padding:'8px 14px',background:C.accent+'10',color:C.accent,borderBottom:'1px solid '+C.accent+'20',textTransform:'uppercase',letterSpacing:'0.5px'}}>{fmtDate(new Date(date))}</div>
-<div style={{padding:'8px 10px',display:'flex',flexDirection:'column',gap:6}}>
-{jbs.map(j=>{const cl=(data.clients||[]).find(c=>c.id===j.clientId);const m=(data.machines||[]).find(x=>x.id===j.machineId);const depN=j.startFrom==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.startFrom)||{}).name||'';const arrN=j.endAt==='home'?'Domicile':((data.depots||[]).find(d=>d.id===j.endAt)||{}).name||'';const isDepot=j.type==='depot';const depotObj=isDepot?(data.depots||[]).find(d=>d.id===j.depotId):null;return(
-<div key={j.id} style={{background:j.ack?'#dcfce7':isDepot?'#f8fafc':C.card,borderRadius:8,padding:10,marginTop:4,fontSize:14,borderLeft:'3px solid '+(isDepot?'#64748b':m?MC[m.type]||C.accent:C.muted)}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-<div style={{fontWeight:700,fontSize:16}}>{isDepot?<span style={{color:'#64748b'}}>{depotObj?depotObj.name:'Depot'} — {j.depotActivity||'Depot'}{j.depotDescription?' ('+j.depotDescription+')':''}</span>:(cl?cl.name:'Pas de client')}{!isDepot&&j.agencyName?' - '+j.agencyName:''}</div>
-<div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-{!j.ack?<button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const jj=nd.jobs.find(x=>x.id===j.id);if(jj){jj.ack=true;save(nd)}}} style={{padding:'6px 14px',borderRadius:6,fontSize:14,fontWeight:700,background:C.green,color:'#fff',border:'none',cursor:'pointer'}}>✓ Lu</button>:<span style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:'#16a34a20',color:C.green}}>✓ Pris en compte</span>}
-{!isDepot&&(j.signature?<span title={'Chantier termine'+(j.signature.durationMin!=null?' • '+Math.floor(j.signature.durationMin/60)+'h'+String(j.signature.durationMin%60).padStart(2,'0'):'')+(j.signature.pauseDeducted>0?' (pause '+j.signature.pauseDeducted+' min deduite)':'')} style={{padding:'4px 10px',borderRadius:6,fontSize:13,fontWeight:700,background:C.accent+'20',color:C.accent,cursor:'help'}}>✓ Termine</span>:<button onClick={()=>endJob(j)} style={{padding:'6px 12px',borderRadius:6,fontSize:13,fontWeight:700,background:'#fff',border:'2px solid '+C.accent,color:C.accent,cursor:'pointer'}}>🏁 Fin de chantier</button>)}
+</React.Fragment>):vue==='profil'?(
+<React.Fragment>
+<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+<button onClick={()=>setVue('jour')} style={{background:'none',border:'2px solid '+C.border,color:C.dim,padding:'6px 12px',borderRadius:10,fontSize:15,cursor:'pointer'}}>←</button>
+<div style={{minWidth:0}}>
+<div style={{fontWeight:800,fontSize:20,lineHeight:1.1,textTransform:'capitalize'}}>{emp.name}</div>
+<div style={{fontSize:12,color:C.dim}}>{[(emp.role==='employee'||!emp.role)?'chauffeur':emp.role,_nomMach({machineId:emp.machineId})].filter(Boolean).join(' · ')}</div>
 </div>
 </div>
-<div style={{fontSize:14,marginTop:2}}>{m&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:(MC[m.type]||C.accent)+'18',color:MC[m.type]||C.accent}}>{m.name} ({m.type})</span>} <span style={{color:C.orange,fontWeight:600,marginLeft:4}}>{j.billingStart}</span> <span style={{color:C.dim}}>{j.forfaitType}</span></div>
-{j.siteManager&&<div style={{color:C.dim,fontSize:14,marginTop:2}}>{j.siteManager} {j.siteManagerPhone&&<a href={'tel:'+j.siteManagerPhone} style={{color:C.accent}}>{j.siteManagerPhone}</a>}</div>}
-{j.location&&<div style={{fontSize:14,marginTop:2}}>{j.gps?<a href={'https://www.google.com/maps?q='+j.gps} target="_blank" rel="noopener" style={{color:C.accent}}>{j.location}</a>:<span style={{color:C.dim}}>{j.location}</span>}</div>}
-{(depN||arrN)&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:4}}>
-{depN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#0891b215',color:'#0891b2'}}>{'↗'} {depN}{j.kmAller>0?' '+j.kmAller.toFixed(0)+'km':''}</span>}
-{arrN&&<span style={{padding:'2px 8px',borderRadius:10,fontSize:12,fontWeight:600,background:'#7c3aed15',color:'#7c3aed'}}>{'↙'} {arrN}{j.kmRetour>0?' '+j.kmRetour.toFixed(0)+'km':''}</span>}
-</div>}
-{(()=>{const cols=(data.jobs||[]).filter(jj=>jj.id!==j.id&&jj.date===j.date&&jj.employeeId&&jj.employeeId!==empId&&j.location&&jj.location&&jj.location.trim().toLowerCase()===j.location.trim().toLowerCase());if(!cols.length)return null;return(<div style={{marginTop:6,padding:'6px 8px',background:'#f0f9ff',borderRadius:8,border:'1px solid #bae6fd'}}><div style={{fontSize:12,color:'#0369a1',fontWeight:700,marginBottom:4}}>{'👷 Equipe sur ce chantier :'}</div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{cols.map(jj=>{const ce=(data.employees||[]).find(e=>e.id===jj.employeeId);return ce?<span key={jj.id} style={{background:'#0891b2',borderRadius:6,padding:'3px 10px',fontSize:13,fontWeight:700,color:'#fff'}}>{ce.name}</span>:null})}</div></div>);})()}
-{j.signature&&(j.signature.signedBy||j.signature.durationMin!=null)&&<div style={{marginTop:8,padding:'8px 10px',background:'#f0fdf4',borderRadius:10,border:'2px solid #86efac'}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}}>
-<div><div style={{fontSize:12,color:'#15803d',fontWeight:800,textTransform:'uppercase',letterSpacing:'0.3px'}}>🏁 Chantier termine</div><div style={{fontSize:11,color:'#166534',marginTop:2}}>{new Date(j.signature.signedAt).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</div></div>
-{(j.signature.durationMin!=null||j.signature.autoForfait)&&<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-{j.signature.durationMin!=null&&<div style={{padding:'4px 10px',background:'#fff',borderRadius:6,border:'1px solid #86efac',fontSize:12,fontWeight:700,color:'#15803d'}}>⏱ {Math.floor(j.signature.durationMin/60)}h{String(j.signature.durationMin%60).padStart(2,'0')}{j.signature.pauseDeducted>0?<span style={{color:'#c2410c',fontSize:10,marginLeft:4}}>(−{j.signature.pauseDeducted}min pause)</span>:null}</div>}
-{j.signature.autoForfait&&<div style={{padding:'4px 10px',background:'#fff',borderRadius:6,border:'1px solid '+C.accent,fontSize:12,fontWeight:700,color:C.accent}}>💰 {j.signature.autoForfait}</div>}
-</div>}
+{[
+ {t:'Ma journée',items:[
+   {ic:'📅',l:'Absence ou rendez-vous',s:'congé, maladie, RTT, formation…',f:()=>setShowRdv(true)},
+   {ic:'⏱',l:'Saisir mes heures à la main',s:'journée oubliée ou à corriger',f:()=>setShowManual(true)}]},
+ {t:'Ma machine',items:[
+   {ic:'⚠',l:'Signaler une panne',s:'équipement, gravité, description',f:()=>{setPanneEquip(emp.machineId||'');setPanneSev('normal');setPanneDesc('');setShowPanne(true)}},
+   {ic:'🔧',l:'Demander un entretien',s:'vidange, graissage, révision…',f:()=>{setSelectedMachineId(emp.machineId||'');setEntFaireDesc('');setShowEntFaire(true)}},
+   {ic:'🔩',l:'Prendre une pièce au stock',s:'sort la pièce du stock du dépôt',f:()=>{setTakePartEquip(emp.machineId||'');setTakePartId('');setTakePartQte(1);setTakePartReason('');setShowTakePart(true)}},
+   {ic:'📋',l:'Vérifier mon équipement',s:'ce qui est présent, ce qui manque',f:()=>{setSelectedMachineId(emp.machineId||'');setShowEquip(true)}}]},
+ {t:'Moi',items:[
+   {ic:'💬',l:"Messages de l'admin",nb:unreadCount,f:openInbox},
+   {ic:'🔄',l:'Actualiser mes données',s:'récupérer le planning à jour',f:()=>{loadData().then(d2=>{if(d2){save(d2);alert('Actualisé !')}})}},
+   {ic:'🚪',l:'Me déconnecter',sortie:true,f:onLogout}]}
+].map(g=>(
+<div key={g.t} style={{marginBottom:14}}>
+<div style={{fontSize:11.5,fontWeight:800,letterSpacing:'.12em',textTransform:'uppercase',color:C.dim,margin:'0 0 6px 2px'}}>{g.t}</div>
+<div style={{background:C.card,border:'1px solid '+C.border,borderRadius:13,overflow:'hidden'}}>
+{g.items.map((it,n)=>(
+<button key={it.l} onClick={it.f} style={{..._itemS,borderTop:n===0?'none':'1px solid '+C.border,color:it.sortie?C.red:C.text}}>
+<span style={{fontSize:16,width:26,textAlign:'center',flexShrink:0}}>{it.ic}</span>
+<span style={{flex:1,minWidth:0}}>{it.l}{it.s?<small style={{display:'block',fontWeight:500,fontSize:11.5,color:C.dim,marginTop:1}}>{it.s}</small>:null}</span>
+{it.nb>0?<span style={{background:C.accent,color:'#fff',borderRadius:999,fontSize:12,fontWeight:800,padding:'1px 8px'}}>{it.nb}</span>:null}
+{it.sortie?null:<span style={{color:C.muted,fontSize:16}}>›</span>}
+</button>))}
 </div>
-</div>}
-{j.photos&&j.photos.length>0&&<div style={{marginTop:8,padding:'8px 10px',background:'#fff7ed',borderRadius:10,border:'2px solid #fdba74'}}>
-<div style={{fontSize:12,color:'#9a3412',fontWeight:800,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.3px'}}>📷 Photos du chantier ({j.photos.length})</div>
-<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
-{j.photos.map((ph,pi)=>(<img key={pi} src={ph.dataUrl} alt="" style={{width:'100%',aspectRatio:'1/1',objectFit:'cover',borderRadius:8,cursor:'pointer',border:'1px solid #fdba74'}} onClick={()=>setEmpPhotoLightbox(ph.dataUrl)}/>))}
-</div>
-</div>}
-</div>)})}
-</div>
-</div>)})}
-</React.Fragment>}
-{tab==='machine'&&<React.Fragment>
-<div style={{background:C.card,borderRadius:14,padding:16,border:'1px solid '+C.border,marginBottom:16,boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}>
-<label style={empLabelS}>⚙️ Machine selectionnee</label>
-<select style={empInputS} value={selectedMachineId} onChange={e=>setSelectedMachineId(e.target.value)}>
-<option value="">-- Choisir une machine --</option>
-{(data.machines||[]).map(m=><option key={m.id} value={m.id}>{m.name} ({m.type})</option>)}
-</select>
-{selectedMachine?<div style={{background:(MC[selectedMachine.type]||C.accent)+'10',border:'2px solid '+(MC[selectedMachine.type]||C.accent)+'40',borderRadius:10,padding:12,marginTop:12,fontSize:14}}>
-<div style={{fontWeight:800,fontSize:20,color:MC[selectedMachine.type]||C.accent,lineHeight:1}}>{selectedMachine.name}</div>
-<div style={{fontSize:12,color:C.dim,fontWeight:600,marginTop:3,textTransform:'uppercase',letterSpacing:'0.3px'}}>{selectedMachine.type}{selectedMachine.width?' • '+selectedMachine.width+'m':''}</div>
-{(()=>{const stat=((data.machineEquipmentStatus||{})[selectedMachine.id])||{};const missing=Object.entries(stat).filter(([_,v])=>v==='missing').length;return missing>0?<div style={{marginTop:8,fontSize:13,fontWeight:700,color:C.red,background:'#fef2f2',padding:'6px 10px',borderRadius:8,border:'1px solid '+C.red+'40'}}>⚠ {missing} equipement(s) manquant(s)</div>:null})()}
-</div>:<div style={{fontSize:13,color:C.dim,padding:16,textAlign:'center',background:'#f8fafc',borderRadius:10,marginTop:12,border:'1px dashed #cbd5e1'}}>Aucune machine selectionnee</div>}
-</div>
-{selectedMachineId&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
-<button onClick={()=>{setEntFaitDesc('');setShowEntFait(true)}} style={{...empBtnP(C.green),padding:'18px 12px'}}>✓ Entretien fait</button>
-<button onClick={()=>{setEntFaireDesc('');setShowEntFaire(true)}} style={{...empBtnP(C.orange),padding:'18px 12px'}}>🔧 Entretien a faire</button>
-<button onClick={openPanneForSelected} style={{...empBtnP(C.red),padding:'18px 12px'}}>⚠ Signaler panne</button>
-<button onClick={()=>setShowEquip(true)} style={{...empBtnP(C.accent),padding:'18px 12px'}}>📋 Equipement</button>
-<button onClick={openTakePartForSelected} style={{...empBtnP(C.cyan),padding:'18px 12px',gridColumn:'1 / span 2'}}>🔩 Prendre une piece</button>
-</div>}
-</React.Fragment>}
-</div>)};
+</div>))}
+</React.Fragment>
+):(
+<React.Fragment>
+<img src="icone.png" alt="" aria-hidden="true" style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(94vw,500px)',opacity:.055,pointerEvents:'none',zIndex:0}}/>
 
-// ======== STOCK PIECES ========
-const StockPage=({data,save,isAdmin})=>{
-const[selDepot,setSelDepot]=useState((data.depots||[])[0]?.id||'');
-const[search,setSearch]=useState('');
-const[catFilter,setCatFilter]=useState('');
-const[showAdd,setShowAdd]=useState(false);
-const[sel,setSel]=useState(null);
-const blank={name:'',reference:'',category:'pneu',compatibleWith:[],depotId:selDepot,quantity:0,unitPrice:0,minStock:1,supplier:'',history:[]};
-const parts=(data.parts||[]).filter(p=>(!selDepot||p.depotId===selDepot)&&(!catFilter||p.category===catFilter)&&(!search||p.name.toLowerCase().includes(search.toLowerCase())||p.reference.toLowerCase().includes(search.toLowerCase())));
-const totalVal=parts.reduce((s,p)=>s+(p.quantity||0)*(p.unitPrice||0),0);
-const openEdit=p=>{setSel({...p,compatibleWith:[...(p.compatibleWith||[])]});setShowAdd(true)};
-const doSave=()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.parts)nd.parts=[];const idx=nd.parts.findIndex(p=>p.id===sel.id);if(idx>=0)nd.parts[idx]=sel;else{sel.id=uid();nd.parts.push(sel)}save(nd);setShowAdd(false);setSel(null)};
-const doDelete=id=>{if(!confirm('Supprimer ?'))return;save({...data,parts:(data.parts||[]).filter(p=>p.id!==id)})};
-const doStockIn=(p)=>{const qte=prompt('Quantite a ajouter ?');if(!qte)return;const n=Number(qte);if(!n||n<=0)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const pp=nd.parts.find(x=>x.id===p.id);if(pp){pp.quantity=(pp.quantity||0)+n;if(!pp.history)pp.history=[];pp.history.unshift({type:'in',quantity:n,date:fmtDateISO(new Date()),unitPrice:pp.unitPrice});pp.history=pp.history.slice(0,50);save(nd)}};
-const doStockOut=(p)=>{const qte=prompt('Quantite a retirer ?');if(!qte)return;const n=Number(qte);if(!n||n<=0)return;if(n>p.quantity){alert('Stock insuffisant');return}const nd=JSON.parse(JSON.stringify(_liveData||data));const pp=nd.parts.find(x=>x.id===p.id);if(pp){pp.quantity=Math.max(0,pp.quantity-n);if(!pp.history)pp.history=[];pp.history.unshift({type:'out',quantity:n,date:fmtDateISO(new Date())});pp.history=pp.history.slice(0,50);save(nd)}};
-const allEquip=[...(data.machines||[]).map(m=>({id:m.id,name:m.name,t:'M'})),...(data.trucks||[]).map(t=>({id:t.id,name:t.name,t:'C'})),...(data.cars||[]).map(c=>({id:c.id,name:c.name,t:'V'}))];
-const equipName=id=>{const e=allEquip.find(x=>x.id===id);return e?e.name:'?'};
-return(
-<div>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-<h2 style={{margin:0}}>Stock pieces</h2>
-<div style={{display:'flex',gap:6,alignItems:'center'}}>
-{isAdmin&&<span style={{fontSize:13,color:C.dim}}>Valeur: <b style={{color:C.accent}}>{fmtMoney(totalVal)}</b></span>}
-<button style={btnStyle(C.accent,true)} onClick={()=>{setSel({...blank,depotId:selDepot});setShowAdd(true)}}>+ Ajouter</button>
-</div></div>
-<div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-<select style={{...inputStyle,width:160}} value={selDepot} onChange={e=>setSelDepot(e.target.value)}><option value="">Tous depots</option>{(data.depots||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select>
-<input style={{...inputStyle,width:200}} placeholder="Rechercher..." value={search} onChange={e=>setSearch(e.target.value)}/>
-<select style={{...inputStyle,width:140}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}><option value="">Toutes</option>{PART_CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
+<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,position:'relative',zIndex:1}}>
+<button onClick={()=>setVue('profil')} title="Mon espace" style={_pastilleS}>{(emp.name||'?').charAt(0).toUpperCase()}</button>
+<div style={{minWidth:0,flex:1}}>
+<div style={{fontWeight:800,fontSize:21,lineHeight:1.05,textTransform:'capitalize'}}>{_dateLongue}</div>
+<div style={{fontSize:11.5,color:C.dim,marginTop:1}}>{_jourJobs.length?_jourJobs.length+(_jourJobs.length>1?' chantiers':' chantier'):'aucun chantier'}</div>
 </div>
-<div className="grid-cards" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:12}}>
-{parts.map(p=>(
-<div key={p.id} style={{background:C.card,borderRadius:10,padding:14,border:'1px solid '+C.border,borderLeft:'3px solid '+(p.quantity<=(p.minStock||0)?C.red:C.green)}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-<strong style={{fontSize:14}}>{p.name}</strong>
-<div style={{display:'flex',gap:4}}><EBtn onClick={()=>openEdit(p)}/>{isAdmin&&<button onClick={()=>doDelete(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:14}}>x</button>}</div>
+<div style={{display:'flex',gap:13,textAlign:'right',flexShrink:0}}>
+<div><div style={{fontWeight:800,fontSize:21,lineHeight:1,color:C.accent}}>{_hm(_cumulJour)}</div><div style={{fontSize:10,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',color:C.dim,marginTop:2}}>aujourd'hui</div></div>
+<div><div style={{fontWeight:800,fontSize:18,lineHeight:1,color:C.dim}}>{_hm(_cumulSemaine)}</div><div style={{fontSize:10,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',color:C.dim,marginTop:2}}>semaine</div></div>
 </div>
-<div style={{fontSize:12,color:C.dim}}>Ref: {p.reference||'-'} | {p.supplier||'-'} | {p.category}</div>
-<div style={{fontSize:13,marginTop:4}}>
-<span style={{fontWeight:700,color:p.quantity<=(p.minStock||0)?C.red:C.green}}>Stock: {p.quantity}</span>
-<span style={{color:C.dim}}> | {fmtMoney(p.unitPrice)}/u | Val: {fmtMoney(p.quantity*p.unitPrice)}</span>
-{p.quantity<=(p.minStock||0)&&<span style={{color:C.red,fontWeight:700,marginLeft:4}}>(min: {p.minStock})</span>}
 </div>
-{(p.compatibleWith||[]).length>0&&<div style={{fontSize:11,color:C.dim,marginTop:2}}>Compatible: {p.compatibleWith.map(equipName).join(', ')}</div>}
-<div style={{display:'flex',gap:4,marginTop:6}}>
-<button onClick={()=>doStockIn(p)} style={{...btnStyle(C.green),padding:'2px 8px',fontSize:11}}>+Entree</button>
-<button onClick={()=>doStockOut(p)} style={{...btnStyle(C.red),padding:'2px 8px',fontSize:11}}>-Sortie</button>
-</div>
-{(p.history||[]).length>0&&<div style={{marginTop:6,maxHeight:80,overflow:'auto',fontSize:11}}>
-{(p.history||[]).slice(0,5).map((h,i)=><div key={i} style={{color:h.type==='in'?C.green:C.red,padding:'1px 0'}}>{h.type==='in'?'+':'-'}{h.quantity} | {h.date}{h.usedBy?' | '+h.usedBy:''}</div>)}
+
+{isNightShift&&<div style={{background:'#fef3c7',border:'2px solid '+C.orange,borderRadius:12,padding:'9px 11px',marginBottom:11,fontSize:12.5,color:C.text,position:'relative',zIndex:1}}>⚠ Journée du {fmtDate(new Date(lastEntry.date))} encore ouverte — pense à la terminer.</div>}
+
+<div style={{..._carteS,borderColor:status==='off'?C.accent:C.border,boxShadow:status==='off'?'0 0 0 3px '+C.accent+'22':'none'}}>
+<div style={_etiqS}><span>{status==='off'?'Maintenant':status==='pause'?'En pause':'Embauché'}</span><span style={{color:C.accent}}>{lastEntry&&lastEntry.startTime?lastEntry.startTime:''}</span></div>
+{status==='off'&&<button onClick={()=>doTime('start')} style={{...empBtnP(C.green),width:'100%',marginTop:9}}>▶ Je commence</button>}
+{status==='pause'&&<button onClick={()=>doTime('resume')} style={{...empBtnP(C.green),width:'100%',marginTop:9}}>▶ Reprise</button>}
+{status==='on'&&<div style={{display:'flex',flexDirection:'column',gap:8,marginTop:9}}>
+<button onClick={()=>doTime('pause_start')} style={{...empBtnP(C.orange),width:'100%'}}>⏸ Pause</button>
+<button onClick={()=>doTime('done')} style={{...empBtnS,width:'100%',color:C.red,borderColor:C.red+'55'}}>🌙 Je débauche</button>
 </div>}
+{status!=='off'&&lastEntry&&<div style={{display:'flex',gap:7,alignItems:'center',marginTop:9,flexWrap:'wrap'}}>
+<span style={{fontSize:11.5,color:C.dim,fontWeight:700}}>REPAS</span>
+{['PANIER','RESTO'].map(m=><button key={m} onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.mealType=m;save(nd)}}} style={{padding:'5px 12px',borderRadius:999,border:'1.5px solid '+(lastEntry.mealType===m?C.orange:C.border),background:lastEntry.mealType===m?C.orange+'18':'transparent',color:lastEntry.mealType===m?C.orange:C.dim,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{m==='PANIER'?'🥪 Panier':'🍽 Resto'}</button>)}
+</div>}
+</div>
+
+{_jourJobs.length===0&&<div style={{..._carteS,textAlign:'center',color:C.dim,fontSize:13.5}}>Aucun chantier prévu aujourd'hui.</div>}
+{_jourJobs.map((j,k)=>{const fini=!!j.signature;const gps=_gpsDe(j);
+return(<div key={j.id} style={{..._carteS,opacity:fini?.72:1,borderColor:!fini&&status!=='off'?C.accent:C.border}}>
+<div style={_etiqS}><span>{fini?'Chantier '+(k+1)+' terminé':'Chantier '+(k+1)+' sur '+_jourJobs.length}</span><span style={{color:C.accent}}>{j.billingStart||''}</span></div>
+<div style={{display:'flex',gap:14,alignItems:'flex-start',marginTop:5}}>
+<div style={{fontWeight:800,fontSize:23,lineHeight:1.06,flex:1,minWidth:0}}>{j.location||_nomCli(j)||'Chantier'}</div>
+<div style={{textAlign:'right',flexShrink:0,maxWidth:'52%'}}>
+<div style={{fontSize:17,fontWeight:700,lineHeight:1.15}}>{_nomCli(j)}</div>
+<div style={{fontSize:14,color:C.dim,marginTop:2}}>{_nomMach(j)}</div>
+{j.forfaitType?<div style={{fontSize:12,color:C.muted,marginTop:2}}>{j.forfaitType}</div>:null}
+</div>
+</div>
+{!fini&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:11}}>
+<button onClick={()=>{if(j.siteManagerPhone)location.href='tel:'+String(j.siteManagerPhone).replace(/\s/g,'');else alert("Le numéro du chef n'est pas renseigné sur ce chantier.")}} style={{background:'#f1f5f9',border:'1px solid '+(j.siteManagerPhone?C.border:C.muted),borderStyle:j.siteManagerPhone?'solid':'dashed',borderRadius:12,padding:'8px 10px',minHeight:54,display:'flex',gap:9,alignItems:'center',textAlign:'left',cursor:'pointer',minWidth:0}}>
+<span style={{fontSize:19,flexShrink:0}}>📞</span><span style={{minWidth:0}}><b style={{display:'block',fontSize:13.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.siteManager||'Chef non indiqué'}</b><small style={{display:'block',fontSize:11.5,color:C.dim}}>{j.siteManagerPhone||'pas de numéro'}</small></span></button>
+<button onClick={()=>{if(gps)window.open('https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(gps),'_blank');else alert("Pas de point GPS sur ce chantier.")}} style={{background:'#f1f5f9',border:'1px solid '+(gps?C.border:C.muted),borderStyle:gps?'solid':'dashed',borderRadius:12,padding:'8px 10px',minHeight:54,display:'flex',gap:9,alignItems:'center',textAlign:'left',cursor:'pointer',minWidth:0}}>
+<span style={{fontSize:19,flexShrink:0}}>📍</span><span style={{minWidth:0}}><b style={{display:'block',fontSize:13.5}}>{gps?'Itinéraire':'Pas de GPS'}</b><small style={{display:'block',fontSize:11.5,color:C.dim}}>{gps?'point enregistré':'adresse seule'}</small></span></button>
+</div>}
+{!fini&&status!=='off'&&<button onClick={()=>endJob(j)} style={{...empBtnS,width:'100%',marginTop:8,color:C.red,borderColor:C.red+'55'}}>🏁 Fin de chantier</button>}
+{fini&&<div style={{marginTop:9,borderTop:'1px dashed '+C.border,paddingTop:8,display:'flex',justifyContent:'flex-end',gap:10,alignItems:'baseline',fontSize:13.5,color:C.dim}}><span>Terminé</span><b style={{fontSize:19,color:C.accent}}>{j.signature.durationMin!=null?_hm(j.signature.durationMin):'✓'}</b></div>}
+</div>)})}
+
+<div style={{background:'#f1f5f9',border:'1px solid '+C.border,borderRadius:14,padding:'8px 11px 9px',marginTop:14,position:'relative',zIndex:1}}>
+<div style={{fontSize:11,fontWeight:800,letterSpacing:'.1em',textTransform:'uppercase',color:C.dim,marginBottom:4}}>Demain · {_demainJobs.length?_demainJobs.length+(_demainJobs.length>1?' chantiers':' chantier'):'rien de prévu'}</div>
+{_demainJobs.map(j=>(<div key={j.id} style={{display:'flex',gap:9,alignItems:'baseline',fontSize:12.5,lineHeight:1.4}}>
+<b style={{color:C.accent,minWidth:38,fontWeight:800}}>{j.billingStart||'--:--'}</b>
+<span style={{fontWeight:700,flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.location||_nomCli(j)}</span>
+<span style={{color:C.dim,fontSize:12,whiteSpace:'nowrap'}}>{_nomCli(j)}</span>
 </div>))}
 </div>
-{showAdd&&sel&&<Mod title={sel.id?'Modifier piece':'Nouvelle piece'} onClose={()=>{setShowAdd(false);setSel(null)}} width={500}>
-<Fl label="Nom"><input style={inputStyle} value={sel.name} onChange={e=>setSel({...sel,name:e.target.value})}/></Fl>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
-<Fl label="Reference"><input style={inputStyle} value={sel.reference||''} onChange={e=>setSel({...sel,reference:e.target.value})}/></Fl>
-<Fl label="Categorie"><select style={inputStyle} value={sel.category} onChange={e=>setSel({...sel,category:e.target.value})}>{PART_CATS.map(c=><option key={c} value={c}>{c}</option>)}</select></Fl>
-</div>
-<Fl label="Depot"><select style={inputStyle} value={sel.depotId||''} onChange={e=>setSel({...sel,depotId:e.target.value})}><option value="">--</option>{(data.depots||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></Fl>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
-<Fl label="Quantite"><input type="number" style={inputStyle} value={sel.quantity} onChange={e=>setSel({...sel,quantity:Number(e.target.value)})}/></Fl>
-<Fl label="Prix unitaire"><input type="number" step="0.01" style={inputStyle} value={sel.unitPrice} onChange={e=>setSel({...sel,unitPrice:Number(e.target.value)})}/></Fl>
-<Fl label="Stock min"><input type="number" style={inputStyle} value={sel.minStock||1} onChange={e=>setSel({...sel,minStock:Number(e.target.value)})}/></Fl>
-</div>
-<Fl label="Fournisseur"><input style={inputStyle} value={sel.supplier||''} onChange={e=>setSel({...sel,supplier:e.target.value})}/></Fl>
-<Fl label="Compatible avec"><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{allEquip.map(eq=>{const checked=(sel.compatibleWith||[]).includes(eq.id);return(<label key={eq.id} style={{fontSize:12,display:'flex',gap:3,alignItems:'center',cursor:'pointer'}}><input type="checkbox" checked={checked} onChange={()=>{const cw=[...(sel.compatibleWith||[])];if(checked)setSel({...sel,compatibleWith:cw.filter(x=>x!==eq.id)});else setSel({...sel,compatibleWith:[...cw,eq.id]})}}/>({eq.t}) {eq.name}</label>)})}</div></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={doSave} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>{setShowAdd(false);setSel(null)}} style={btnStyle(C.dim)}>Annuler</button></div>
-</Mod>}
-</div>)};
 
-// ======== INTERVENTIONS ========
-const InterventionsPage=({data,save,isAdmin})=>{
-const[showAdd,setShowAdd]=useState(false);
-const[sel,setSel]=useState(null);
-const[filter,setFilter]=useState('');
-const[panneTab,setPanneTab]=useState('interventions');
-const[showPartPicker,setShowPartPicker]=useState(false);
-const[pickerPartId,setPickerPartId]=useState('');
-const[pickerQte,setPickerQte]=useState(1);
-const allEquip=[...(data.machines||[]).map(m=>({id:m.id,name:m.name,t:'machine'})),...(data.trucks||[]).map(t=>({id:t.id,name:t.name,t:'camion'})),...(data.cars||[]).map(c=>({id:c.id,name:c.name,t:'voiture'}))];
-const equipName=id=>{const e=allEquip.find(x=>x.id===id);return e?e.name:'?'};
-const interventions=(data.interventions||[]).filter(i=>!filter||(i.machineId===filter||i.truckId===filter||i.carId===filter)).sort((a,b)=>b.date.localeCompare(a.date));
-const pannes=(data.panneReports||[]).sort((a,b)=>b.date.localeCompare(a.date));
-const blankInter={date:fmtDateISO(new Date()),machineId:'',truckId:'',carId:'',type:'entretien',description:'',employeeId:'',partsUsed:[],laborHours:0,laborCost:0,totalCost:0,status:'done',notes:''};
-const openAdd=()=>{setSel({...blankInter});setShowAdd(true)};
-const openEdit=i=>{setSel({...i,partsUsed:[...(i.partsUsed||[])]});setShowAdd(true)};
-const doSave=()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.interventions)nd.interventions=[];const partsCost=(sel.partsUsed||[]).reduce((s,p)=>s+(p.totalPrice||0),0);sel.totalCost=partsCost+(Number(sel.laborCost)||0);const idx=nd.interventions.findIndex(i=>i.id===sel.id);if(idx>=0)nd.interventions[idx]=sel;else{sel.id=uid();nd.interventions.push(sel)}sel.partsUsed.forEach(pu=>{const pp=nd.parts.find(x=>x.id===pu.partId);if(pp){pp.quantity=Math.max(0,(pp.quantity||0)-pu.quantity);if(!pp.history)pp.history=[];pp.history.unshift({type:'out',quantity:pu.quantity,date:sel.date,reason:sel.description});pp.history=pp.history.slice(0,50)}});save(nd);setShowAdd(false);setSel(null)};
-const delInter=id=>{if(!confirm('Supprimer ?'))return;save({...data,interventions:(data.interventions||[]).filter(i=>i.id!==id)})};
-const updatePanneStatus=(pid,status)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const p=(nd.panneReports||[]).find(x=>x.id===pid);if(p){p.status=status;if(status==='resolved')p.resolvedDate=fmtDateISO(new Date());save(nd)}};
-const maintReqs=(data.maintenanceRequests||[]).sort((a,b)=>b.date.localeCompare(a.date));
-const updateMaintStatus=(mid,status)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const m=(nd.maintenanceRequests||[]).find(x=>x.id===mid);if(m){m.status=status;if(status==='done')m.doneDate=fmtDateISO(new Date());save(nd)}};
-const delMaintReq=(mid)=>{if(!confirm('Supprimer cette demande ?'))return;save({...data,maintenanceRequests:(data.maintenanceRequests||[]).filter(x=>x.id!==mid)})};
-const getCompatParts=()=>{const eqId=sel?(sel.machineId||sel.truckId||sel.carId):'';return(data.parts||[]).filter(p=>p.quantity>0&&(!eqId||(p.compatibleWith||[]).length===0||(p.compatibleWith||[]).includes(eqId)))};
-const confirmAddPart=()=>{if(!pickerPartId)return;const part=(data.parts||[]).find(p=>p.id===pickerPartId);if(!part)return;const qte=Math.min(pickerQte,part.quantity);if(qte<=0)return;setSel({...sel,partsUsed:[...(sel.partsUsed||[]),{partId:part.id,partName:part.name,quantity:qte,unitPrice:part.unitPrice,totalPrice:qte*part.unitPrice}]});setShowPartPicker(false);setPickerPartId('');setPickerQte(1)};
-const removePartFromInter=(idx)=>{if(!sel)return;const pu=[...(sel.partsUsed||[])];pu.splice(idx,1);setSel({...sel,partsUsed:pu})};
-return(
-<div>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-<div style={{display:'flex',gap:6}}>
-<button onClick={()=>setPanneTab('interventions')} style={btnStyle(C.accent,panneTab==='interventions')}>Interventions</button>
-<button onClick={()=>setPanneTab('pannes')} style={btnStyle(C.orange,panneTab==='pannes')}>Pannes ({pannes.filter(p=>p.status!=='resolved').length})</button>
-<button onClick={()=>setPanneTab('maintenance_requests')} style={btnStyle(C.cyan,panneTab==='maintenance_requests')}>Entretiens demandes ({maintReqs.filter(m=>m.status==='new').length})</button>
-</div>
-<button style={btnStyle(C.accent,true)} onClick={openAdd}>+ Intervention</button>
-</div>
-{panneTab==='interventions'&&<div>
-<select style={{...inputStyle,width:200,marginBottom:12}} value={filter} onChange={e=>setFilter(e.target.value)}><option value="">Tous equipements</option>{allEquip.map(eq=><option key={eq.id} value={eq.id}>({eq.t}) {eq.name}</option>)}</select>
-{interventions.map(i=>(
-<div key={i.id} style={{background:C.card,borderRadius:10,padding:12,marginBottom:8,border:'1px solid '+C.border}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-<div><span style={{fontWeight:700}}>{i.date}</span> <span style={{color:C.dim}}>| {i.type}</span> <span style={{color:C.accent}}>{i.machineId?equipName(i.machineId):i.truckId?equipName(i.truckId):i.carId?equipName(i.carId):'-'}</span></div>
-<div style={{display:'flex',gap:4}}><span style={{fontWeight:700,color:C.red}}>{fmtMoney(i.totalCost||0)}</span>{isAdmin&&<button onClick={()=>delInter(i.id)} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:14}}>x</button>}<EBtn onClick={()=>openEdit(i)}/></div>
-</div>
-<div style={{fontSize:13,color:C.dim}}>{i.description}</div>
-{(i.partsUsed||[]).length>0&&<div style={{fontSize:12,marginTop:4}}>{i.partsUsed.map((p,pi)=><span key={pi} style={{marginRight:8}}>{p.partName} x{p.quantity} ({fmtMoney(p.totalPrice)})</span>)}</div>}
-{i.laborHours>0&&<div style={{fontSize:12,color:C.dim}}>MO: {i.laborHours}h {i.laborCost>0&&'= '+fmtMoney(i.laborCost)}</div>}
-</div>))}
-</div>}
-{panneTab==='pannes'&&<div>
-{pannes.map(p=>{const reporter=(data.employees||[]).find(e=>e.id===p.reportedBy);return(
-<div key={p.id} style={{background:C.card,borderRadius:10,padding:12,marginBottom:8,border:'1px solid '+C.border,borderLeft:'3px solid '+(p.severity==='urgent'?C.red:p.severity==='normal'?C.orange:C.muted)}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-<div><span style={{fontWeight:700}}>{p.date}</span> <Bg text={p.severity} color={p.severity==='urgent'?C.red:p.severity==='normal'?C.orange:C.dim}/> <Bg text={p.status==='new'?'Nouvelle':p.status==='in_progress'?'En cours':'Resolue'} color={p.status==='resolved'?C.green:p.status==='in_progress'?C.orange:C.red}/></div>
-<div style={{display:'flex',gap:4}}>
-{p.status==='new'&&<button onClick={()=>updatePanneStatus(p.id,'in_progress')} style={{...btnStyle(C.orange),padding:'2px 8px',fontSize:11}}>Prendre en charge</button>}
-{p.status==='in_progress'&&<button onClick={()=>updatePanneStatus(p.id,'resolved')} style={{...btnStyle(C.green),padding:'2px 8px',fontSize:11}}>Resolu</button>}
-</div></div>
-<div style={{fontSize:13}}>{p.machineId?equipName(p.machineId):p.truckId?equipName(p.truckId):p.carId?equipName(p.carId):'-'}</div>
-<div style={{fontSize:13,color:C.dim}}>{p.description}</div>
-{reporter&&<div style={{fontSize:12,color:C.muted}}>Signale par: {reporter.name}</div>}
-</div>)})}
-</div>}
-{panneTab==='maintenance_requests'&&<div>
-{maintReqs.length===0&&<div style={{fontSize:14,color:C.dim,padding:24,textAlign:'center'}}>Aucune demande d'entretien.</div>}
-{maintReqs.map(mr=>{const reporter=(data.employees||[]).find(e=>e.id===mr.reportedBy);const mach=(data.machines||[]).find(m=>m.id===mr.machineId);return(
-<div key={mr.id} style={{background:C.card,borderRadius:10,padding:12,marginBottom:8,border:'1px solid '+C.border,borderLeft:'3px solid '+(mr.status==='done'?C.green:C.cyan)}}>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-<div><span style={{fontWeight:700}}>{mr.date}</span> <Bg text={mr.status==='done'?'Fait':'A faire'} color={mr.status==='done'?C.green:C.cyan}/></div>
-<div style={{display:'flex',gap:4,alignItems:'center'}}>
-{mr.status!=='done'&&<button onClick={()=>updateMaintStatus(mr.id,'done')} style={{...btnStyle(C.green),padding:'2px 10px',fontSize:12}}>Marquer fait</button>}
-{mr.status==='done'&&<button onClick={()=>updateMaintStatus(mr.id,'new')} style={{...btnStyle(C.dim),padding:'2px 10px',fontSize:12}}>Rouvrir</button>}
-{isAdmin&&<button onClick={()=>delMaintReq(mr.id)} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:16}}>x</button>}
-</div>
-</div>
-<div style={{fontSize:13,fontWeight:600}}>{mach?mach.name+' ('+mach.type+')':'Machine inconnue'}</div>
-<div style={{fontSize:13,color:C.dim,marginTop:2}}>{mr.description}</div>
-{reporter&&<div style={{fontSize:12,color:C.muted,marginTop:2}}>Demande par: {reporter.name}</div>}
-</div>)})}
-</div>}
-{showAdd&&sel&&<Mod title="Intervention" onClose={()=>{setShowAdd(false);setSel(null)}} width={550}>
-<Fl label="Date"><input type="date" style={inputStyle} value={sel.date} onChange={e=>setSel({...sel,date:e.target.value})}/></Fl>
-<Fl label="Equipement"><select style={inputStyle} value={sel.machineId||sel.truckId||sel.carId||''} onChange={e=>{const v=e.target.value;const eq=allEquip.find(x=>x.id===v);if(!eq)return setSel({...sel,machineId:'',truckId:'',carId:''});if(eq.t==='machine')setSel({...sel,machineId:v,truckId:'',carId:''});else if(eq.t==='camion')setSel({...sel,machineId:'',truckId:v,carId:''});else setSel({...sel,machineId:'',truckId:'',carId:v})}}><option value="">--</option>{allEquip.map(eq=><option key={eq.id} value={eq.id}>({eq.t}) {eq.name}</option>)}</select></Fl>
-<Fl label="Type"><select style={inputStyle} value={sel.type} onChange={e=>setSel({...sel,type:e.target.value})}>{INTER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></Fl>
-<Fl label="Description"><textarea style={{...inputStyle,height:60}} value={sel.description} onChange={e=>setSel({...sel,description:e.target.value})}/></Fl>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
-<Fl label="Heures MO"><input type="number" style={inputStyle} value={sel.laborHours||0} onChange={e=>setSel({...sel,laborHours:Number(e.target.value)})}/></Fl>
-<Fl label="Cout MO externe"><input type="number" style={inputStyle} value={sel.laborCost||0} onChange={e=>setSel({...sel,laborCost:Number(e.target.value)})}/></Fl>
-</div>
-<Fl label="Pieces utilisees">
-{(sel.partsUsed||[]).map((p,i)=><div key={i} style={{fontSize:12,display:'flex',justifyContent:'space-between',alignItems:'center',padding:'2px 0',borderBottom:'1px solid #f1f5f9'}}><span>{p.partName} x{p.quantity}</span><span style={{display:'flex',gap:6,alignItems:'center'}}><span>{fmtMoney(p.totalPrice)}</span><button onClick={()=>removePartFromInter(i)} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:12}}>x</button></span></div>)}
-{!showPartPicker&&<button onClick={()=>{setShowPartPicker(true);setPickerPartId('');setPickerQte(1)}} style={{...btnStyle(C.accent),padding:'2px 8px',fontSize:11,marginTop:4}}>+ Piece</button>}
-{showPartPicker&&<div style={{background:'#f8fafc',borderRadius:8,padding:8,marginTop:4,border:'1px solid '+C.border}}>
-<select style={{...inputStyle,marginBottom:4}} value={pickerPartId} onChange={e=>setPickerPartId(e.target.value)}><option value="">-- Choisir une piece --</option>{getCompatParts().map(p=><option key={p.id} value={p.id}>{p.name} ({p.category}) - stock: {p.quantity} - {fmtMoney(p.unitPrice)}/u</option>)}</select>
-<div style={{display:'flex',gap:4,alignItems:'center'}}><input type="number" min="1" max={pickerPartId?(data.parts||[]).find(p=>p.id===pickerPartId)?.quantity||1:1} style={{...inputStyle,width:70}} value={pickerQte} onChange={e=>setPickerQte(Number(e.target.value)||1)} placeholder="Qte"/>
-<button onClick={confirmAddPart} style={{...btnStyle(C.green),padding:'2px 8px',fontSize:11}}>Ajouter</button>
-<button onClick={()=>setShowPartPicker(false)} style={{...btnStyle(C.dim),padding:'2px 8px',fontSize:11}}>Annuler</button></div>
-</div>}
-</Fl>
-<Fl label="Notes"><textarea style={{...inputStyle,height:40}} value={sel.notes||''} onChange={e=>setSel({...sel,notes:e.target.value})}/></Fl>
-<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={doSave} style={btnStyle(C.accent,true)}>Enregistrer</button><button onClick={()=>{setShowAdd(false);setSel(null)}} style={btnStyle(C.dim)}>Annuler</button></div>
-</Mod>}
-</div>)};
+<button onClick={()=>setVue('heures')} style={{...empBtnS,width:'100%',marginTop:9,position:'relative',zIndex:1}}>⏱ Mes heures</button>
+</React.Fragment>
+)}
+</div>);};
 
-// ======== STATS / BREAK-EVEN ========
-const StatsPage=({data})=>{
-const wdpm=data.workDaysPerMonth||22;
-const yearStart=data.yearStart||fmtDateISO(new Date(new Date().getFullYear(),0,1));
-const allJobs=(data.jobs||[]).filter(j=>j.date>=yearStart&&j.type!=='depot');
-const months=useMemo(()=>{const ms=[];const d=new Date(yearStart);for(let i=0;i<12;i++){const m=new Date(d.getFullYear(),d.getMonth()+i,1);const last=new Date(m.getFullYear(),m.getMonth()+1,0);ms.push({start:fmtDateISO(m),end:fmtDateISO(last),label:m.toLocaleString('fr-FR',{month:'short'})});if(m>new Date())break}return ms},[yearStart]);
-const calcMachStats=(mach)=>{let cumCA=0,cumCost=0;const monthData=months.map(mo=>{const mJobs=allJobs.filter(j=>j.machineId===mach.id&&j.date>=mo.start&&j.date<=mo.end);const ca=mJobs.reduce((s,j)=>s+(j.priceForfait||0),0);const fuelCost=mJobs.reduce((s,j)=>{const ft=getMachineFuelType(data,mach.id);const fp=getFuelPrice(data,ft,j.machineFuelDepot);return s+(j.machineFuelL||0)*fp},0);const assJour=(mach.insuranceMonthly||0)/wdpm;const credJour=(Number(mach.creditMonthly)||0)/wdpm;const ctJour=((mach.ctCost||0)/12)/wdpm;const daysUsed=[...new Set(mJobs.map(j=>j.date))].length;const fixedCost=(assJour+credJour+ctJour)*daysUsed;const interCost=(data.interventions||[]).filter(i=>i.machineId===mach.id&&i.date>=mo.start&&i.date<=mo.end).reduce((s,i)=>s+(i.totalCost||0),0);const cost=fuelCost+fixedCost+interCost;cumCA+=ca;cumCost+=cost;return{label:mo.label,ca,cost,cumCA,cumCost}});return{monthData,totalCA:cumCA,totalCost:cumCost,result:cumCA-cumCost}};
-const maxH=200;
-return(
-<div>
-<h2 style={{marginBottom:16}}>Statistiques et Point mort</h2>
-<h3 style={{marginBottom:8,color:C.accent}}>Machines</h3>
-{(data.machines||[]).map(mach=>{const stats=calcMachStats(mach);const maxVal=Math.max(...stats.monthData.map(m=>Math.max(m.cumCA,m.cumCost)),1);const breakMonth=stats.monthData.find(m=>m.cumCA>=m.cumCost&&m.cumCA>0);return(
-<div key={mach.id} style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginBottom:16}}>
-<div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-<strong style={{color:MC[mach.type]||C.accent,fontSize:16}}>{mach.name}</strong>
-<span style={{fontWeight:700,color:stats.result>=0?C.green:C.red,fontSize:15}}>{stats.result>=0?'+':''}{fmtMoney(stats.result)}</span>
-</div>
-<div style={{display:'flex',gap:16,marginBottom:12,fontSize:13}}>
-<span>CA cumule: <b style={{color:C.green}}>{fmtMoney(stats.totalCA)}</b></span>
-<span>Couts cumules: <b style={{color:C.red}}>{fmtMoney(stats.totalCost)}</b></span>
-{breakMonth&&<span>Point mort: <b style={{color:C.accent}}>{breakMonth.label}</b></span>}
-</div>
-<div style={{display:'flex',alignItems:'flex-end',gap:2,height:maxH,marginBottom:8,background:'#f8fafc',borderRadius:8,padding:'8px 4px'}}>
-{stats.monthData.map((m,i)=>{const hCA=(m.cumCA/maxVal)*maxH*0.9;const hCost=(m.cumCost/maxVal)*maxH*0.9;return(
-<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
-<div style={{width:'100%',display:'flex',justifyContent:'center',gap:1,alignItems:'flex-end',height:maxH*0.9}}>
-<div style={{width:'40%',height:Math.max(hCA,2),background:C.green,borderRadius:2,opacity:.7}}/>
-<div style={{width:'40%',height:Math.max(hCost,2),background:C.red,borderRadius:2,opacity:.7}}/>
-</div>
-<div style={{fontSize:9,color:C.dim}}>{m.label}</div>
-</div>)})}
-</div>
-<div style={{display:'flex',gap:12,fontSize:11,color:C.dim}}><span style={{display:'flex',alignItems:'center',gap:3}}><span style={{width:10,height:10,background:C.green,borderRadius:2,display:'inline-block'}}/> CA cumule</span><span style={{display:'flex',alignItems:'center',gap:3}}><span style={{width:10,height:10,background:C.red,borderRadius:2,display:'inline-block'}}/> Couts cumules</span></div>
-</div>)})}
-<h3 style={{marginBottom:8,marginTop:24,color:C.cyan}}>Camions</h3>
-{(data.trucks||[]).map(truck=>{const truckJobs=allJobs.filter(j=>{const emp=(data.employees||[]).find(e=>e.id===j.employeeId);return emp&&emp.truckId===truck.id});const totalRevTransf=truckJobs.reduce((s,j)=>s+(j.hasTransfer?j.transferPrice||0:0),0);const totalFuelCost=truckJobs.reduce((s,j)=>{const ft=getMachineFuelType(data,j.machineId);const fp=getFuelPrice(data,'gazole',j.startFrom!=='home'?j.startFrom:null);const truckC=Number(truck.fuelPer100)||25;return s+((j.distanceKm||0)/100)*truckC*fp},0);const interCost=(data.interventions||[]).filter(i=>i.truckId===truck.id&&i.date>=yearStart).reduce((s,i)=>s+(i.totalCost||0),0);const fixedCost=((truck.insuranceMonthly||0)+(Number(truck.creditMonthly)||0)+((truck.ctCost||0)/12))*((new Date()-new Date(yearStart))/(30*86400000));const totalCost=totalFuelCost+interCost+fixedCost;const result=totalRevTransf-totalCost;return(
-<div key={truck.id} style={{background:C.card,borderRadius:10,padding:14,border:'1px solid '+C.border,marginBottom:10}}>
-<div style={{display:'flex',justifyContent:'space-between'}}><strong>{truck.name}</strong><span style={{fontWeight:700,color:result>=0?C.green:C.red}}>{result>=0?'+':''}{fmtMoney(result)}</span></div>
-<div style={{fontSize:13,color:C.dim}}>Transferts: {fmtMoney(totalRevTransf)} | Carbu: {fmtMoney(totalFuelCost)} | Interventions: {fmtMoney(interCost)} | Fixes: {fmtMoney(fixedCost)}</div>
-</div>)})}
-</div>)};
-
-// ======== MECHANIC VIEW ========
 const MechanicView=({data,save,empId,onLogout})=>{
 const emp=(data.employees||[]).find(e=>e.id===empId);
 const[pg,setPg]=useState('stock');
