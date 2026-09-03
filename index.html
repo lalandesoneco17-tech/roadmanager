@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
@@ -22,6 +22,10 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+/* pas de zoom : on monte, on descend, c est tout. pan-x reste autorise pour les tableaux larges */
+html,body{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%}
+/* la carte Leaflet gere son propre pincer-zoomer en JS */
+.leaflet-container{touch-action:none}
 @keyframes rm-tourne{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 @keyframes rm-part{to{opacity:0;visibility:hidden}}
 #ecran-demarrage.fini{animation:rm-part .35s ease forwards}
@@ -47,6 +51,22 @@ input,select,textarea,button{font-family:inherit;font-size:inherit}
   <img src="icone.png" alt="" style="width:240px;height:240px;max-width:62vw;max-height:62vw;object-fit:contain;animation:rm-tourne 4s linear infinite" onerror="this.style.display='none'"/>
 </div>
 <div id="root"></div>
+<script>
+// iOS ignore user-scalable : on bloque le pincer-zoomer, sauf sur la carte
+['gesturestart','gesturechange','gestureend'].forEach(function(t){
+  document.addEventListener(t,function(e){
+    if(e.target&&e.target.closest&&e.target.closest('.leaflet-container'))return;
+    e.preventDefault();
+  },{passive:false});
+});
+// et le double-tap qui zoome sur iOS
+var dernierTap=0;
+document.addEventListener('touchend',function(e){
+  var t=Date.now();
+  if(t-dernierTap<320&&!(e.target&&e.target.closest&&e.target.closest('.leaflet-container'))) e.preventDefault();
+  dernierTap=t;
+},{passive:false});
+</script>
 <script>
 // Supabase client init
 window.SUPABASE_URL='https://valtmsgqhrkvwjsdqfdc.supabase.co';
