@@ -2593,27 +2593,40 @@ const[entFaireDesc,setEntFaireDesc]=useState('');
 const[showEquip,setShowEquip]=useState(false);
 const[empPhotoLightbox,setEmpPhotoLightbox]=useState(null);
 // Fin de chantier : calcule juste le temps passe (sans signature ni forfait)
-const endJob=(j)=>{
-  if(!confirm('Terminer ce chantier ? Le temps passe sera calcule.'))return;
-  const _toM=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
+const _toM=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
+const _deM=m=>pad2(Math.floor((m%1440+1440)%1440/60))+':'+pad2(((m%60)+60)%60);
+// Debut retenu pour un chantier : son heure prevue, ou la fin du chantier
+// precedent si celui-ci a deborde. Tant que le precedent n'est pas fini,
+// le temps compte sur lui : les deux ne se chevauchent jamais.
+const _debutPrevu=(jb)=>{
+  const nd=_liveData||data;
+  const prevu=_toM(jb.billingStart);
+  const avant=(nd.jobs||[]).filter(x=>x.employeeId===jb.employeeId&&x.date===jb.date&&x.id!==jb.id
+      &&x.signature&&x.signature.signedAt&&_toM(x.billingStart)!=null&&prevu!=null&&_toM(x.billingStart)<prevu)
+    .map(x=>{const d=new Date(x.signature.signedAt);return d.getHours()*60+d.getMinutes()});
+  const finPrec=avant.length?Math.max.apply(null,avant):null;
+  if(prevu==null)return finPrec!=null?_deM(finPrec):'';
+  return _deM(finPrec!=null&&finPrec>prevu?finPrec:prevu);
+};
+
+// On demande d'abord au chauffeur si l'heure de debut retenue est la bonne.
+const endJob=(j)=>{ setFeuille({type:'fin',job:j,debut:_debutPrevu(j),corrige:false}); };
+
+const finaliserChantier=(j,debutTxt)=>{
   const nd=JSON.parse(JSON.stringify(_liveData||data));
   const jj=nd.jobs.find(x=>x.id===j.id);
   if(!jj)return;
-  // Le temps passe se compte a partir de l'HEURE PREVUE du chantier, pas de
-  // l'embauche : embauche a 7h pour un chantier a 8h, on part de 8h.
   const te=(nd.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&t.startTime);
   const now=new Date();
-  const debutM=_toM(j.billingStart);
+  const debutM=_toM(debutTxt);
   let dur=null,pauseDeducted=0;
   if(debutM!=null){
     let endMin=now.getHours()*60+now.getMinutes();
     // Un chantier du soir termine au petit matin a bien traverse minuit.
-    // Sinon, terminer avant l'heure prevue veut dire que le chantier n'a pas
-    // commence : duree nulle, jamais 24 h de plus.
+    // Sinon, terminer avant l'heure de debut veut dire que rien n'a commence.
     const traverse=(endMin<debutM)&&debutM>=16*60&&endMin<12*60;
     if(endMin<debutM)endMin=traverse?endMin+1440:debutM;
     dur=endMin-debutM;
-    // On deduit les pauses qui tombent pendant le chantier.
     const ps=(te&&Array.isArray(te.pauses)&&te.pauses.length)?te.pauses
       :((te&&te.breakStart&&te.breakEnd)?[{d:te.breakStart,f:te.breakEnd}]:[]);
     ps.forEach(p=>{
@@ -2627,12 +2640,11 @@ const endJob=(j)=>{
     });
     dur=Math.max(0,dur-pauseDeducted);
   }
-  jj.signature={signedBy:(emp&&emp.name)||'',signedAt:new Date().toISOString(),durationMin:dur,pauseDeducted,autoForfait:null,endedBy:'employee'};
+  jj.signature={signedBy:(emp&&emp.name)||'',signedAt:new Date().toISOString(),durationMin:dur,
+    pauseDeducted,debutRetenu:debutTxt||'',autoForfait:null,endedBy:'employee'};
   save(nd);
-  // position au moment de la fin de chantier, rattachee apres coup
   posMaintenant().then(pos=>{if(!pos)return;const n2=JSON.parse(JSON.stringify(_liveData||data));const j2=(n2.jobs||[]).find(x=>x.id===j.id);
     if(j2&&j2.signature){j2.signature={...j2.signature,gps:pos};j2._updatedAt=Date.now();save(n2)}});
-  // Notification a l'admin : fin de chantier, le lieu, le temps passe. Rien d'autre.
   (async()=>{try{
     const cfg=_liveData||data;const tok=cfg.telegramBotToken;
     if(!tok||cfg.tgNotifySign===false)return;
@@ -2643,7 +2655,8 @@ const endJob=(j)=>{
     const durTxt=dm!=null?Math.floor(dm/60)+'h'+String(dm%60).padStart(2,'0'):'—';
     await tgSendAdmins(cfg,'🏁 '+who+' — fin de chantier\n📍 '+loc+(cln?' ('+cln+')':'')+'\n⏱ Temps passé : '+durTxt);
   }catch(e){}})();
-  alert('✓ Fin de chantier enregistree !');
+  setFeuille(null);
+
 };
 const selectedMachine=(data.machines||[]).find(m=>m.id===selectedMachineId)||null;
 const submitEntFait=()=>{if(!selectedMachineId||!entFaitDesc.trim()){alert('Machine et description requises');return}const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.interventions)nd.interventions=[];nd.interventions.push({id:uid(),date:fmtDateISO(new Date()),machineId:selectedMachineId,type:'entretien',description:entFaitDesc,employeeId:empId,partsUsed:[],laborHours:0,laborCost:0,totalCost:0,status:'done',notes:'Declare par chauffeur'});save(nd);setShowEntFait(false);setEntFaitDesc('');alert('Entretien enregistre !')};
@@ -3240,6 +3253,27 @@ return(
 <div className="f-choix">
 {MANQUES.map(m=><button key={m} className="choix" onClick={()=>_envoyerManque(feuille.job,m.charAt(0).toLowerCase()+m.slice(1))}>{m}</button>)}
 </div>
+</React.Fragment>}
+{feuille&&feuille.type==='fin'&&<React.Fragment>
+<div className="f-titre">Fin de chantier</div>
+<div className="f-sous">{(feuille.job.location||_cli(feuille.job))+' · '+_cli(feuille.job)}</div>
+{!feuille.corrige?<React.Fragment>
+<div className="f-sous" style={{marginTop:9,color:'var(--ink)',fontSize:14.5}}>Tu as bien commencé à <b>{feuille.debut||'--:--'}</b> ?</div>
+<div className="f-actions"><div className="f-duo">
+<button onClick={()=>finaliserChantier(feuille.job,feuille.debut)}>✓ Oui</button>
+<button className="creux" onClick={()=>setFeuille({...feuille,corrige:true})}>✎ Non</button>
+</div></div>
+</React.Fragment>:<React.Fragment>
+<div className="f-sous" style={{marginTop:9,color:'var(--ink)',fontSize:14.5}}>À quelle heure as-tu commencé ?</div>
+<div style={{marginTop:9,display:'flex',justifyContent:'center'}}>
+<input type="time" className="heure" style={{fontSize:26,width:140,textAlign:'center',padding:'6px 8px'}}
+ value={feuille.debut||''} onChange={e=>{if(e.target.value)setFeuille({...feuille,debut:e.target.value})}}/>
+</div>
+<div className="f-actions">
+<button onClick={()=>finaliserChantier(feuille.job,feuille.debut)}>✓ Enregistrer la fin de chantier</button>
+<button className="creux" onClick={()=>setFeuille({...feuille,corrige:false})}>← Retour</button>
+</div>
+</React.Fragment>}
 </React.Fragment>}
 {feuille&&feuille.type==='envoye'&&<React.Fragment>
 <div className="f-titre">Envoyé</div>
