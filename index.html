@@ -133,25 +133,25 @@ input,select,textarea,button{font-family:inherit;font-size:inherit}
 .rmc .zonefil::-webkit-scrollbar{width:0}
 /* la barre du bas : tout est ramene a la ligne, rien n'y depasse */
 .rmc .pied-fixe{border-top:1px solid var(--line);background:var(--surface-2);
-  padding:9px 13px 11px;display:flex;flex-direction:column;gap:6px;transition:background .25s}
+  padding:11px 13px 14px;display:flex;flex-direction:column;gap:8px;transition:background .25s}
 .rmc .pied-fixe.confirme{background:var(--vert-pale)}
 .rmc .duo-bas{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .rmc .demain{padding:0}
 .rmc .dem-tete{display:flex;justify-content:space-between;align-items:center;gap:8px;
-  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:12.5px;line-height:1.5;
-  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:13.5px;line-height:1.5;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
 .rmc .pied-fixe.confirme .dem-tete{color:var(--vert-fonce)}
 .rmc button.chip{width:auto;padding:3px 11px 4px;font-size:13px;line-height:1.45;
   border-radius:999px;letter-spacing:.04em}
 .rmc .vu{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.04em;
   color:var(--vert-fonce);white-space:nowrap}
 .rmc .dem-liste{display:flex;flex-direction:column;gap:3px}
-.rmc .dl{display:flex;gap:10px;align-items:baseline;font-size:14.5px;line-height:1.5}
-.rmc .dl b{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:16px;color:var(--vert);
-  min-width:46px;font-variant-numeric:tabular-nums;line-height:1.5}
+.rmc .dl{display:flex;gap:11px;align-items:baseline;font-size:16px;line-height:1.62}
+.rmc .dl b{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px;color:var(--vert);
+  min-width:54px;font-variant-numeric:tabular-nums;line-height:1.62}
 .rmc .pied-fixe.confirme .dl b{color:var(--vert-fonce)}
 .rmc .dl-lieu{font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rmc .dl-cli{color:var(--ink-3);font-size:13px;white-space:nowrap}
+.rmc .dl-cli{color:var(--ink-3);font-size:14px;white-space:nowrap}
 .rmc button.dl{width:100%;background:transparent;border:0;padding:0;text-align:left;
   font-family:inherit;text-transform:none;letter-spacing:0;color:inherit}
 /* deplie : la barre prend la moitie de l'ecran, les trois fiches y tiennent */
@@ -317,11 +317,11 @@ input,select,textarea,button{font-family:inherit;font-size:inherit}
 .rmc .qui small{display:block;font-family:"IBM Plex Sans",sans-serif;font-weight:500;font-size:11.5px;
   color:var(--ink-3);margin-top:2px}
 .rmc .totaux{margin-left:auto;display:flex;gap:13px;text-align:right;flex-shrink:0}
-.rmc .tb b{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:23px;
+.rmc .tb b{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:31px;
   line-height:1;color:var(--vert);font-variant-numeric:tabular-nums}
-.rmc .tb small{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:10px;
+.rmc .tb small{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:11px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:2px}
-.rmc .tb.sem b{color:var(--ink-2);font-size:20px}
+.rmc .tb.sem b{color:var(--ink-2);font-size:26px}
 .rmc .fil{position:relative;padding-left:24px;display:flex;flex-direction:column;gap:11px}
 .rmc .fil::before{content:"";position:absolute;left:6px;top:10px;bottom:10px;width:2px;background:var(--line)}
 .rmc .jauge{position:absolute;left:6px;top:10px;width:2px;background:var(--vert);transition:height .45s ease}
@@ -387,9 +387,10 @@ input,select,textarea,button{font-family:inherit;font-size:inherit}
 .rmc .carte.confirme .etiquette .h{color:var(--vert)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* ===== espace chauffeur : la maquette, portee telle quelle ===== */
-.rmc{background:var(--ground);color:var(--ink);min-height:100vh;height:100vh;
+.rmc{background:var(--ground);color:var(--ink);
+  position:fixed;inset:0;height:100vh;height:100dvh;
   font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,sans-serif;font-size:16px;line-height:1.6;
-  display:flex;flex-direction:column;position:relative;overflow:hidden}
+  display:flex;flex-direction:column;overflow:hidden}
 .rmc *{box-sizing:border-box}
 .rmc .vue[hidden]{display:none}
 .rmc button{font-family:"Barlow Condensed",sans-serif}

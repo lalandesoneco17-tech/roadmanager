@@ -99,8 +99,20 @@ const teQueueGet=()=>{try{return JSON.parse(localStorage.getItem(TE_QUEUE_KEY)||
 const teQueueSet=q=>{try{localStorage.setItem(TE_QUEUE_KEY,JSON.stringify(q))}catch(e){}};
 const teQueuePush=op=>{const q=teQueueGet();q.push({...op,_ts:Date.now()});teQueueSet(q)};
 const teTableOf=key=>key==='timeEntriesValidated'?'time_entries_validated':'time_entries';
-const teToRow=e=>({id:e.id,emp_id:e.empId,date:e.date,type:e.type||null,start_time:e.startTime||null,end_time:e.endTime||null,pause_start:e.pauseStart||null,pause_end:e.pauseEnd||null,pause_min:e.pauseMin||0,break_start:e.breakStart||null,break_end:e.breakEnd||null,meal_type:e.mealType||null,absence_type:e.absenceType||null,night_hours:e.nightHours||0,requested_end_time:e.requestedEndTime||null,requested_end_motif:e.requestedEndMotif||null,ref_hours:e.refHours!=null?e.refHours:null,pauses:Array.isArray(e.pauses)?e.pauses:null,created_at:e.createdAt||new Date().toISOString(),updated_at:new Date().toISOString(),deleted:false});
-const teFromRow=r=>({id:r.id,empId:r.emp_id,date:r.date,type:r.type||'',startTime:r.start_time||'',endTime:r.end_time||'',pauseStart:r.pause_start||null,pauseEnd:r.pause_end||null,pauseMin:r.pause_min||0,breakStart:r.break_start||'',breakEnd:r.break_end||'',mealType:r.meal_type||'',absenceType:r.absence_type||'',nightHours:Number(r.night_hours)||0,requestedEndTime:r.requested_end_time||'',requestedEndMotif:r.requested_end_motif||'',refHours:r.ref_hours!=null?Number(r.ref_hours):undefined,pauses:Array.isArray(r.pauses)?r.pauses:null,createdAt:r.created_at});
+// Position au moment d'un pointage. Ne bloque JAMAIS le pointage : on enregistre
+// d'abord, la position se rattache ensuite si elle arrive. Refus ou echec = rien.
+const posMaintenant=()=>new Promise(res=>{
+  try{
+    if(!navigator.geolocation)return res(null);
+    navigator.geolocation.getCurrentPosition(
+      p=>res({lat:+p.coords.latitude.toFixed(6),lon:+p.coords.longitude.toFixed(6),
+              m:Math.round(p.coords.accuracy||0),t:new Date().toISOString()}),
+      ()=>res(null),
+      {enableHighAccuracy:true,timeout:12000,maximumAge:30000});
+  }catch(e){res(null)}
+});
+const teToRow=e=>({id:e.id,emp_id:e.empId,date:e.date,type:e.type||null,start_time:e.startTime||null,end_time:e.endTime||null,pause_start:e.pauseStart||null,pause_end:e.pauseEnd||null,pause_min:e.pauseMin||0,break_start:e.breakStart||null,break_end:e.breakEnd||null,meal_type:e.mealType||null,absence_type:e.absenceType||null,night_hours:e.nightHours||0,requested_end_time:e.requestedEndTime||null,requested_end_motif:e.requestedEndMotif||null,ref_hours:e.refHours!=null?e.refHours:null,pauses:Array.isArray(e.pauses)?e.pauses:null,positions:(e.positions&&typeof e.positions==='object')?e.positions:null,created_at:e.createdAt||new Date().toISOString(),updated_at:new Date().toISOString(),deleted:false});
+const teFromRow=r=>({id:r.id,empId:r.emp_id,date:r.date,type:r.type||'',startTime:r.start_time||'',endTime:r.end_time||'',pauseStart:r.pause_start||null,pauseEnd:r.pause_end||null,pauseMin:r.pause_min||0,breakStart:r.break_start||'',breakEnd:r.break_end||'',mealType:r.meal_type||'',absenceType:r.absence_type||'',nightHours:Number(r.night_hours)||0,requestedEndTime:r.requested_end_time||'',requestedEndMotif:r.requested_end_motif||'',refHours:r.ref_hours!=null?Number(r.ref_hours):undefined,pauses:Array.isArray(r.pauses)?r.pauses:null,positions:(r.positions&&typeof r.positions==='object')?r.positions:null,createdAt:r.created_at});
 let teTablesAvailable=null;
 const teTestTables=async()=>{if(!sb)return false;if(teTablesAvailable!==null)return teTablesAvailable;try{const{error}=await sb.from('time_entries').select('id').limit(1);teTablesAvailable=!error;if(error)console.warn('time_entries table pas encore creee:',error.message);else console.log('time_entries tables OK');return teTablesAvailable}catch(e){teTablesAvailable=false;return false}};
 const teUpsertRemote=async(entry,table)=>{if(!sb)return false;try{const{error}=await sb.from(table).upsert(teToRow(entry),{onConflict:'id'});if(error){console.error('TE upsert err',table,error);return false}return true}catch(e){console.warn('TE upsert exc',e);return false}};
@@ -2527,12 +2539,19 @@ const openShift=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.startTime&&!
 const lastEntry=openShift||dayEntries[dayEntries.length-1];
 const status=!lastEntry||lastEntry.type==='done'?'off':lastEntry.type==='pause_start'?'pause':'on';
 const isNightShift=lastEntry&&lastEntry.date!==today&&lastEntry.type!=='done';
-const doTime=(type)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntries)nd.timeEntries=[];const now=new Date();const time=pad2(now.getHours())+':'+pad2(now.getMinutes());
-if(type==='start'){nd.timeEntries.push({id:uid(),empId,date:today,type:'start',startTime:time,endTime:null,pauseStart:null,pauseEnd:null,pauseMin:0,pauses:[],createdAt:new Date().toISOString(),breakStart:'',breakEnd:'',mealType:'PANIER',absenceType:'',nightHours:0})}
-else if(type==='pause_start'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='pause_start';e.pauseStart=time;e.breakStart=time;e.pauses=[...(Array.isArray(e.pauses)?e.pauses:[]),{d:time,f:null}]}}
-else if(type==='resume'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='start';if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time)}e.pauseEnd=time;e.breakEnd=time;const _lp=Array.isArray(e.pauses)?e.pauses:[];const _o=_lp.map((x,i)=>x&&!x.f?i:-1).filter(i=>i>=0).pop();if(_o!=null&&_o>=0)_lp[_o]={..._lp[_o],f:time};else if(e.pauseStart)_lp.push({d:e.pauseStart,f:time});e.pauses=_lp;e.pauseStart=null}}
-else if(type==='done'&&lastEntry){const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='done';e.endTime=time;if(lastEntry.date!==today)e.endDate=today;if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time);const _lp=Array.isArray(e.pauses)?e.pauses:[];const _o=_lp.map((x,i)=>x&&!x.f?i:-1).filter(i=>i>=0).pop();if(_o!=null&&_o>=0)_lp[_o]={..._lp[_o],f:time};else _lp.push({d:e.pauseStart,f:time});e.pauses=_lp;e.pauseStart=null}}}
+const doTime=(type)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntries)nd.timeEntries=[];const now=new Date();const time=pad2(now.getHours())+':'+pad2(now.getMinutes());let _cibleId=null;
+if(type==='start'){_cibleId=uid();nd.timeEntries.push({id:_cibleId,empId,date:today,type:'start',startTime:time,endTime:null,pauseStart:null,pauseEnd:null,pauseMin:0,pauses:[],createdAt:new Date().toISOString(),breakStart:'',breakEnd:'',mealType:'PANIER',absenceType:'',nightHours:0})}
+else if(type==='pause_start'&&lastEntry){_cibleId=lastEntry.id;const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='pause_start';e.pauseStart=time;e.breakStart=time;e.pauses=[...(Array.isArray(e.pauses)?e.pauses:[]),{d:time,f:null}]}}
+else if(type==='resume'&&lastEntry){_cibleId=lastEntry.id;const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='start';if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time)}e.pauseEnd=time;e.breakEnd=time;const _lp=Array.isArray(e.pauses)?e.pauses:[];const _o=_lp.map((x,i)=>x&&!x.f?i:-1).filter(i=>i>=0).pop();if(_o!=null&&_o>=0)_lp[_o]={..._lp[_o],f:time};else if(e.pauseStart)_lp.push({d:e.pauseStart,f:time});e.pauses=_lp;e.pauseStart=null}}
+else if(type==='done'&&lastEntry){_cibleId=lastEntry.id;const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='done';e.endTime=time;if(lastEntry.date!==today)e.endDate=today;if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time);const _lp=Array.isArray(e.pauses)?e.pauses:[];const _o=_lp.map((x,i)=>x&&!x.f?i:-1).filter(i=>i>=0).pop();if(_o!=null&&_o>=0)_lp[_o]={..._lp[_o],f:time};else _lp.push({d:e.pauseStart,f:time});e.pauses=_lp;e.pauseStart=null}}}
 save(nd);
+// la position se rattache apres coup : le pointage est deja enregistre
+if(_cibleId){const _cle=type==='start'?'emb':type==='done'?'deb':type;posMaintenant().then(pos=>{if(!pos)return;
+  const n2=JSON.parse(JSON.stringify(_liveData||data));const e2=(n2.timeEntries||[]).find(t=>t.id===_cibleId);if(!e2)return;
+  if(_cle==='emb'||_cle==='deb'){e2.positions={...(e2.positions||{}),[_cle]:pos}}
+  else{const lp=Array.isArray(e2.pauses)?e2.pauses.slice():[];if(lp.length){const d=lp.length-1;lp[d]={...lp[d],[_cle==='pause_start'?'gpsD':'gpsF']:pos};e2.pauses=lp}
+       else{e2.positions={...(e2.positions||{}),[_cle]:pos}}}
+  save(n2)})}
 // Notification Telegram a l'admin : envoyee par l'appareil du salarie (ouvert au moment du pointage)
 try{const cfg=_liveData||data;const tok=cfg.telegramBotToken,cid=cfg.telegramAdminChatId,who=(emp&&emp.name)||'Un salarie';const msgs={start:cfg.tgNotifyStart!==false?'🟢 '+who+' a embauché à '+time:null,pause_start:cfg.tgNotifyPause!==false?'⏸ '+who+' en pause à '+time:null,resume:cfg.tgNotifyResume!==false?'▶️ '+who+' a repris à '+time:null,done:cfg.tgNotifyDone!==false?'🔴 '+who+' a débauché à '+time:null};const m=msgs[type];if(m)tgSendAdmins(cfg,m)}catch(e){}};
 const saveManual=()=>{if(!manAbsence&&(!manStart||!manEnd))return;let calcPause=Number(manPause)||0;if(manBreakStart&&manBreakEnd){const bp=calcDiffMin(manBreakStart,manBreakEnd);if(bp>0)calcPause=bp}let crossesMidnight=false;if(manStart&&manEnd){const totalMin=calcDiffMin(manStart,manEnd);const[sh,sm]=manStart.split(':').map(Number);const[eh,em]=manEnd.split(':').map(Number);crossesMidnight=(eh*60+em)<(sh*60+sm);if(totalMin===0){alert('Embauche et debauche identiques');return}if(calcPause>=totalMin){alert('Pause trop longue');return}}const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntries)nd.timeEntries=[];const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===manDate&&!t.endTime);const _anc=existing>=0?nd.timeEntries[existing]:null;const _dern=_anc&&Array.isArray(_anc.pauses)&&_anc.pauses.length?_anc.pauses[_anc.pauses.length-1]:null;const _memes=_dern&&_dern.d===manBreakStart&&_dern.f===manBreakEnd;const _pauses=(manBreakStart&&manBreakEnd)?(_memes?_anc.pauses:[{d:manBreakStart,f:manBreakEnd}]):(_anc&&Array.isArray(_anc.pauses)?_anc.pauses:null);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:manDate,type:manAbsence?'absence':'done',startTime:manStart||'',endTime:manEnd||'',pauseStart:null,pauseEnd:null,pauseMin:calcPause,pauses:_pauses,createdAt:new Date().toISOString(),breakStart:manBreakStart,breakEnd:manBreakEnd,mealType:manMeal,absenceType:manAbsence,nightHours:Number(manNight)||0,requestedEndTime:manRequestEnd||''};if(crossesMidnight){const nextDay=new Date(manDate);nextDay.setDate(nextDay.getDate()+1);entry.endDate=fmtDateISO(nextDay)}if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);save(nd);setShowManual(false);setManStart('');setManEnd('');setManPause(0);setManBreakStart('12:00');setManBreakEnd('13:00');setManMeal('PANIER');setManAbsence('');setManNight(0);setManRequestEnd('')};
@@ -2591,6 +2610,9 @@ const endJob=(j)=>{
   }
   jj.signature={signedBy:(emp&&emp.name)||'',signedAt:new Date().toISOString(),durationMin:dur,pauseDeducted,autoForfait:null,endedBy:'employee'};
   save(nd);
+  // position au moment de la fin de chantier, rattachee apres coup
+  posMaintenant().then(pos=>{if(!pos)return;const n2=JSON.parse(JSON.stringify(_liveData||data));const j2=(n2.jobs||[]).find(x=>x.id===j.id);
+    if(j2&&j2.signature){j2.signature={...j2.signature,gps:pos};j2._updatedAt=Date.now();save(n2)}});
   // Notification a l'admin : fin de chantier, le lieu, le temps passe. Rien d'autre.
   (async()=>{try{
     const cfg=_liveData||data;const tok=cfg.telegramBotToken;
@@ -2643,8 +2665,17 @@ const empBtnS={padding:'14px 20px',fontSize:15,fontWeight:600,borderRadius:10,bo
 const empTglBtn=(active,activeColor)=>({padding:'14px 16px',fontSize:15,fontWeight:700,borderRadius:10,border:'2px solid '+(active?activeColor:'#e2e8f0'),background:active?activeColor:'#fff',color:active?'#fff':C.dim,cursor:'pointer',flex:1,boxShadow:active?'0 2px 4px rgba(0,0,0,.1)':'none'});
 const _mesJobs=(data.jobs||[]).filter(j=>j.employeeId===empId);
 const _jourJobs=_mesJobs.filter(j=>j.date===today).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
-const _demainISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return fmtDateISO(d)})();
-const _demainJobs=_mesJobs.filter(j=>j.date===_demainISO).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
+// le prochain jour ou il a du travail : demain, ou lundi si on est vendredi
+const _prochain=(()=>{
+  for(let k=1;k<=14;k++){
+    const d=new Date();d.setDate(d.getDate()+k);const iso=fmtDateISO(d);
+    const js=_mesJobs.filter(j=>j.date===iso).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
+    if(js.length)return{iso:iso,jobs:js,dans:k,
+      titre:k===1?'Demain':d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})};
+  }
+  return{iso:null,jobs:[],dans:0,titre:'À venir'};
+})();
+const _demainJobs=_prochain.jobs;
 const _cli=j=>{const c=(data.clients||[]).find(x=>x.id===j.clientId);return c?c.name:''};
 const _mach=j=>{const m=(data.machines||[]).find(x=>x.id===j.machineId);return m?m.name+(m.type?' · '+m.type:''):''};
 const _gpsDe=j=>j.gps||'';
@@ -2656,7 +2687,6 @@ const _enCours=(status!=='off'&&lastEntry&&lastEntry.startTime&&!lastEntry.endTi
 const _cumulJour=dayEntries.reduce((s,t)=>s+calcWorkedMin(t),0)+_enCours;
 const _cumulSem=weeklyTotal+_enCours;
 const _dateLongue=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
-const _demainLongue=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric'})})();
 const _pauses=t=>{if(Array.isArray(t.pauses)&&t.pauses.length)return t.pauses;if(t.breakStart&&t.breakEnd)return[{d:t.breakStart,f:t.breakEnd}];return[]};
 
 // la journee comme une suite d'instants, pour l'ecran Mes heures
@@ -3048,7 +3078,7 @@ return(
 <div className={'pied-fixe'+(demainOuvert?' ouvert':'')+((_demainJobs.length&&_demainJobs.every(j=>j.ack))?' confirme':'')}>
 <div className="demain">
 <div className="dem-tete">
-<span>Demain · {_demainLongue} · {_demainJobs.length?_demainJobs.length+(_demainJobs.length>1?' chantiers':' chantier'):'rien de prévu'}</span>
+<span>{_prochain.jobs.length?_prochain.titre+' · '+_prochain.jobs.length+(_prochain.jobs.length>1?' chantiers':' chantier'):'Rien de prévu dans les 14 prochains jours'}</span>
 {_demainJobs.length>0&&(_demainJobs.every(j=>j.ack)
  ?<span className="vu">✓ Vu</span>
  :<button className="chip" onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(_liveData||data));_demainJobs.forEach(x=>{const jj=nd.jobs.find(y=>y.id===x.id);if(jj){jj.ack=true;jj.ackDate=new Date().toISOString();jj._updatedAt=Date.now()}});save(nd)}}>✓ J'ai vu</button>)}
