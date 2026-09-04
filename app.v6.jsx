@@ -2599,28 +2599,28 @@ const endJob=(j)=>{
   const nd=JSON.parse(JSON.stringify(_liveData||data));
   const jj=nd.jobs.find(x=>x.id===j.id);
   if(!jj)return;
-  // le temps passe part du VRAI debut du chantier : la fin du chantier precedent,
-  // sinon l'heure d'embauche. L'heure prevue au planning n'est qu'un dernier recours.
+  // Le temps passe se compte a partir de l'HEURE PREVUE du chantier, pas de
+  // l'embauche : embauche a 7h pour un chantier a 8h, on part de 8h.
   const te=(nd.timeEntries||[]).find(t=>t.empId===j.employeeId&&t.date===j.date&&t.startTime);
-  const prec=(nd.jobs||[]).filter(x=>x.employeeId===j.employeeId&&x.date===j.date&&x.id!==j.id&&x.signature&&x.signature.signedAt)
-    .sort((a,b)=>new Date(a.signature.signedAt)-new Date(b.signature.signedAt)).pop();
   const now=new Date();
-  let debutM=null;
-  if(prec){const dp=new Date(prec.signature.signedAt);debutM=dp.getHours()*60+dp.getMinutes()}
-  else if(te&&te.startTime)debutM=_toM(te.startTime);
-  else debutM=_toM(j.billingStart);
+  const debutM=_toM(j.billingStart);
   let dur=null,pauseDeducted=0;
   if(debutM!=null){
     let endMin=now.getHours()*60+now.getMinutes();
-    if(endMin<debutM)endMin+=1440;
+    // Un chantier du soir termine au petit matin a bien traverse minuit.
+    // Sinon, terminer avant l'heure prevue veut dire que le chantier n'a pas
+    // commence : duree nulle, jamais 24 h de plus.
+    const traverse=(endMin<debutM)&&debutM>=16*60&&endMin<12*60;
+    if(endMin<debutM)endMin=traverse?endMin+1440:debutM;
     dur=endMin-debutM;
+    // On deduit les pauses qui tombent pendant le chantier.
     const ps=(te&&Array.isArray(te.pauses)&&te.pauses.length)?te.pauses
       :((te&&te.breakStart&&te.breakEnd)?[{d:te.breakStart,f:te.breakEnd}]:[]);
     ps.forEach(p=>{
       if(!p||!p.d||!p.f)return;
       let a=_toM(p.d),b=_toM(p.f);
       if(a==null||b==null)return;
-      if(a<debutM)a+=1440;
+      if(traverse&&a<debutM)a+=1440;
       if(b<a)b+=1440;
       const d1=Math.max(a,debutM),f1=Math.min(b,endMin);
       if(f1>d1)pauseDeducted+=f1-d1;
