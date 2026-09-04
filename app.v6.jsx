@@ -150,6 +150,25 @@ const getDayRefHours=(dateStr)=>{if(!dateStr)return 0;const d=new Date(dateStr);
 const compressImage=(file,maxW=1280,quality=0.75)=>new Promise((resolve,reject)=>{if(!file)return reject('no file');const reader=new FileReader();reader.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;if(w>maxW){h=h*maxW/w;w=maxW}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);try{resolve(c.toDataURL('image/jpeg',quality))}catch(e){reject(e)}};img.onerror=reject;img.src=reader.result};reader.onerror=reject;reader.readAsDataURL(file)});
 const calcDiffMin=(start,end)=>{if(!start||!end)return 0;const[sh,sm]=start.split(':').map(Number);const[eh,em]=end.split(':').map(Number);let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=24*60;return m};
 const parseCoords=s=>{if(!s)return null;const p=String(s).split(',').map(Number);return p.length===2&&!isNaN(p[0])&&!isNaN(p[1])?p:null};
+// Un point partage depuis Maps arrive souvent sous forme de lien. On en tire les
+// coordonnees si elles y sont ; sinon on ouvre le lien tel quel.
+const estLien=v=>/^https?:\/\//i.test(String(v||'').trim());
+const coordsDepuisLien=v=>{
+  const t=String(v||'').trim();
+  if(!t)return null;
+  if(!estLien(t))return parseCoords(t);
+  const m=t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
+       || t.match(/[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/)
+       || t.match(/[?&]destination=(-?\d+\.\d+),\s*(-?\d+\.\d+)/)
+       || t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  return m?[parseFloat(m[1]),parseFloat(m[2])]:null;
+};
+const ouvrirItineraire=v=>{
+  const c=coordsDepuisLien(v);
+  if(c){window.open('https://www.google.com/maps/dir/?api=1&destination='+c[0]+','+c[1],'_blank');return}
+  if(estLien(v)){window.open(String(v).trim(),'_blank');return}
+  alert("Pas de point GPS exploitable sur ce chantier.");
+};
 const haversine=(a,b)=>{const R=6371,toR=n=>n*Math.PI/180;const dLat=toR(b[0]-a[0]),dLon=toR(b[1]-a[1]);const x=Math.sin(dLat/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))};
 const osmRoute=async(from,to)=>{const urls=[`https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=false`,`https://routing.openstreetmap.de/routed-car/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=false`];for(const url of urls){try{const r=await fetch(url);const j=await r.json();if(j.routes&&j.routes[0])return{km:+(j.routes[0].distance/1000).toFixed(1),min:+(j.routes[0].duration/60).toFixed(0)}}catch(e){}}const km=+(haversine(from,to)*1.3).toFixed(1);return{km,min:+((km/80)*60).toFixed(0)}};
 // Charge une bibliotheque seulement au moment ou on s'en sert. xlsx (952 Ko) et
@@ -3208,10 +3227,10 @@ return(
 </React.Fragment>}
 {feuille&&feuille.type==='gps'&&<React.Fragment>
 <div className="f-titre">{feuille.job.location||_cli(feuille.job)}</div>
-<div className="f-sous">{_cli(feuille.job)+' · point GPS '+_gpsDe(feuille.job)}</div>
+<div className="f-sous">{_cli(feuille.job)+' · '+(()=>{const c=coordsDepuisLien(_gpsDe(feuille.job));return c?('point GPS '+c[0].toFixed(5)+', '+c[1].toFixed(5)):'point partagé depuis Maps'})()}</div>
 <div className="f-carte">📍</div>
 <div className="f-actions">
-<button onClick={()=>{window.open('https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_gpsDe(feuille.job)),'_blank');_fermerFeuille()}}>🧭 Ouvrir dans Maps</button>
+<button onClick={()=>{ouvrirItineraire(_gpsDe(feuille.job));_fermerFeuille()}}>🧭 Ouvrir dans Maps</button>
 <button className="creux" onClick={_fermerFeuille}>Fermer</button>
 </div>
 </React.Fragment>}
