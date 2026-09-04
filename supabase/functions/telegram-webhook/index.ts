@@ -990,6 +990,17 @@ function propKey(p: any): string {
   const j = p.job || {};
   return [j.date || "", j.employeeId || "", j.machineId || "", normTxt(j.location || "")].join("|");
 }
+// Le chantier existe-t-il DEJA a l'identique dans RoadManager ? Meme jour, meme
+// chauffeur, meme machine, meme lieu : la fiche n'apprendrait rien a l'admin.
+function chantierDejaDansRM(data: any, j: any): any {
+  if (!j || !j.date || !j.employeeId) return null;
+  const lieu = normTxt(j.location || "");
+  return (data.jobs || []).find((x: any) =>
+    x && x.date === j.date
+    && String(x.employeeId || "") === String(j.employeeId)
+    && String(x.machineId || "") === String(j.machineId || "")
+    && normTxt(x.location || "") === lieu) || null;
+}
 let _cout: any = null;                    // consommation du tour en cours, enregistree avec le reste
 async function commitTurn(chatId: string, pendings: any[], convMessages: any[] | null, replaceId?: string): Promise<any[]> {
   if ((!pendings || !pendings.length) && !convMessages && !_cout) return [];
@@ -1687,6 +1698,9 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
     }, "create");
     if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); continue; }
+    // Deja dans RoadManager a l'identique : on n'envoie rien. La ligne est quand meme
+    // marquee comme vue, donc elle ne reviendra pas au prochain passage du cron.
+    if (!socle && chantierDejaDansRM(full, prop.job)) continue;
     prop.lines[0] = baseRemplacee ? "\u{1F504} CHANTIER REMPLACE — a valider"
       : baseDeplacee ? "\u{1F504} CHANTIER DEPLACE — a valider"
       : "\u{1F4E5} DU PLANNING DE PAPA — a valider";
