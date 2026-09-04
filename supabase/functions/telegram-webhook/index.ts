@@ -1527,10 +1527,18 @@ function lienMaps(j: any): string {
 // homonyme enverrait un chauffeur au mauvais endroit.
 async function completerGps(data: any, prop: any): Promise<void> {
   const j = prop && prop.job;
-  if (!j || !j.gps || String(j.gps).indexOf("http") !== 0 || j._geocodedGps) return;
+  if (!j || !j.gps || String(j.gps).indexOf("http") !== 0) return;
   const c = await coordsDepuisLien(data, j.gps);
-  if (c) j._geocodedGps = c;
-  else (prop.warn = prop.warn || []).push("Lien Maps non convertible en coordonnees : la carte de l'app restera vide (le lien, lui, marche).");
+  if (c) {
+    // Les coordonnees resolues deviennent LE point du chantier. Elles etaient
+    // rangees dans _geocodedGps, que l'application ignore volontairement (ce champ
+    // sert aux points deduits du texte du lieu, trop approximatifs). Le chauffeur
+    // n'avait donc que le lien brut, que Maps cherchait comme du texte.
+    j.gpsLien = String(j.gps);
+    j.gps = c;
+  } else {
+    (prop.warn = prop.warn || []).push("Lien Maps non convertible en coordonnees : le lien reste cliquable, mais les distances ne seront pas calculees.");
+  }
 }
 
 function gsRowKey(iso: string, g: any): string {
