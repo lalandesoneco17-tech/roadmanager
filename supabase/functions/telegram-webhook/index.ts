@@ -1645,6 +1645,7 @@ async function gsScan(data: any, seen: any, cache: any): Promise<any> {
   const now = new Date();
   const nouveaux: any[] = [], modifies: any[] = [], oublier: string[] = [], migrer: any[] = [];
   const presentes = new Set<string>(), joursLus = new Set<string>();
+  const chauffeurs: any = {};            // jour -> chauffeurs ayant au moins une ligne de chantier
   const weeksOf = new Map<string, Set<number> | null>();
   for (const b of books) weeksOf.set(b.id, gsBookWeeks(b));
   for (let k = 0; k <= GS_HORIZON_J && nouveaux.length + modifies.length < 25; k++) {
@@ -1671,6 +1672,7 @@ async function gsScan(data: any, seen: any, cache: any): Promise<any> {
       joursLus.add(iso);
       for (const g of gsDayJobs(rows, start, data)) {
         if (gsEstNonChantier(g)) continue;         // repos / absence / depot
+        (chauffeurs[iso] = chauffeurs[iso] || new Set<string>()).add(normTxt(g.chauffeur));
         const key = gsRowKey(iso, g, start);
         presentes.add(key);                         // la ligne existe encore, cochee ou non
         let ent = seen[key];
@@ -1707,7 +1709,7 @@ async function gsScan(data: any, seen: any, cache: any): Promise<any> {
     const v = seen[k];
     disparues.push({ key: k, lieu: typeof v === "number" ? (String(k).split("|")[3] || "") : ((v && v.l) || "") });
   }
-  return { nouveaux, modifies, oublier, migrer, disparues };
+  return { nouveaux, modifies, oublier, migrer, disparues, chauffeurs };
 }
 
 // Applique un resultat de lecture a la memoire : lignes vues (nouvelles + corrigees),
@@ -1730,6 +1732,15 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   let envoyees = 0;
   const pendings: any[] = [];
   const echecs: string[] = [];
+  // Salaries RoadManager ayant une ligne de chantier ce jour-la dans le planning de papa.
+  const idsDuJour: any = {};
+  const presentsLe = (iso: string): Set<string> => {
+    if (!idsDuJour[iso]) {
+      idsDuJour[iso] = new Set<string>();
+      for (const nom of (sc.chauffeurs && sc.chauffeurs[iso]) || []) { const e = resolveEmployee(full, nom).emp; if (e) idsDuJour[iso].add(e.id); }
+    }
+    return idsDuJour[iso];
+  };
 
   for (const n of sc.nouveaux.concat(sc.modifies)) {
     let machArg = n.g.machine.replace(/\s*\(.*\)$/, "");
@@ -1750,12 +1761,20 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
         && (!n.ancien || normTxt(x.location || "") === n.ancien)) || null;
       if (baseCorrigee && normTxt(baseCorrigee.location || "") !== normTxt(n.g.lieu)) ancienTexte = baseCorrigee.location || "chantier";
     }
-    // DEPLACEMENT : le meme chantier (meme jour, meme lieu) est deja attribue a
-    // quelqu'un d'autre -> on DEPLACE la ligne existante au lieu d'en creer une seconde.
-    let baseDeplacee: any = null;
+    // DEPLACEMENT : le meme lieu, le meme jour, est deja attribue a quelqu'un d'autre dans
+    // RoadManager. On ne DEPLACE ce chantier que si son chauffeur n'a PLUS AUCUNE ligne ce
+    // jour-la dans le planning de papa. Plusieurs chauffeurs au meme endroit, chacun avec sa
+    // machine, c'est frequent : chacun garde son chantier et on en cree un de plus.
+    // (Incident du 04/09/2026 : le chantier RN 141 avait change de mains a la validation.)
+    let baseDeplacee: any = null, deplaceDe = "";
     if (!baseCorrigee && n.g.lieu) {
-      baseDeplacee = (full.jobs || []).find((x: any) => x.date === n.iso && x.employeeId && (!e1 || x.employeeId !== e1.id)
+      const cand = (full.jobs || []).find((x: any) => x.date === n.iso && x.employeeId && (!e1 || x.employeeId !== e1.id)
         && normTxt(x.location || "") === normTxt(n.g.lieu)) || null;
+      if (cand && !presentsLe(n.iso).has(cand.employeeId)) {
+        baseDeplacee = cand;
+        const e2 = (full.employees || []).find((x: any) => x.id === cand.employeeId);
+        deplaceDe = e2 ? e2.name : "";
+      }
     }
     const socle = baseCorrigee || baseDeplacee;
     const prop = socle ? buildProposal(full, {
@@ -1777,6 +1796,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
       prop.ancien = ancienTexte;
       prop.lines.splice(1, 0, "\u{274C} Ancien : " + ancienTexte + " (remplace)");
     }
+    if (baseDeplacee) prop.lines.splice(1, 0, "\u{21AA}\u{FE0F} Pris a " + (deplaceDe || "un autre chauffeur") + ", qui n'a plus de chantier ce jour-la dans le planning de papa");
     await completerGps(full, prop);
     for (const cid of chats) {
       const p = await sendProposalMessage(tg, cid, prop);
