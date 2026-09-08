@@ -76,6 +76,10 @@ const _mergedArrays={timeEntries:1,timeEntriesValidated:1,panneReports:1,interve
 Object.keys(d||{}).forEach(k=>{if(!_mergedArrays[k])merged[k]=d[k]});
 // PROTECTION champs Telegram (ecrits aussi par la fonction serveur) : ne JAMAIS ecraser par du vide ; fusionner les liaisons.
 const _R=row.data;
+// Champs ECRITS PAR LE BOT TELEGRAM uniquement (memoire du planning de papa, fiches en attente, conversation...) : l'app n'y ecrit jamais,
+// donc la version en base fait TOUJOURS foi. Sans ca, chaque enregistrement depuis un telephone (ou un retour de reseau) ecrasait la memoire
+// du bot avec une vieille copie -> les memes fiches du planning repartaient sans fin (incident du 04 au 08/09/2026).
+['gsheetSeen','gsheetBooks','gsheetLock','tgProposals','tgConv','tgPendingItem','tgFixing','tgEnvoi','tgChoix','tgContactChoix','tgDernierePhoto','tgDernierCout'].forEach(k=>{if(_R[k]!==undefined)merged[k]=_R[k];else delete merged[k]});
 if(!merged.telegramBotToken&&_R.telegramBotToken)merged.telegramBotToken=_R.telegramBotToken;
 if(!merged.telegramAdminChatId&&_R.telegramAdminChatId)merged.telegramAdminChatId=_R.telegramAdminChatId;
 {const _am=new Map();(_R.telegramAdminChats||[]).forEach(a=>{if(a&&a.chatId)_am.set(String(a.chatId),a)});(d.telegramAdminChats||[]).forEach(a=>{if(a&&a.chatId)_am.set(String(a.chatId),a)});if(_am.size)merged.telegramAdminChats=[..._am.values()]}
@@ -3648,7 +3652,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.08-1</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.08-2</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>

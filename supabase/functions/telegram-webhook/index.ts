@@ -1552,8 +1552,34 @@ async function completerGps(data: any, prop: any): Promise<void> {
   }
 }
 
-function gsRowKey(iso: string, g: any): string {
-  return [iso, normTxt(g.chauffeur), normTxt(g.machine), normTxt(g.lieu)].join("|");
+// ---- Memoire des lignes du classeur ----------------------------------------
+// Cle = EMPLACEMENT de la ligne (jour | chauffeur | machine | rang dans le jour), pas son
+// texte : une retouche du lieu, de l'heure ou du client devient une CORRECTION de la fiche,
+// pas un nouveau chantier. Valeur = { t: horodatage, s: signature du contenu, l: lieu normalise }.
+// Ancien format (avant le 08/09/2026) : cle jour|chauffeur|machine|lieu, valeur = horodatage ;
+// il est raccorde a la volee par gsScan.
+function gsRowKey(iso: string, g: any, start: number): string {
+  return [iso, normTxt(g.chauffeur), normTxt(g.machine), String((g.ligne || 1) - 1 - start)].join("|");
+}
+function gsSignature(g: any): string {
+  return normTxt([g.lieu, g.client, g.chef, g.forfait, g.nuit ? "nuit" : ""].join(" "));
+}
+const GS_MOIS = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
+// Semaines couvertes par un classeur, d'apres sa premiere date ("lundi 31 août") : jusqu'a 6 feuilles.
+// null = inconnu (classeur enregistre sans premiere date) -> on tente toutes les semaines proches.
+function gsBookWeeks(b: any): Set<number> | null {
+  const m = normTxt(b.first || "").match(/(\d{1,2}) ([a-z]+)/);
+  const mi = m ? GS_MOIS.indexOf(m[2]) : -1;
+  if (!m || mi < 0) return null;
+  const now = Date.now(), y = new Date().getFullYear();
+  let best = 0;
+  for (const yy of [y - 1, y, y + 1]) {
+    const t = Date.UTC(yy, mi, parseInt(m[1], 10));
+    if (!best || Math.abs(t - now) < Math.abs(best - now)) best = t;
+  }
+  const out = new Set<number>();
+  for (let k = 0; k < 6; k++) out.add(gsIsoWeek(new Date(best + k * 7 * 86400000).toISOString().slice(0, 10)));
+  return out;
 }
 
 // Envoie son chantier au chauffeur, au meme format que le bouton de l'application.
@@ -1584,73 +1610,128 @@ async function envoyerAuChauffeur(tg: any, data: any, job: any, ancien?: string)
   } catch (_e) { return false; }
 }
 
-// Coeur de la surveillance. Renvoie le nombre de fiches envoyees.
-async function gsWatch(tg: any, data: any): Promise<number> {
-  const books = gsBooks(data);
-  if (!books.length) return 0;
-  const seen = data.gsheetSeen || {};
-  const now = new Date();
-  const semaines: any = {};        // cache : une seule requete par feuille
-  const nouveaux: any[] = [];
-  const oublier: string[] = [];    // cases decochees : on oublie, pour qu'un recochage renvoie la fiche
-  const presentes = new Set<string>();   // lignes encore renseignees dans le classeur
-  const joursLus = new Set<string>();
+// ============================================================================
+// Coeur de la surveillance du planning de papa.
+// - Le classeur est lu EN ENTIER (tous les jours a venir couverts par les classeurs
+//   enregistres) : aucun token, seulement quelques lectures de feuilles.
+// - La memoire est ecrite AVANT l'envoi, sous verrou : deux cases cochees coup sur coup
+//   ne font plus partir deux fois les memes fiches.
+// - Apres l'envoi, on relit le classeur : les cases cochees pendant l'envoi partent aussi.
+// ============================================================================
+const GS_HORIZON_J = 62;               // jours a venir explores (limites par les classeurs enregistres)
+const GS_VERROU_MS = 3 * 60 * 1000;    // au-dela, un verrou oublie est considere libre
+const GS_TEMPS_MAX_MS = 40 * 1000;     // le declencheur Google n'attend pas plus longtemps
 
-  for (let k = 0; k <= 14 && nouveaux.length < 25; k++) {
+// Ecriture conditionnelle du bloc (compare-and-swap sur le verrou) : si un autre passage
+// a pris le verrou entre notre lecture et notre ecriture, Postgres refuse et on s'arrete.
+async function gsCasSave(data: any, verrouLu: any): Promise<boolean> {
+  data._lastSaver = "telegram-bot"; data._lastSaveAt = Date.now();
+  const cond = verrouLu == null ? "data->>gsheetLock=is.null" : "data->>gsheetLock=eq." + encodeURIComponent(String(verrouLu));
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/app_data?id=eq.main&select=id&${cond}`, {
+      method: "PATCH",
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({ data, updated_at: new Date().toISOString() }),
+    });
+    if (!r.ok) return false;
+    const rows = await r.json();
+    return Array.isArray(rows) && rows.length > 0;
+  } catch (_e) { return false; }
+}
+
+// Une lecture du classeur, comparee a la memoire `seen`. Ne modifie rien.
+async function gsScan(data: any, seen: any, cache: any): Promise<any> {
+  const books = gsBooks(data);
+  const now = new Date();
+  const nouveaux: any[] = [], modifies: any[] = [], oublier: string[] = [], migrer: any[] = [];
+  const presentes = new Set<string>(), joursLus = new Set<string>();
+  const weeksOf = new Map<string, Set<number> | null>();
+  for (const b of books) weeksOf.set(b.id, gsBookWeeks(b));
+  for (let k = 0; k <= GS_HORIZON_J && nouveaux.length + modifies.length < 25; k++) {
     const iso = isoParis(new Date(now.getTime() + k * 86400000));
     const w = gsIsoWeek(iso);
-    if (!(w in semaines)) {
-      semaines[w] = null;
-      for (const b of books) {
+    for (const b of books) {
+      const ws = weeksOf.get(b.id);
+      if (ws ? !ws.has(w) : k > 14) continue;
+      const ck = b.id + "|" + w;
+      if (!(ck in cache)) {
+        cache[ck] = null;
         for (const nm of ["SEMAINE " + w, " SEMAINE " + w]) {
           const csv = await gsFetchSheet(b.id, nm);
           if (!csv) continue;
           const rows = gsParseCsv(csv);
-          if (gsFindDay(rows, iso) >= 0) { semaines[w] = rows; break; }
+          // Google renvoie la 1re feuille si le nom n'existe pas : on verifie que le jour y est.
+          if (gsFindDay(rows, iso) >= 0) { cache[ck] = rows; break; }
         }
-        if (semaines[w]) break;
       }
-    }
-    const rows = semaines[w];
-    if (!rows) continue;
-    const start = gsFindDay(rows, iso);
-    if (start < 0) continue;
-    joursLus.add(iso);
-    for (const g of gsDayJobs(rows, start, data)) {
-      if (gsEstNonChantier(g)) continue;        // repos / absence / depot
-      const key = gsRowKey(iso, g);
-      presentes.add(key);                        // la ligne existe encore, cochee ou non
-      if (!g.informe) {
-        // Case decochee : on efface la trace pour qu'un recochage renvoie la fiche.
-        if (seen[key]) oublier.push(key);
-        continue;
+      const rows = cache[ck];
+      if (!rows) continue;
+      const start = gsFindDay(rows, iso);
+      if (start < 0) continue;
+      joursLus.add(iso);
+      for (const g of gsDayJobs(rows, start, data)) {
+        if (gsEstNonChantier(g)) continue;         // repos / absence / depot
+        const key = gsRowKey(iso, g, start);
+        presentes.add(key);                         // la ligne existe encore, cochee ou non
+        let ent = seen[key];
+        // Ancien format de cle : on le raccorde a cette ligne (meme lieu d'abord, sinon meme emplacement).
+        let oldKey = "";
+        if (!ent) {
+          const prefix = [iso, normTxt(g.chauffeur), normTxt(g.machine)].join("|") + "|";
+          const exact = prefix + normTxt(g.lieu);
+          if (typeof seen[exact] === "number" && !presentes.has(exact)) oldKey = exact;
+          else oldKey = Object.keys(seen).find((k2) => typeof seen[k2] === "number" && k2.startsWith(prefix) && !presentes.has(k2)) || "";
+          if (oldKey) {
+            presentes.add(oldKey);
+            ent = { t: seen[oldKey], s: oldKey === exact ? gsSignature(g) : "", l: oldKey.split("|")[3] || "" };
+          }
+        }
+        if (!g.informe) {
+          // Case decochee : on oublie, pour qu'un recochage renvoie la fiche.
+          if (seen[key]) oublier.push(key);
+          if (oldKey) oublier.push(oldKey);
+          continue;
+        }
+        const sig = gsSignature(g);
+        if (!ent) { nouveaux.push({ key, iso, g, sig }); continue; }
+        if (oldKey) migrer.push({ oldKey, key, ent });
+        // Contenu retouche depuis l'envoi (lieu, heure, client, chef, forfait, nuit) : correction.
+        if (ent.s !== sig) modifies.push({ key, iso, g, sig, ancien: ent.l || "" });
       }
-      if (seen[key]) continue;
-      nouveaux.push({ key, iso, g });
-      if (nouveaux.length >= 25) break;
     }
   }
   // Ligne effacee du classeur (et non simplement decochee) : le chantier n'existe plus.
-  const disparues: string[] = [];
-  const traitees = new Set<string>();   // suppressions absorbees par une fiche de remplacement
+  const disparues: any[] = [];
   for (const k of Object.keys(seen)) {
-    const iso0 = String(k).split("|")[0];
-    if (!joursLus.has(iso0) || presentes.has(k)) continue;
-    disparues.push(k);
+    if (!joursLus.has(String(k).split("|")[0]) || presentes.has(k)) continue;
+    const v = seen[k];
+    disparues.push({ key: k, lieu: typeof v === "number" ? (String(k).split("|")[3] || "") : ((v && v.l) || "") });
   }
-  if (!nouveaux.length && !disparues.length) {
-    if (oublier.length) await mutate((d: any) => { if (d.gsheetSeen) for (const k of oublier) delete d.gsheetSeen[k]; });
-    return 0;
-  }
+  return { nouveaux, modifies, oublier, migrer, disparues };
+}
 
-  // A partir d'ici seulement, on a besoin du bloc complet.
-  const full = await loadData();
+// Applique un resultat de lecture a la memoire : lignes vues (nouvelles + corrigees),
+// migrations, cases decochees, lignes disparues, purge > 60 jours.
+function gsAppliquer(d: any, sc: any): void {
+  d.gsheetSeen = d.gsheetSeen || {};
+  for (const m of sc.migrer) { delete d.gsheetSeen[m.oldKey]; if (!d.gsheetSeen[m.key]) d.gsheetSeen[m.key] = m.ent; }
+  for (const k of sc.oublier) delete d.gsheetSeen[k];
+  for (const x of sc.disparues) delete d.gsheetSeen[x.key];
+  for (const n of sc.nouveaux.concat(sc.modifies)) d.gsheetSeen[n.key] = { t: Date.now(), s: n.sig, l: normTxt(n.g.lieu) };
+  for (const k of Object.keys(d.gsheetSeen)) {
+    const v = d.gsheetSeen[k], t = typeof v === "number" ? v : ((v && v.t) || 0);
+    if (Date.now() - t > 60 * 86400000) delete d.gsheetSeen[k];
+  }
+}
+
+// Envoie les fiches d'un resultat de lecture. Renvoie { envoyees, pendings }.
+async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   const chats = adminChatList(full);
   let envoyees = 0;
   const pendings: any[] = [];
   const echecs: string[] = [];
 
-  for (const n of nouveaux) {
+  for (const n of sc.nouveaux.concat(sc.modifies)) {
     let machArg = n.g.machine.replace(/\s*\(.*\)$/, "");
     if (n.g.categorie !== "raboteuse") {
       if (!n.g.machineRM) {
@@ -1660,34 +1741,23 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       }
       machArg = n.g.machineRM;
     }
-    // REMPLACEMENT SUR PLACE : l'admin a efface une ligne et retape une autre au meme
-    // endroit (meme jour, meme chauffeur, meme machine). Une seule fiche, une seule
-    // validation, et le chauffeur est prevenu du changement.
-    let ancienTexte = "";
-    const memeSlot = disparues.find((k: string) => {
-      const a = String(k).split("|"), b = String(n.key).split("|");
-      return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] !== b[3];
-    });
-    let baseRemplacee: any = null;
-    if (memeSlot) {
-      const pa = String(memeSlot).split("|");
-      const e2 = resolveEmployee(full, pa[1]).emp;
-      if (e2) baseRemplacee = (full.jobs || []).find((x: any) => x.date === pa[0] && x.employeeId === e2.id
-        && (!pa[3] || normTxt(x.location || "") === pa[3])) || null;
-      if (baseRemplacee) {
-        ancienTexte = baseRemplacee.location || "chantier";
-        traitees.add(memeSlot);
-      }
+    const e1 = resolveEmployee(full, n.g.chauffeur).emp;
+    // CORRECTION : la ligne deja envoyee a ete retouchee. Si le chantier a ete valide dans
+    // RoadManager, on le corrige ; sinon la fiche repart, corrigee, a la place de l'ancienne.
+    let baseCorrigee: any = null, ancienTexte = "";
+    if (n.ancien !== undefined && e1) {
+      baseCorrigee = (full.jobs || []).find((x: any) => x.date === n.iso && x.employeeId === e1.id
+        && (!n.ancien || normTxt(x.location || "") === n.ancien)) || null;
+      if (baseCorrigee && normTxt(baseCorrigee.location || "") !== normTxt(n.g.lieu)) ancienTexte = baseCorrigee.location || "chantier";
     }
     // DEPLACEMENT : le meme chantier (meme jour, meme lieu) est deja attribue a
     // quelqu'un d'autre -> on DEPLACE la ligne existante au lieu d'en creer une seconde.
     let baseDeplacee: any = null;
-    if (n.g.lieu) {
-      const e1 = resolveEmployee(full, n.g.chauffeur).emp;
+    if (!baseCorrigee && n.g.lieu) {
       baseDeplacee = (full.jobs || []).find((x: any) => x.date === n.iso && x.employeeId && (!e1 || x.employeeId !== e1.id)
         && normTxt(x.location || "") === normTxt(n.g.lieu)) || null;
     }
-    const socle = baseRemplacee || baseDeplacee;
+    const socle = baseCorrigee || baseDeplacee;
     const prop = socle ? buildProposal(full, {
       job_id: socle.id, chauffeur: n.g.chauffeur, machine: machArg,
       client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
@@ -1698,38 +1768,36 @@ async function gsWatch(tg: any, data: any): Promise<number> {
       nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
     }, "create");
     if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); continue; }
-    // Deja dans RoadManager a l'identique : on n'envoie rien. La ligne est quand meme
-    // marquee comme vue, donc elle ne reviendra pas au prochain passage du cron.
+    // Deja dans RoadManager a l'identique : on n'envoie rien (la ligne est deja marquee vue).
     if (!socle && chantierDejaDansRM(full, prop.job)) continue;
-    prop.lines[0] = baseRemplacee ? "\u{1F504} CHANTIER REMPLACE — a valider"
+    prop.lines[0] = n.ancien !== undefined ? "\u{1F504} CHANTIER CORRIGE — a valider"
       : baseDeplacee ? "\u{1F504} CHANTIER DEPLACE — a valider"
       : "\u{1F4E5} DU PLANNING DE PAPA — a valider";
     if (ancienTexte) {
       prop.ancien = ancienTexte;
-      prop.lines.splice(1, 0, "\u{274C} Ancien : " + ancienTexte + " (supprime)");
+      prop.lines.splice(1, 0, "\u{274C} Ancien : " + ancienTexte + " (remplace)");
     }
     await completerGps(full, prop);
     for (const cid of chats) {
       const p = await sendProposalMessage(tg, cid, prop);
       p.job = prop.job;                          // meme chantier pour tous : pas de doublon si deux admins valident
+      p.slot = n.key;                            // une fiche corrigee remplace la precedente du meme emplacement
       pendings.push(p);
     }
     envoyees++;
   }
   // Suppressions : une ligne effacee du classeur dont le chantier existe encore.
-  // Celles deja absorbees par une fiche « CHANTIER REMPLACE » sont ignorees ici.
-  for (const k of disparues) {
-    if (traitees.has(k)) continue;
-    const [iso0, ch0, , lieu0] = String(k).split("|");
+  for (const x of sc.disparues) {
+    const [iso0, ch0] = String(x.key).split("|");
     const e0 = resolveEmployee(full, ch0).emp;
     if (!e0) continue;
-    const j0 = (full.jobs || []).find((x: any) => x.date === iso0 && x.employeeId === e0.id
-      && (!lieu0 || normTxt(x.location || "") === lieu0));
+    const j0 = (full.jobs || []).find((j: any) => j.date === iso0 && j.employeeId === e0.id
+      && (!x.lieu || normTxt(j.location || "") === x.lieu));
     if (!j0) continue;
     // Decocher puis recocher declenche deux verifications coup sur coup : on evite
     // d'envoyer deux fois la meme demande de suppression.
-    if ((full.tgProposals || []).some((x: any) => x.kind === "delete" && x.jobId === j0.id)) continue;
-    if (pendings.some((x: any) => x.kind === "delete" && x.jobId === j0.id)) continue;
+    if ((full.tgProposals || []).some((p: any) => p.kind === "delete" && p.jobId === j0.id)) continue;
+    if (pendings.some((p: any) => p.kind === "delete" && p.jobId === j0.id)) continue;
     const prop = buildProposal(full, { job_id: j0.id }, "delete");
     if (prop.error) continue;
     prop.lines[0] = "\u{1F5D1} EFFACE DU PLANNING DE PAPA — supprimer ce chantier ?";
@@ -1744,20 +1812,58 @@ async function gsWatch(tg: any, data: any): Promise<number> {
   for (const e of echecs) {
     for (const cid of chats) { try { await tg("sendMessage", { chat_id: cid, text: "⚠️ Ligne du planning de papa non recopiee — " + e }); } catch (_e2) { /* ignore */ } }
   }
+  return { envoyees, pendings };
+}
 
-  await mutate((d: any) => {
-    d.gsheetSeen = d.gsheetSeen || {};
-    for (const k of oublier) delete d.gsheetSeen[k];
-    for (const k of disparues) delete d.gsheetSeen[k];
-    for (const n of nouveaux) d.gsheetSeen[n.key] = Date.now();
-    // purge au-dela de 60 jours pour ne pas laisser grossir le bloc
-    for (const k of Object.keys(d.gsheetSeen)) if (Date.now() - d.gsheetSeen[k] > 60 * 86400000) delete d.gsheetSeen[k];
-    if (pendings.length) {
-      pruneProposals(d);
-      d.tgProposals = (d.tgProposals || []).concat(pendings);
+async function gsWatch(tg: any, light: any): Promise<number> {
+  if (!gsBooks(light).length) return 0;
+  const cache: any = {};                 // feuilles deja lues : une seule requete par feuille et par appel
+  const debut = Date.now();
+  let total = 0;
+  const vide = (sc: any) => !sc.nouveaux.length && !sc.modifies.length && !sc.disparues.length;
+  // Jusqu'a 3 lectures : les cases cochees PENDANT l'envoi partent a la lecture suivante.
+  for (let tour = 0; tour < 3 && Date.now() - debut < GS_TEMPS_MAX_MS; tour++) {
+    const seen0 = tour === 0 ? (light.gsheetSeen || {}) : ((await loadLight(["gsheetSeen"])).gsheetSeen || {});
+    let sc = await gsScan(light, seen0, cache);
+    if (vide(sc)) {
+      if (sc.oublier.length || sc.migrer.length) await mutate((d: any) => gsAppliquer(d, sc));
+      return total;
     }
-  });
-  return envoyees;
+    // Il y a du travail : bloc complet, verrou, memoire ecrite AVANT l'envoi.
+    const full = await loadData();
+    const verrou = full.gsheetLock || null;
+    if (verrou && Date.now() - Number(verrou) < GS_VERROU_MS) return total;   // un autre passage envoie ; il relira a la fin
+    sc = await gsScan(light, full.gsheetSeen || {}, cache);                    // re-tri avec la memoire fraiche
+    if (vide(sc)) {
+      if (sc.oublier.length || sc.migrer.length) await mutate((d: any) => gsAppliquer(d, sc));
+      return total;
+    }
+    full.gsheetLock = Date.now();
+    gsAppliquer(full, sc);
+    if (!(await gsCasSave(full, verrou))) return total;                       // un autre passage a pris la main
+    let res: any = { envoyees: 0, pendings: [] };
+    try { res = await gsEnvoyer(tg, full, sc); }
+    finally {
+      await mutate((d: any) => {
+        delete d.gsheetLock;
+        if (res.pendings.length) {
+          pruneProposals(d);
+          const slots = new Set(res.pendings.map((p: any) => p.slot).filter(Boolean));
+          d.tgProposals = (d.tgProposals || []).filter((x: any) => !(x.slot && slots.has(x.slot)));
+          d.tgProposals = d.tgProposals.concat(res.pendings);
+        }
+      });
+    }
+    total += res.envoyees;
+    // Auto-controle : si un appareil a reecrit le bloc pendant l'envoi avec une vieille copie,
+    // les lignes qu'on vient d'envoyer ont disparu de la memoire -> on les remet.
+    await new Promise((r) => setTimeout(r, 2000));
+    const chk = (await loadLight(["gsheetSeen"])).gsheetSeen || {};
+    if (sc.nouveaux.concat(sc.modifies).some((n: any) => !chk[n.key])) {
+      await mutate((d: any) => gsAppliquer(d, { ...sc, oublier: [], disparues: [], migrer: [] }));
+    }
+  }
+  return total;
 }
 
 // ---- Boucle agent (tool use) ----------------------------------------------
