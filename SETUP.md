@@ -50,3 +50,17 @@ ALTER PUBLICATION supabase_realtime ADD TABLE app_data;
 
 Les donnees existantes dans localStorage sont automatiquement migrees vers Supabase au premier chargement.
 localStorage reste en backup permanent — si Supabase est injoignable, l'app fonctionne quand meme.
+
+## 4. Tables pointages : colonnes ajoutees depuis (a executer une fois dans SQL Editor)
+
+Chaque fois que l'app ajoute un champ aux pointages, la colonne doit exister dans Supabase.
+Depuis le 08/09/2026 l'app ignore une colonne absente au lieu de refuser le pointage,
+mais l'information (ex : position GPS) n'est enregistree que si la colonne existe.
+
+```sql
+ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS pauses JSONB;
+ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS positions JSONB;
+ALTER TABLE time_entries_validated ADD COLUMN IF NOT EXISTS pauses JSONB;
+ALTER TABLE time_entries_validated ADD COLUMN IF NOT EXISTS positions JSONB;
+NOTIFY pgrst, 'reload schema';
+```
