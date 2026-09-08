@@ -2717,7 +2717,11 @@ const empBtnP=(bg)=>({padding:'14px 20px',fontSize:16,fontWeight:800,borderRadiu
 const empBtnS={padding:'14px 20px',fontSize:15,fontWeight:600,borderRadius:10,border:'2px solid #cbd5e1',background:'#fff',color:'#475569',cursor:'pointer',flex:1};
 const empTglBtn=(active,activeColor)=>({padding:'14px 16px',fontSize:15,fontWeight:700,borderRadius:10,border:'2px solid '+(active?activeColor:'#e2e8f0'),background:active?activeColor:'#fff',color:active?'#fff':C.dim,cursor:'pointer',flex:1,boxShadow:active?'0 2px 4px rgba(0,0,0,.1)':'none'});
 const _mesJobs=(data.jobs||[]).filter(j=>j.employeeId===empId);
-const _jourJobs=_mesJobs.filter(j=>j.date===today).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
+// Chantier de nuit de la veille pas encore termine : jusqu'a midi, il reste LE chantier en cours, affiche en premier.
+// (08/09/2026 : une fin de chantier a 5h du matin avait ete comptee sur le chantier du mardi au lieu de celui du lundi soir.)
+const _hier=(()=>{const d=new Date();d.setDate(d.getDate()-1);return fmtDateISO(d)})();
+const _nuitHier=new Date().getHours()<12?_mesJobs.filter(j=>j.date===_hier&&!j.signature&&(j.isNight||(_toM(j.billingStart)||0)>=16*60)).map(j=>({...j,_hierSoir:true})):[];
+const _jourJobs=[..._nuitHier,..._mesJobs.filter(j=>j.date===today).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')))];
 // le prochain jour ou il a du travail : demain, ou lundi si on est vendredi
 const _prochain=(()=>{
   for(let k=1;k<=14;k++){
@@ -3096,7 +3100,7 @@ return(
 return(
 <div key={j.id} className={'noeud '+(fini?'fait':(actif?'actif':''))}>
 <div className={'carte'+(actif?' actif':'')+(fini?' fini':'')}>
-<div className="etiquette"><span>{fini?'Chantier '+(k+1)+' terminé':'Chantier '+(k+1)+' sur '+_jourJobs.length}</span><span className="h">{j.billingStart||''}</span></div>
+<div className="etiquette"><span>{(j._hierSoir?'Hier soir · ':'')+(fini?'Chantier '+(k+1)+' terminé':'Chantier '+(k+1)+' sur '+_jourJobs.length)}</span><span className="h">{j.billingStart||''}</span></div>
 <div className="tete">
 <div className="gros">{j.location||_cli(j)||'Chantier'}</div>
 <div className="ident">
@@ -3652,7 +3656,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.08-2</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.08-3</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>

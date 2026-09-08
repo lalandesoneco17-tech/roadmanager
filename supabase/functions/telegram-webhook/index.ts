@@ -867,8 +867,10 @@ function buildProposal(data: any, a: any, kind: string, baseJob?: any): any {
     return { kind: "delete", jobId: base.id, lines: ["\u{1F5D1} SUPPRESSION"].concat(jobRecap(data, base, null)), warn };
   }
 
+  // Pas d'heure par defaut : si papa n'ecrit pas d'horaire dans le lieu, la fiche n'en porte pas
+  // (un "08:00" invente sur un chantier de nuit faussait le temps passe, 08/09/2026).
   const j: any = kind === "create"
-    ? { id: uid(), date: "", employeeId: "", machineId: "", clientId: "", agencyName: "", siteManager: "", siteManagerPhone: "", location: "", gps: "", forfaitType: "", priceForfait: 0, isNight: false, hasTransfer: false, transferPrice: 0, billingStart: "08:00", startFrom: "home", endAt: "home", machineFuelL: 0, machineFuelDepot: "", kmAller: 0, kmRetour: 0, travelMinAller: 0, travelMinRetour: 0, distanceKm: 0, travelMin: 0, sent: false, ack: false }
+    ? { id: uid(), date: "", employeeId: "", machineId: "", clientId: "", agencyName: "", siteManager: "", siteManagerPhone: "", location: "", gps: "", forfaitType: "", priceForfait: 0, isNight: false, hasTransfer: false, transferPrice: 0, billingStart: "", startFrom: "home", endAt: "home", machineFuelL: 0, machineFuelDepot: "", kmAller: 0, kmRetour: 0, travelMinAller: 0, travelMinRetour: 0, distanceKm: 0, travelMin: 0, sent: false, ack: false }
     : JSON.parse(JSON.stringify(base));
 
   let newClientName = "";
