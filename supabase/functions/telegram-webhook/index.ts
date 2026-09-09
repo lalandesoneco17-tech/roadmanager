@@ -1563,6 +1563,17 @@ async function completerGps(data: any, prop: any): Promise<void> {
 function gsRowKey(iso: string, g: any, start: number): string {
   return [iso, normTxt(g.chauffeur), normTxt(g.machine), String((g.ligne || 1) - 1 - start)].join("|");
 }
+// « depot » ou « repos » ecrit par papa a la place d'un chantier : un ETAT, recopie tel quel
+// dans le planning (bouton Depot / Repos de l'app), sans fiche a valider.
+// Retourne { etat: "depot"|"repos", texte } ou null. "bricodepot", "rn 141 devant le depot" = chantiers.
+function gsEtat(g: any): any {
+  const t = normTxt((g.lieu || "") + " " + (g.client || ""));
+  if (!t) return null;
+  if (/^repos\b/.test(t)) return { etat: "repos", texte: t };
+  const m = t.match(/^(?:\d{1,2}\s*h\s*\d{0,2}\s+)?(?:au\s+)?depot\b\s*(.*)$/);
+  if (m) return { etat: "depot", texte: t, reste: (m[1] || "").trim() };
+  return null;
+}
 function gsSignature(g: any): string {
   return normTxt([g.lieu, g.client, g.chef, g.forfait, g.nuit ? "nuit" : ""].join(" "));
 }
@@ -1645,7 +1656,7 @@ async function gsCasSave(data: any, verrouLu: any): Promise<boolean> {
 async function gsScan(data: any, seen: any, cache: any): Promise<any> {
   const books = gsBooks(data);
   const now = new Date();
-  const nouveaux: any[] = [], modifies: any[] = [], oublier: string[] = [], migrer: any[] = [];
+  const nouveaux: any[] = [], modifies: any[] = [], oublier: string[] = [], migrer: any[] = [], disparues: any[] = [];
   const presentes = new Set<string>(), joursLus = new Set<string>();
   const chauffeurs: any = {};            // jour -> chauffeurs ayant au moins une ligne de chantier
   const weeksOf = new Map<string, Set<number> | null>();
@@ -1673,7 +1684,22 @@ async function gsScan(data: any, seen: any, cache: any): Promise<any> {
       if (start < 0) continue;
       joursLus.add(iso);
       for (const g of gsDayJobs(rows, start, data)) {
-        if (gsEstNonChantier(g)) continue;         // repos / absence / depot
+        const et = gsEtat(g);
+        if (et) {
+          // Etat (depot / repos) : pas de case a cocher, on suit juste la ligne.
+          const key = gsRowKey(iso, g, start);
+          presentes.add(key);
+          const sig = "etat:" + et.texte;
+          const ent = seen[key];
+          if (!ent) nouveaux.push({ key, iso, g, sig, etat: et.etat, reste: et.reste || "" });
+          else if (typeof ent === "number" || ent.s !== sig) {
+            // chantier devenu repos/depot : le chantier n'existe plus
+            if (typeof ent === "number" || !ent.e) disparues.push({ key, lieu: typeof ent === "number" ? "" : (ent.l || "") });
+            modifies.push({ key, iso, g, sig, etat: et.etat, reste: et.reste || "", ancien: "", ancienEtat: typeof ent === "number" ? "" : (ent.e || "") });
+          }
+          continue;
+        }
+        if (gsEstNonChantier(g)) continue;         // absence / conge / prepa
         (chauffeurs[iso] = chauffeurs[iso] || new Set<string>()).add(normTxt(g.chauffeur));
         const key = gsRowKey(iso, g, start);
         presentes.add(key);                         // la ligne existe encore, cochee ou non
@@ -1700,16 +1726,16 @@ async function gsScan(data: any, seen: any, cache: any): Promise<any> {
         if (!ent) { nouveaux.push({ key, iso, g, sig }); continue; }
         if (oldKey) migrer.push({ oldKey, key, ent });
         // Contenu retouche depuis l'envoi (lieu, heure, client, chef, forfait, nuit) : correction.
-        if (ent.s !== sig) modifies.push({ key, iso, g, sig, ancien: ent.l || "" });
+        // (repos/depot devenu chantier : ancienEtat permet de retirer l'etat du planning)
+        if (ent.s !== sig) modifies.push({ key, iso, g, sig, ancien: ent.e ? "" : (ent.l || ""), ancienEtat: ent.e || "" });
       }
     }
   }
-  // Ligne effacee du classeur (et non simplement decochee) : le chantier n'existe plus.
-  const disparues: any[] = [];
+  // Ligne effacee du classeur (et non simplement decochee) : le chantier (ou l'etat) n'existe plus.
   for (const k of Object.keys(seen)) {
     if (!joursLus.has(String(k).split("|")[0]) || presentes.has(k)) continue;
     const v = seen[k];
-    disparues.push({ key: k, lieu: typeof v === "number" ? (String(k).split("|")[3] || "") : ((v && v.l) || "") });
+    disparues.push({ key: k, lieu: typeof v === "number" ? (String(k).split("|")[3] || "") : ((v && v.l) || ""), etat: (v && v.e) || "" });
   }
   return { nouveaux, modifies, oublier, migrer, disparues, chauffeurs };
 }
@@ -1721,11 +1747,54 @@ function gsAppliquer(d: any, sc: any): void {
   for (const m of sc.migrer) { delete d.gsheetSeen[m.oldKey]; if (!d.gsheetSeen[m.key]) d.gsheetSeen[m.key] = m.ent; }
   for (const k of sc.oublier) delete d.gsheetSeen[k];
   for (const x of sc.disparues) delete d.gsheetSeen[x.key];
-  for (const n of sc.nouveaux.concat(sc.modifies)) d.gsheetSeen[n.key] = { t: Date.now(), s: n.sig, l: normTxt(n.g.lieu) };
+  for (const n of sc.nouveaux.concat(sc.modifies)) d.gsheetSeen[n.key] = n.etat ? { t: Date.now(), s: n.sig, l: "", e: n.etat } : { t: Date.now(), s: n.sig, l: normTxt(n.g.lieu) };
   for (const k of Object.keys(d.gsheetSeen)) {
     const v = d.gsheetSeen[k], t = typeof v === "number" ? v : ((v && v.t) || 0);
     if (Date.now() - t > 60 * 86400000) delete d.gsheetSeen[k];
   }
+}
+
+// Ecrit les etats (depot / repos) directement dans le planning, comme les boutons Depot /
+// Repos de l'app : { type: "depot", depotId, depotActivity, depotDescription } et
+// { type: "depot", depotActivity: "Repos", rest: true }. Sans precision, juste « depot ».
+// Ne touche qu'aux entrees qu'il a lui-meme creees (source "gsheet"). Renvoie les lignes du recap.
+function gsAppliquerEtats(full: any, sc: any): string[] {
+  const recap: string[] = [];
+  full.jobs = full.jobs || [];
+  const retirer = (empId: string, iso: string) => {
+    const j = full.jobs.find((x: any) => x.type === "depot" && x.date === iso && x.employeeId === empId && x.source === "gsheet");
+    if (!j) return;
+    full._tombstones = full._tombstones || {}; full._tombstones.jobs = full._tombstones.jobs || {};
+    full._tombstones.jobs[j.id] = Date.now();
+    full.jobs = full.jobs.filter((x: any) => x.id !== j.id);
+  };
+  for (const n of sc.nouveaux.concat(sc.modifies)) {
+    if (!n.etat && !n.ancienEtat) continue;
+    const e = resolveEmployee(full, n.g.chauffeur).emp;
+    if (!e) continue;
+    if (!n.etat) { retirer(e.id, n.iso); continue; }          // l'etat est devenu un chantier
+    // un vrai chantier existe deja ce jour-la dans RoadManager : on ne contredit pas l'admin
+    if (full.jobs.some((x: any) => x.date === n.iso && x.employeeId === e.id && x.type !== "depot")) continue;
+    let j = full.jobs.find((x: any) => x.type === "depot" && x.date === n.iso && x.employeeId === e.id);
+    if (j && j.source !== "gsheet" && (!!j.rest === (n.etat === "repos"))) continue;   // deja pose a la main
+    if (!j) { j = { id: uid(), date: n.iso, employeeId: e.id, type: "depot", source: "gsheet" }; full.jobs.push(j); }
+    if (n.etat === "repos") {
+      j.depotActivity = "Repos"; j.rest = true; j.depotId = ""; j.depotDescription = "";
+    } else {
+      const reste = String(n.reste || "");
+      const dep = (full.depots || []).find((d: any) => { const nd = normTxt(d.name).replace(/^depot\s*/, ""); return nd && (" " + reste + " ").includes(" " + nd + " "); });
+      j.depotActivity = /repar|mecan|entretien|panne/.test(reste) ? "Mecanique / entretien" : /rangement|nettoyage|lavage/.test(reste) ? "Rangement / nettoyage" : "";
+      j.rest = false; j.depotId = dep ? dep.id : ""; j.depotDescription = reste;
+    }
+    j._updatedAt = Date.now();
+    recap.push((n.etat === "repos" ? "\u{1F634} Repos" : "\u{1F3ED} D\u00e9p\u00f4t") + " — " + fmtDateFR(n.iso) + " : " + e.name + (n.reste ? " (" + n.reste + ")" : ""));
+  }
+  for (const x of sc.disparues) {
+    if (!x.etat) continue;
+    const e = resolveEmployee(full, String(x.key).split("|")[1]).emp;
+    if (e) { retirer(e.id, String(x.key).split("|")[0]); recap.push("\u{274C} " + (x.etat === "repos" ? "Repos" : "D\u00e9p\u00f4t") + " retir\u00e9 — " + fmtDateFR(String(x.key).split("|")[0]) + " : " + e.name); }
+  }
+  return recap;
 }
 
 // Envoie les fiches d'un resultat de lecture. Renvoie { envoyees, pendings }.
@@ -1745,6 +1814,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   };
 
   for (const n of sc.nouveaux.concat(sc.modifies)) {
+    if (n.etat) continue;                         // depot / repos : deja ecrit, pas de fiche
     let machArg = n.g.machine.replace(/\s*\(.*\)$/, "");
     if (n.g.categorie !== "raboteuse") {
       if (!n.g.machineRM) {
@@ -1810,6 +1880,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   }
   // Suppressions : une ligne effacee du classeur dont le chantier existe encore.
   for (const x of sc.disparues) {
+    if (x.etat) continue;                         // etat retire : deja fait, pas de fiche
     const [iso0, ch0] = String(x.key).split("|");
     const e0 = resolveEmployee(full, ch0).emp;
     if (!e0) continue;
@@ -1862,9 +1933,13 @@ async function gsWatch(tg: any, light: any): Promise<number> {
     }
     full.gsheetLock = Date.now();
     gsAppliquer(full, sc);
+    const recap = gsAppliquerEtats(full, sc);
     if (!(await gsCasSave(full, verrou))) return total;                       // un autre passage a pris la main
     let res: any = { envoyees: 0, pendings: [] };
-    try { res = await gsEnvoyer(tg, full, sc); }
+    try {
+      res = await gsEnvoyer(tg, full, sc);
+      if (recap.length) for (const cid of adminChatList(full)) { try { await tg("sendMessage", { chat_id: cid, text: "\u{1F4CB} Planning de papa, recopi\u00e9 tel quel :\n" + recap.join("\n") }); } catch (_e) { /* ignore */ } }
+    }
     finally {
       await mutate((d: any) => {
         delete d.gsheetLock;
