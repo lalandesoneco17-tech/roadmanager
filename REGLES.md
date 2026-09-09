@@ -19,8 +19,9 @@ ce fichier ET le code en même temps.
 - **Plusieurs chauffeurs au même endroit, chacun avec sa machine, c'est fréquent** : chacun a
   son chantier. Un « chantier déplacé » n'est proposé que si l'ancien chauffeur n'a plus aucune
   ligne ce jour-là, et la fiche dit à qui le chantier est pris. (08/09/2026)
-- **Pas d'heure inventée** : si papa n'écrit pas d'horaire dans le lieu, la fiche n'a pas
-  d'heure. (08/09/2026)
+- **Pas d'heure inventée, nulle part** : si papa n'écrit pas d'horaire dans le lieu, la fiche n'a
+  pas d'heure, et l'app n'affiche pas de 08:00 à sa place. Un chantier créé dans le planning peut
+  rester sans heure ; la case heure se vide si on l'efface. (08 et 09/09/2026)
 - **L'heure est dans le champ LIEU** (« giratoire … à 19h »). (30/08/2026)
 - **« dépôt »** dans le lieu ou le client = entrée Dépôt dans le planning, écrite directement
   sans fiche. Le dépôt n'est précisé que si papa l'écrit (« dépôt 17 »). « réparation »,
