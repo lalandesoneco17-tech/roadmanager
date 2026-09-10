@@ -22,7 +22,10 @@ const localLoad=()=>{try{for(const k of[SKEY,'roadmanager-v4','roadmanager-v3','
 const localSave=(d)=>{try{localStorage.setItem(SKEY,JSON.stringify(d));localStorage.setItem(SKEY+'_ts',String(Date.now()))}catch(e){}};
 const localTs=()=>{try{return Number(localStorage.getItem(SKEY+'_ts'))||0}catch(e){return 0}};
 // Supabase load/save with localStorage fallback
-const loadData=async()=>{if(sb){try{const{data:row,error}=await sb.from('app_data').select('data').eq('id','main').single();if(!error&&row&&row.data&&Object.keys(row.data).length>0){const merged={...defaultData(),...row.data};localSave(merged);console.log('Loaded from Supabase');return merged}}catch(e){console.warn('Supabase load failed, fallback localStorage',e)}}const local=localLoad();if(local){if(sb){try{await saveData(local);console.log('Migrated localStorage to Supabase')}catch(e){console.warn('Migration to Supabase failed',e)}}return local}return defaultData()};
+// Date de la derniere version du bloc vue par cet appareil : le rafraichissement periodique ne retelecharge le bloc (1 Mo)
+// que si elle a change (10/09/2026 : 5,6 Go de sortie par mois, quota Supabase depasse).
+let _lastSeenUpdatedAt=null;
+const loadData=async()=>{if(sb){try{const{data:row,error}=await sb.from('app_data').select('data,updated_at').eq('id','main').single();if(!error&&row&&row.data&&Object.keys(row.data).length>0){if(row.updated_at)_lastSeenUpdatedAt=row.updated_at;const merged={...defaultData(),...row.data};localSave(merged);console.log('Loaded from Supabase');return merged}}catch(e){console.warn('Supabase load failed, fallback localStorage',e)}}const local=localLoad();if(local){if(sb){try{await saveData(local);console.log('Migrated localStorage to Supabase')}catch(e){console.warn('Migration to Supabase failed',e)}}return local}return defaultData()};
 // Filtre les items dont l'id est dans tombstones (marqueurs de suppression)
 const filterTombstones=(arr,ts)=>{if(!ts)return arr;return(arr||[]).filter(it=>!it||!it.id||!ts[it.id])};
 const mergeArraysById=(local,remote,ts)=>{if(!remote||!remote.length)return filterTombstones(local,ts);if(!local||!local.length)return filterTombstones(remote,ts);const map=new Map();remote.forEach(item=>{if(item&&item.id)map.set(item.id,item)});local.forEach(item=>{if(item&&item.id)map.set(item.id,item)});return filterTombstones([...map.values()],ts)};
@@ -86,8 +89,8 @@ if(!merged.telegramAdminChatId&&_R.telegramAdminChatId)merged.telegramAdminChatI
 merged.telegramEmpChats={...(_R.telegramEmpChats||{}),...(d.telegramEmpChats||{})}}else{merged={...d}}
 // Tague avec notre session ID -> permet a subscribeToChanges d'ignorer notre propre echo
 merged._lastSaver=_localSessionId;merged._lastSaveAt=Date.now();
-const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:new Date().toISOString()});if(error)console.error('Supabase save error:',error);else{localSave(merged);console.log('Saved to Supabase (merged)')}}catch(e){console.warn('Supabase save failed',e)}}};
-const subscribeToChanges=(callback,getCurrentData)=>{if(!sb)return()=>{};const channel=sb.channel('app_data_changes').on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_data',filter:'id=eq.main'},(payload)=>{if(!payload.new||!payload.new.data)return;
+const _tsSave=new Date().toISOString();const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:_tsSave});if(error)console.error('Supabase save error:',error);else{_lastSeenUpdatedAt=_tsSave;localSave(merged);console.log('Saved to Supabase (merged)')}}catch(e){console.warn('Supabase save failed',e)}}};
+const subscribeToChanges=(callback,getCurrentData)=>{if(!sb)return()=>{};const channel=sb.channel('app_data_changes').on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_data',filter:'id=eq.main'},(payload)=>{if(!payload.new||!payload.new.data)return;if(payload.new.updated_at)_lastSeenUpdatedAt=payload.new.updated_at;
 // Ignore notre propre echo : c'est nous qui venons d'envoyer ce save, donc notre state local est deja a jour (et potentiellement plus frais si l'utilisateur a fait une modif entre temps)
 if(payload.new.data._lastSaver===_localSessionId)return;
 const remote={...defaultData(),...payload.new.data};const current=getCurrentData?getCurrentData():null;if(!current){localSave(remote);callback(remote);return}
@@ -3745,7 +3748,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.10-1</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.10-2</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
@@ -5153,7 +5156,10 @@ const unsubTE=teSubscribe(async(table)=>{if(savingRef.current)return;const key=t
 // Flush les pointages en attente (si reseau coupe au precedent usage, ils partent maintenant)
 teQueueFlush().catch(()=>{});
 // Polling fallback toutes les 30s : si le realtime Supabase n'est pas actif, on rattrape ici
-const pollId=setInterval(()=>{teQueueFlush().catch(()=>{});if(savingRef.current)return;loadData().then(d=>{if(!d)return;setData(prev=>{if(!prev)return d;return mergeFullData(prev,d)})}).catch(()=>{})},30000);
+const pollId=setInterval(async()=>{teQueueFlush().catch(()=>{});if(savingRef.current)return;
+// D'abord la date seule (quelques octets) ; le bloc entier n'est relu que s'il a change depuis notre derniere version.
+if(sb){try{const{data:row,error}=await sb.from('app_data').select('updated_at').eq('id','main').single();if(error)return;if(row&&row.updated_at&&_lastSeenUpdatedAt&&row.updated_at===_lastSeenUpdatedAt)return}catch(e){return}}
+loadData().then(d=>{if(!d)return;setData(prev=>{if(!prev)return d;return mergeFullData(prev,d)})}).catch(()=>{})},30000);
 return()=>{unsub();unsubTE();clearInterval(pollId)};
 },[]);
 // doSave : pas de deps [data] -> evite le stale closure (clicks rapides du user pouvaient capturer un data perime).
