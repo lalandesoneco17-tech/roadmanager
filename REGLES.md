@@ -36,6 +36,25 @@ ce fichier ET le code en même temps.
   balayeuses. La lettre est la première lettre de la marque (R, V, MA, M, VB, RB, S). (30/08/2026)
 - **Case de la 2e ligne** d'un chauffeur = chantier de **nuit**. (30/08/2026)
 
+## Le planning (vue tableau, 10/09/2026)
+
+- Le planning de RoadManager est **à l'image de la feuille de papa** : raboteuses à gauche,
+  balayeuses puis citernes à droite, une carte par machine dans l'ordre de la feuille
+  (raboteuses par largeur décroissante), **deux lignes de chantier** par carte au minimum.
+- Le **prénom du chauffeur est à gauche** de la carte, la machine à sa droite. Un petit bouton
+  seul prévient le chauffeur (envoi sur son téléphone) et met son carré en **vert**. Quand il a lu,
+  seule la **ligne passe en vert pâle** ; le contour garde la couleur de la machine.
+- Un deuxième chauffeur sur la même machine (ex. la 35 : Jérémy le jour, Cédric la nuit) va dans
+  le carré de gauche, **au-dessus, séparé par un trait**, en face de sa ligne. Le petit + dans le
+  coin du carré sert à l'ajouter.
+- Les cases de papa sont là : **nuit** (ligne rouge), **payé** (client rose), **bon envoyé**
+  (forfait jaune). Les cases client, chef, lieu, forfait restent **blanches, sans texte** dedans.
+- **L'heure se tape dans le lieu** (« … à 21h ») et devient l'heure du chantier. Aucune heure
+  pointée n'est affichée sur le planning : les heures sont dans la page Heures.
+- Le **chiffre d'affaires** du jour est en haut, par raboteuses, balayeuses, citernes et total.
+- La journée entière **tient sur l'écran** : la vue se réduit automatiquement à la taille de
+  l'écran, sans défiler. Le bouton « Vue classique » redonne l'ancien planning.
+
 ## Le bot Telegram
 
 - Le bot **propose, l'admin valide**. Aucune écriture dans le planning sans bouton Valider,
