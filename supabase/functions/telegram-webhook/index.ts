@@ -1803,6 +1803,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   let envoyees = 0;
   const pendings: any[] = [];
   const echecs: string[] = [];
+  const traitees = new Set<string>();   // lignes envoyees, volontairement ignorees ou signalees : a garder en memoire
   // Salaries RoadManager ayant une ligne de chantier ce jour-la dans le planning de papa.
   const idsDuJour: any = {};
   const presentsLe = (iso: string): Set<string> => {
@@ -1814,12 +1815,15 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   };
 
   for (const n of sc.nouveaux.concat(sc.modifies)) {
-    if (n.etat) continue;                         // depot / repos : deja ecrit, pas de fiche
-    let machArg = n.g.machine.replace(/\s*\(.*\)$/, "");
+    if (n.etat) { traitees.add(n.key); continue; }   // depot / repos : deja ecrit, pas de fiche
+    // Une erreur sur UNE ligne ne doit jamais faire perdre les autres (10/09/2026 : 7 lignes marquees vues sans fiche).
+    try {
+    let machArg = String(n.g.machine || "").replace(/\s*\(.*\)$/, "");
     if (n.g.categorie !== "raboteuse") {
       if (!n.g.machineRM) {
         const code = (String(n.g.machine).match(/\(([^)]+)\)\s*$/) || [])[1] || n.g.machine;
         echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : aucune " + n.g.categorie + " de RoadManager ne correspond au code « " + code + " ».");
+        traitees.add(n.key);
         continue;
       }
       machArg = n.g.machineRM;
@@ -1858,9 +1862,9 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
       client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
       nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
     }, "create");
-    if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); continue; }
+    if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); traitees.add(n.key); continue; }
     // Deja dans RoadManager a l'identique : on n'envoie rien (la ligne est deja marquee vue).
-    if (!socle && chantierDejaDansRM(full, prop.job)) continue;
+    if (!socle && chantierDejaDansRM(full, prop.job)) { traitees.add(n.key); continue; }
     prop.lines[0] = n.ancien !== undefined ? "\u{1F504} CHANTIER CORRIGE — a valider"
       : baseDeplacee ? "\u{1F504} CHANTIER DEPLACE — a valider"
       : "\u{1F4E5} DU PLANNING DE PAPA — a valider";
@@ -1869,7 +1873,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
       prop.lines.splice(1, 0, "\u{274C} Ancien : " + ancienTexte + " (remplace)");
     }
     if (baseDeplacee) prop.lines.splice(1, 0, "\u{21AA}\u{FE0F} Pris a " + (deplaceDe || "un autre chauffeur") + ", qui n'a plus de chantier ce jour-la dans le planning de papa");
-    await completerGps(full, prop);
+    try { await completerGps(full, prop); } catch (e) { console.warn("completerGps", e); }
     for (const cid of chats) {
       const p = await sendProposalMessage(tg, cid, prop);
       p.job = prop.job;                          // meme chantier pour tous : pas de doublon si deux admins valident
@@ -1877,6 +1881,11 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
       pendings.push(p);
     }
     envoyees++;
+    traitees.add(n.key);
+    } catch (e) {
+      console.error("gsEnvoyer ligne", n.key, e);
+      echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : erreur interne (" + String((e && (e as any).message) || e).slice(0, 120) + "), la ligne sera retentee.");
+    }
   }
   // Suppressions : une ligne effacee du classeur dont le chantier existe encore.
   for (const x of sc.disparues) {
@@ -1905,7 +1914,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   for (const e of echecs) {
     for (const cid of chats) { try { await tg("sendMessage", { chat_id: cid, text: "⚠️ Ligne du planning de papa non recopiee — " + e }); } catch (_e2) { /* ignore */ } }
   }
-  return { envoyees, pendings };
+  return { envoyees, pendings, traitees };
 }
 
 async function gsWatch(tg: any, light: any): Promise<number> {
@@ -1935,7 +1944,7 @@ async function gsWatch(tg: any, light: any): Promise<number> {
     gsAppliquer(full, sc);
     const recap = gsAppliquerEtats(full, sc);
     if (!(await gsCasSave(full, verrou))) return total;                       // un autre passage a pris la main
-    let res: any = { envoyees: 0, pendings: [] };
+    let res: any = { envoyees: 0, pendings: [], traitees: new Set<string>() };
     try {
       res = await gsEnvoyer(tg, full, sc);
       if (recap.length) for (const cid of adminChatList(full)) { try { await tg("sendMessage", { chat_id: cid, text: "\u{1F4CB} Planning de papa, recopi\u00e9 tel quel :\n" + recap.join("\n") }); } catch (_e) { /* ignore */ } }
@@ -1943,6 +1952,9 @@ async function gsWatch(tg: any, light: any): Promise<number> {
     finally {
       await mutate((d: any) => {
         delete d.gsheetLock;
+        // Marquee vue AVANT l'envoi mais jamais traitee (plantage, coupure) : on oublie la ligne pour la retenter.
+        const tr: Set<string> = res.traitees || new Set<string>();
+        for (const n of sc.nouveaux.concat(sc.modifies)) if (!n.etat && !tr.has(n.key) && d.gsheetSeen) delete d.gsheetSeen[n.key];
         if (res.pendings.length) {
           pruneProposals(d);
           const slots = new Set(res.pendings.map((p: any) => p.slot).filter(Boolean));
