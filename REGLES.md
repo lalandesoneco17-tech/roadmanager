@@ -7,8 +7,16 @@ ce fichier ET le code en même temps.
 
 ## Le planning de papa (Google Sheets)
 
-- **Case cochée en colonne B ou L** = le chauffeur est au courant de son chantier. C'est ce
-  qui déclenche l'envoi d'une fiche au(x) admin(s), à valider avant écriture. (01/09/2026)
+- **Plus de fiche à valider.** Deux passages automatiques par jour recopient le classeur dans
+  RoadManager tel quel : (17/09/2026)
+  - **19h** : la journée du **prochain jour travaillé** (vendredi → lundi) est recopiée, un récap
+    est envoyé aux admins, et **chaque chauffeur reçoit ses chantiers sur Telegram**.
+  - **8h** : la journée de **la veille** (lundi → vendredi) est relue pour rattraper les forfaits et
+    les chantiers ajoutés entre temps. **Aucun message aux chauffeurs le matin.**
+  - Une case cochée dans le classeur **après 19h** recopie le lendemain tout de suite (retard).
+    En journée, cocher une case ne déclenche plus rien.
+- La case « prévenu » de la feuille reste l'information de papa ; RoadManager envoie le chantier au
+  chauffeur à 19h quel que soit l'état de la case. (17/09/2026)
 - Le bot lit **tout le classeur** (tous les jours à venir), pas seulement le lendemain.
   Ça ne consomme aucun token. (08/09/2026)
 - **Une ligne = une fiche, une seule fois.** Deux cases cochées coup sur coup ne renvoient
