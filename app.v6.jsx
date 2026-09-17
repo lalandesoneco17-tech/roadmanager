@@ -108,14 +108,17 @@ const teQueuePush=op=>{const q=teQueueGet();q.push({...op,_ts:Date.now()});teQue
 const teTableOf=key=>key==='timeEntriesValidated'?'time_entries_validated':'time_entries';
 // Position au moment d'un pointage. Ne bloque JAMAIS le pointage : on enregistre
 // d'abord, la position se rattache ensuite si elle arrive. Refus ou echec = rien.
+// Position : UNE seule demande d'autorisation par session, a l'ouverture de l'espace chauffeur (posSuivre),
+// puis on garde la derniere position connue. Chaque pointage la reutilise si elle a moins de 3 min, sinon une
+// lecture rapide. Avant, chaque clic redemandait la position, et le telephone redemandait l'autorisation (17/09/2026).
+let _dernierePos=null,_watchPos=null;
+const _memoPos=p=>{_dernierePos={lat:+p.coords.latitude.toFixed(6),lon:+p.coords.longitude.toFixed(6),m:Math.round(p.coords.accuracy||0),t:new Date().toISOString()}};
+const posSuivre=()=>{try{if(!navigator.geolocation||_watchPos!=null)return;_watchPos=navigator.geolocation.watchPosition(_memoPos,()=>{},{enableHighAccuracy:true,maximumAge:60000,timeout:20000})}catch(e){}};
 const posMaintenant=()=>new Promise(res=>{
   try{
+    if(_dernierePos&&Date.now()-new Date(_dernierePos.t).getTime()<3*60000)return res(_dernierePos);
     if(!navigator.geolocation)return res(null);
-    navigator.geolocation.getCurrentPosition(
-      p=>res({lat:+p.coords.latitude.toFixed(6),lon:+p.coords.longitude.toFixed(6),
-              m:Math.round(p.coords.accuracy||0),t:new Date().toISOString()}),
-      ()=>res(null),
-      {enableHighAccuracy:true,timeout:12000,maximumAge:30000});
+    navigator.geolocation.getCurrentPosition(p=>{_memoPos(p);res(_dernierePos)},()=>res(_dernierePos||null),{enableHighAccuracy:true,timeout:12000,maximumAge:30000});
   }catch(e){res(null)}
 });
 const teToRow=e=>({id:e.id,emp_id:e.empId,date:e.date,type:e.type||null,start_time:e.startTime||null,end_time:e.endTime||null,pause_start:e.pauseStart||null,pause_end:e.pauseEnd||null,pause_min:e.pauseMin||0,break_start:e.breakStart||null,break_end:e.breakEnd||null,meal_type:e.mealType||null,absence_type:e.absenceType||null,night_hours:e.nightHours||0,requested_end_time:e.requestedEndTime||null,requested_end_motif:e.requestedEndMotif||null,ref_hours:e.refHours!=null?e.refHours:null,pauses:Array.isArray(e.pauses)?e.pauses:null,positions:(e.positions&&typeof e.positions==='object')?e.positions:null,created_at:e.createdAt||new Date().toISOString(),updated_at:new Date().toISOString(),deleted:false});
@@ -2804,6 +2807,7 @@ if(typeof Notification!=='undefined'&&Notification.permission==='granted'){try{c
 }
 }
 },[data.jobs,empId,data.clients,data.machines]);
+useEffect(()=>{posSuivre()},[]); // une seule demande de position par session
 // pointages restes dans la file du telephone (pas encore dans la base) : le chauffeur doit le voir
 const[_enAttente,_setEnAttente]=useState(teQueueGet().length);
 useEffect(()=>{const id=setInterval(()=>_setEnAttente(teQueueGet().length),5000);return()=>clearInterval(id)},[]);
@@ -3755,7 +3759,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.17-2</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.17-3</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
