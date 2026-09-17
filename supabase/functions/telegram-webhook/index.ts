@@ -1917,6 +1917,130 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
   return { envoyees, pendings, traitees };
 }
 
+// ===================== RECOPIE AUTOMATIQUE, SANS VALIDATION (17/09/2026) =====================
+// Deux passages par jour, decides par l'admin :
+//  - 19h : la journee du PROCHAIN jour travaille (vendredi -> lundi) est recopiee telle quelle dans
+//    RoadManager, et chaque chauffeur recoit ses chantiers sur Telegram.
+//  - 8h  : la journee de la VEILLE (lundi -> vendredi) est relue pour rattraper les forfaits et les
+//    chantiers ajoutes entre temps. Aucun message aux chauffeurs le matin.
+// Une case cochee dans le classeur apres 19h declenche aussi une recopie du lendemain (retard de papa).
+// La memoire gsheetSeen retient pour chaque ligne le chantier RoadManager cree (j) pour le retrouver.
+function gsJourSuivant(iso: string): string {
+  const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+function gsJourPrecedent(iso: string): string {
+  const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+async function gsLireJour(data: any, iso: string): Promise<any> {
+  const w = gsIsoWeek(iso);
+  for (const b of gsBooks(data)) {
+    const ws = gsBookWeeks(b);
+    if (ws && !ws.has(w)) continue;
+    for (const name of ["SEMAINE " + w, " SEMAINE " + w]) {
+      const csv = await gsFetchSheet(b.id, name);
+      if (!csv) continue;
+      const rows = gsParseCsv(csv);
+      const start = gsFindDay(rows, iso);
+      if (start >= 0) return { rows, start };
+    }
+  }
+  return null;
+}
+function gsLabelJob(data: any, j: any): string {
+  const e = (data.employees || []).find((x: any) => x.id === j.employeeId);
+  const m = (data.machines || []).find((x: any) => x.id === j.machineId);
+  const c = (data.clients || []).find((x: any) => x.id === j.clientId);
+  return (e ? e.name : "?") + " · " + (m ? m.name : "?") + " · " + (j.billingStart ? j.billingStart + " " : "") + (j.location || (c ? c.name : "")) + (j.forfaitType ? " · " + j.forfaitType : "") + (j.isNight ? " · nuit" : "");
+}
+// Recopie la journee `iso` du classeur dans RoadManager. Renvoie les lignes du recap.
+async function gsAutoJour(tg: any, iso: string, notifier: boolean): Promise<{ recap: string[]; changements: number; erreurs: number }> {
+  const full = await loadData();
+  const lu = await gsLireJour(full, iso);
+  if (!lu) return { recap: ["Le " + fmtDateFR(iso) + " n'est pas dans le classeur de papa."], changements: 0, erreurs: 1 };
+  const G = gsDayJobs(lu.rows, lu.start, full);
+  full.gsheetSeen = full.gsheetSeen || {};
+  const seen = full.gsheetSeen;
+  const recap: string[] = [];
+  let ajoutes = 0, modifies = 0, inchanges = 0, erreurs = 0;
+  const touches = new Set<string>();       // chantiers crees ou modifies par ce passage
+  const sc: any = { nouveaux: [], modifies: [], disparues: [], oublier: [], migrer: [], chauffeurs: {} };
+  const jobsDuJour = () => (full.jobs || []).filter((x: any) => x.date === iso && x.type !== "depot");
+  const dejaLies = () => new Set(Object.values(seen).map((v: any) => v && v.j).filter(Boolean));
+  for (const g of G) {
+    const key = gsRowKey(iso, g, lu.start);
+    const ent = seen[key];
+    const et = gsEtat(g);
+    if (et) {
+      const sig = "etat:" + et.texte;
+      if (!ent) sc.nouveaux.push({ key, iso, g, sig, etat: et.etat, reste: et.reste || "" });
+      else if (typeof ent === "number" || ent.s !== sig) sc.modifies.push({ key, iso, g, sig, etat: et.etat, reste: et.reste || "", ancien: "", ancienEtat: (typeof ent === "object" && ent.e) || "" });
+      continue;
+    }
+    if (gsEstNonChantier(g)) continue;
+    (sc.chauffeurs[iso] = sc.chauffeurs[iso] || new Set<string>()).add(normTxt(g.chauffeur));
+    try {
+      const sig = gsSignature(g);
+      let machArg = String(g.machine || "").replace(/\s*\(.*\)$/, "");
+      if (g.categorie !== "raboteuse") {
+        if (!g.machineRM) { const code = (String(g.machine).match(/\(([^)]+)\)\s*$/) || [])[1] || g.machine; recap.push("⚠️ " + (g.chauffeur || "?") + " : aucune " + g.categorie + " de RoadManager pour le code « " + code + " »"); erreurs++; continue; }
+        machArg = g.machineRM;
+      }
+      const e1 = resolveEmployee(full, g.chauffeur).emp;
+      // Chantier existant : celui retenu en memoire, sinon meme jour + chauffeur + lieu, sinon le seul chantier du chauffeur pas encore lie.
+      let base: any = null;
+      if (ent && typeof ent === "object" && ent.j) base = (full.jobs || []).find((x: any) => x.id === ent.j) || null;
+      if (!base && e1 && g.lieu) base = jobsDuJour().find((x: any) => x.employeeId === e1.id && normTxt(x.location || "") === normTxt(g.lieu)) || null;
+      if (!base && e1) { const lies = dejaLies(); const cands = jobsDuJour().filter((x: any) => x.employeeId === e1.id && !lies.has(x.id)); if (cands.length === 1) base = cands[0]; }
+      if (base && ent && typeof ent === "object" && ent.s === sig && ent.j === base.id) { inchanges++; continue; }
+      const args = { chauffeur: g.chauffeur, machine: machArg, client: g.client, lieu: g.lieu, heure: g.heure || undefined, nuit: !!g.nuit, forfait: g.forfait || undefined, chef: g.chef || undefined };
+      const prop = base ? buildProposal(full, { job_id: base.id, ...args }, "update", base) : buildProposal(full, { date: iso, ...args }, "create");
+      if (prop.error) { recap.push("⚠️ " + (g.chauffeur || "?") + " : " + prop.error); erreurs++; continue; }
+      if (!base) {
+        const ex = chantierDejaDansRM(full, prop.job);
+        if (ex) { seen[key] = { t: Date.now(), s: sig, l: normTxt(g.lieu), j: ex.id }; inchanges++; continue; }
+      } else {
+        const champs = ["employeeId", "machineId", "clientId", "location", "siteManager", "siteManagerPhone", "billingStart", "isNight", "forfaitType"];
+        const pareil = champs.every((k) => String((prop.job || {})[k] ?? "") === String(base[k] ?? "")) && !prop.newClientName;
+        if (pareil) { seen[key] = { t: Date.now(), s: sig, l: normTxt(g.lieu), j: base.id }; inchanges++; continue; }
+      }
+      applyProposalTo(full, prop);
+      seen[key] = { t: Date.now(), s: sig, l: normTxt(g.lieu), j: prop.job.id };
+      touches.add(prop.job.id);
+      const jNow = (full.jobs || []).find((x: any) => x.id === prop.job.id) || prop.job;
+      if (base) { modifies++; recap.push("✏️ " + gsLabelJob(full, jNow)); } else { ajoutes++; recap.push("➕ " + gsLabelJob(full, jNow)); }
+    } catch (e) {
+      erreurs++; recap.push("⚠️ " + (g.chauffeur || "?") + " : erreur interne (" + String((e && (e as any).message) || e).slice(0, 100) + ")");
+    }
+  }
+  // Depots et repos, comme d'habitude
+  gsAppliquer(full, sc);
+  for (const l of gsAppliquerEtats(full, sc)) recap.push(l);
+  // Messages aux chauffeurs (19h uniquement) : tout chantier du jour venu du classeur pas encore envoye, ou modifie ce soir.
+  const envoyes: string[] = [];
+  if (notifier) {
+    const lies = dejaLies();
+    for (const j of jobsDuJour()) {
+      if (!lies.has(j.id)) continue;
+      if (j.sent && !touches.has(j.id)) continue;
+      const ok = await envoyerAuChauffeur(tg, full, j);
+      if (ok) { j.sent = true; j.ack = false; j._updatedAt = Date.now(); envoyes.push(j.id); }
+    }
+  }
+  await saveData(full);
+  const tete = fmtDateFR(iso) + " : " + ajoutes + " ajouté" + (ajoutes > 1 ? "s" : "") + ", " + modifies + " modifié" + (modifies > 1 ? "s" : "") + ", " + inchanges + " déjà à jour" + (erreurs ? ", " + erreurs + " en erreur" : "") + (notifier ? ", " + envoyes.length + " chauffeur" + (envoyes.length > 1 ? "s" : "") + " prévenu" + (envoyes.length > 1 ? "s" : "") : "");
+  return { recap: [tete].concat(recap), changements: ajoutes + modifies + sc.nouveaux.length + sc.modifies.length, erreurs };
+}
+async function gsAutoPasse(tg: any, data: any, iso: string, notifier: boolean, titre: string, toujoursRecap: boolean): Promise<void> {
+  const r = await gsAutoJour(tg, iso, notifier);
+  if (!toujoursRecap && !r.changements && !r.erreurs) return;
+  const txt = titre + "\n" + r.recap.join("\n");
+  for (const cid of adminChatList(data)) { try { await tg("sendMessage", { chat_id: cid, text: txt.slice(0, 3900) }); } catch (_e) { /* ignore */ } }
+}
+
 async function gsWatch(tg: any, light: any): Promise<number> {
   if (!gsBooks(light).length) return 0;
   const cache: any = {};                 // feuilles deja lues : une seule requete par feuille et par appel
@@ -2251,7 +2375,30 @@ Deno.serve(async (req) => {
         fetch(`https://api.telegram.org/bot${light.telegramBotToken}/${method}`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
-      await gsWatch(tgL, light);
+      // Depuis le 17/09/2026 plus de fiche a valider : une case cochee apres 19h (retard) recopie le lendemain
+      // tout de suite, le reste attend le passage de 19h. (gsWatch garde le code des fiches, inactif.)
+      const hParis = parseInt(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).format(new Date()), 10);
+      if (hParis >= 19 || hParis < 6) {
+        const cible = gsJourSuivant(isoParis(new Date()));
+        await gsAutoPasse(tgL, light, cible, true, "\u{1F4CB} Planning de papa → RoadManager (ajout tardif)", false);
+      }
+      return new Response("ok");
+    }
+    // 0pre-bis) 19h : recopie du prochain jour travaille + messages aux chauffeurs. 8h : rattrapage de la veille, sans message.
+    if (update && (update.source === "cron-gsheet-soir" || update.source === "cron-gsheet-matin")) {
+      const soir = update.source === "cron-gsheet-soir";
+      const hParis = parseInt(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).format(new Date()), 10);
+      if (!update.force && hParis !== (soir ? 19 : 8)) return new Response("ok");
+      const light = await loadLight(["telegramBotToken", "gsheetBooks", "telegramAdminChatId", "telegramAdminChats"]);
+      if (!light.telegramBotToken || !(light.gsheetBooks || []).length) return new Response("ok");
+      const tgL = (method: string, body: unknown) =>
+        fetch(`https://api.telegram.org/bot${light.telegramBotToken}/${method}`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+      const today = isoParis(new Date());
+      const cible = update.jour || (soir ? gsJourSuivant(today) : gsJourPrecedent(today));
+      const notifier = soir && !update.sansChauffeurs;
+      await gsAutoPasse(tgL, light, cible, notifier, soir ? "\u{1F4CB} Planning de papa → RoadManager (19h)" : "\u{1F305} Rattrapage de la veille (8h)", soir);
       return new Response("ok");
     }
 
