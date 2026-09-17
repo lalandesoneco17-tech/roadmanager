@@ -84,8 +84,8 @@ ce fichier ET le code en même temps.
 
 ## Les pointages
 
-- La **position** n'est demandée qu'une fois par ouverture de l'app ; chaque pointage réutilise la dernière
-  position connue (moins de 3 minutes), sans nouvelle demande. (17/09/2026)
+- Un **point GPS** est pris uniquement à l'embauche, à la pause, à la reprise, à la débauche et à la fin de
+  chantier. Aucun suivi en continu. L'autorisation du téléphone est demandée une fois, à l'ouverture. (17/09/2026)
 - Un échec de connexion n'est **jamais mémorisé** : l'app réessaie à chaque pointage et toutes les 30 s, et le
   chauffeur voit un bandeau tant que des pointages attendent d'être envoyés. (17/09/2026)
 
