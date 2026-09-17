@@ -2034,11 +2034,12 @@ async function gsAutoJour(tg: any, iso: string, notifier: boolean): Promise<{ re
   const tete = fmtDateFR(iso) + " : " + ajoutes + " ajouté" + (ajoutes > 1 ? "s" : "") + ", " + modifies + " modifié" + (modifies > 1 ? "s" : "") + ", " + inchanges + " déjà à jour" + (erreurs ? ", " + erreurs + " en erreur" : "") + (notifier ? ", " + envoyes.length + " chauffeur" + (envoyes.length > 1 ? "s" : "") + " prévenu" + (envoyes.length > 1 ? "s" : "") : "");
   return { recap: [tete].concat(recap), changements: ajoutes + modifies + sc.nouveaux.length + sc.modifies.length, erreurs };
 }
-async function gsAutoPasse(tg: any, data: any, iso: string, notifier: boolean, titre: string, toujoursRecap: boolean): Promise<void> {
+async function gsAutoPasse(tg: any, data: any, iso: string, notifier: boolean, titre: string, toujoursRecap: boolean): Promise<any> {
   const r = await gsAutoJour(tg, iso, notifier);
-  if (!toujoursRecap && !r.changements && !r.erreurs) return;
+  if (!toujoursRecap && !r.changements && !r.erreurs) return r;
   const txt = titre + "\n" + r.recap.join("\n");
   for (const cid of adminChatList(data)) { try { await tg("sendMessage", { chat_id: cid, text: txt.slice(0, 3900) }); } catch (_e) { /* ignore */ } }
+  return r;
 }
 
 async function gsWatch(tg: any, light: any): Promise<number> {
@@ -2398,7 +2399,9 @@ Deno.serve(async (req) => {
       const today = isoParis(new Date());
       const cible = update.jour || (soir ? gsJourSuivant(today) : gsJourPrecedent(today));
       const notifier = soir && !update.sansChauffeurs;
-      await gsAutoPasse(tgL, light, cible, notifier, soir ? "\u{1F4CB} Planning de papa → RoadManager (19h)" : "\u{1F305} Rattrapage de la veille (8h)", soir);
+      const rr = await gsAutoPasse(tgL, light, cible, notifier, soir ? "\u{1F4CB} Planning de papa → RoadManager (19h)" : "\u{1F305} Rattrapage de la veille (8h)", soir);
+      // debug:true (appel manuel) : le recap est renvoye dans la reponse HTTP
+      if (update.debug) return new Response(JSON.stringify({ jour: cible, ...rr }), { headers: { "Content-Type": "application/json" } });
       return new Response("ok");
     }
 
