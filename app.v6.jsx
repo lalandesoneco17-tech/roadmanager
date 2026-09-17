@@ -121,7 +121,10 @@ const posMaintenant=()=>new Promise(res=>{
 const teToRow=e=>({id:e.id,emp_id:e.empId,date:e.date,type:e.type||null,start_time:e.startTime||null,end_time:e.endTime||null,pause_start:e.pauseStart||null,pause_end:e.pauseEnd||null,pause_min:e.pauseMin||0,break_start:e.breakStart||null,break_end:e.breakEnd||null,meal_type:e.mealType||null,absence_type:e.absenceType||null,night_hours:e.nightHours||0,requested_end_time:e.requestedEndTime||null,requested_end_motif:e.requestedEndMotif||null,ref_hours:e.refHours!=null?e.refHours:null,pauses:Array.isArray(e.pauses)?e.pauses:null,positions:(e.positions&&typeof e.positions==='object')?e.positions:null,created_at:e.createdAt||new Date().toISOString(),updated_at:new Date().toISOString(),deleted:false});
 const teFromRow=r=>({id:r.id,empId:r.emp_id,date:r.date,type:r.type||'',startTime:r.start_time||'',endTime:r.end_time||'',pauseStart:r.pause_start||null,pauseEnd:r.pause_end||null,pauseMin:r.pause_min||0,breakStart:r.break_start||'',breakEnd:r.break_end||'',mealType:r.meal_type||'',absenceType:r.absence_type||'',nightHours:Number(r.night_hours)||0,requestedEndTime:r.requested_end_time||'',requestedEndMotif:r.requested_end_motif||'',refHours:r.ref_hours!=null?Number(r.ref_hours):undefined,pauses:Array.isArray(r.pauses)?r.pauses:null,positions:(r.positions&&typeof r.positions==='object')?r.positions:null,createdAt:r.created_at});
 let teTablesAvailable=null;
-const teTestTables=async()=>{if(!sb)return false;if(teTablesAvailable!==null)return teTablesAvailable;try{const{error}=await sb.from('time_entries').select('id').limit(1);teTablesAvailable=!error;if(error)console.warn('time_entries table pas encore creee:',error.message);else console.log('time_entries tables OK');return teTablesAvailable}catch(e){teTablesAvailable=false;return false}};
+// Un echec (reseau coupe, Supabase en panne au moment de l'ouverture) n'est JAMAIS memorise : sinon le telephone
+// restait bloque pour toute la session, chaque pointage partait dans la file et n'en sortait plus
+// (17/09/2026 : dix chauffeurs muets depuis le 09/09, leurs heures coincees dans le telephone).
+const teTestTables=async()=>{if(!sb)return false;if(teTablesAvailable===true)return true;try{const{error}=await sb.from('time_entries').select('id').limit(1);if(error){console.warn('time_entries injoignable :',error.message);return false}teTablesAvailable=true;console.log('time_entries tables OK');return true}catch(e){console.warn('time_entries injoignable',e);return false}};
 // Une colonne connue de l'app mais absente de la table (ex : 'positions' ajoutee le 04/09/2026 sans le SQL) refusait TOUS les pointages
 // pendant 3 jours (erreur 42703). Desormais la colonne refusee est retiree et le pointage part quand meme ; le SQL est dans SETUP.md.
 const teColonneRefusee=err=>{const m=/column (?:\w+\.)?"?(\w+)"? does not exist/i.exec(err.message||'')||/'(\w+)' column/i.exec(err.message||'');return m?m[1]:null};
@@ -2801,6 +2804,9 @@ if(typeof Notification!=='undefined'&&Notification.permission==='granted'){try{c
 }
 }
 },[data.jobs,empId,data.clients,data.machines]);
+// pointages restes dans la file du telephone (pas encore dans la base) : le chauffeur doit le voir
+const[_enAttente,_setEnAttente]=useState(teQueueGet().length);
+useEffect(()=>{const id=setInterval(()=>_setEnAttente(teQueueGet().length),5000);return()=>clearInterval(id)},[]);
 if(!emp)return(<div style={{fontSize:14}}>Employe non trouve</div>);
 // Styles modals salarie (plus gros, mobile-friendly)
 const empInputS={fontSize:16,padding:'12px 14px',borderRadius:10,border:'2px solid #e2e8f0',background:'#fff',width:'100%',fontWeight:500,outline:'none',boxSizing:'border-box'};
@@ -3176,6 +3182,7 @@ return(
 <div className="fil">
 
 {isNightShift&&<div className="noeud"><div className="alerte" onClick={()=>setVue('heures')} style={{cursor:'pointer'}}><b>⚠</b><span>Journée du {fmtDate(new Date(lastEntry.date))} encore ouverte — vérifie tes heures.</span></div></div>}
+{_enAttente>0&&<div className="noeud"><div className="alerte" onClick={()=>{teQueueFlush().catch(()=>{})}} style={{cursor:'pointer',background:'#fef3c7',borderColor:'#d97706'}}><b>⏳</b><span>{_enAttente} pointage{_enAttente>1?'s':''} pas encore envoyé{_enAttente>1?'s':''} au bureau. Ils partiront tout seuls dès que le réseau répond. Touche ici pour réessayer.</span></div></div>}
 
 <div className={'noeud '+(status==='off'?'actif':'fait')}>
 <div className={'carte'+(status==='off'?' actif':'')}>
@@ -3748,7 +3755,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.17-1</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.17-2</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
