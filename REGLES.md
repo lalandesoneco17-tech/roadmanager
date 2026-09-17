@@ -31,9 +31,11 @@ ce fichier ET le code en même temps.
   pas d'heure, et l'app n'affiche pas de 08:00 à sa place. Un chantier créé dans le planning peut
   rester sans heure ; la case heure se vide si on l'efface. (08 et 09/09/2026)
 - **L'heure est dans le champ LIEU** (« giratoire … à 19h »). (30/08/2026)
-- **« dépôt »** dans le lieu ou le client = entrée Dépôt dans le planning, écrite directement
-  sans fiche. Le dépôt n'est précisé que si papa l'écrit (« dépôt 17 »). « réparation »,
-  « rangement » remplissent l'activité, sinon elle reste vide. (09/09/2026)
+- **« dépôt » tout seul** (ou « 8h au dépôt ») = notre dépôt : entrée Dépôt dans le planning. Dès qu'il y
+  a autre chose à côté (« dépôt colas »), c'est un **chantier** chez un client. (17/09/2026)
+- **Citernes** : papa écrit 4 ou 8 = **demi-journée** ou **journée**. Chauffeur **« sc »** = citerne louée
+  **sans chauffeur** : chantier sans salarié, tarif « sans chauffeur ». (17/09/2026)
+- Surnoms du classeur : **jj** = le salarié jj de RoadManager, **moi** = Sébastien. (17/09/2026)
 - **« repos »** = entrée Repos dans le planning, écrite directement. Ça veut dire que le chauffeur
   a fait la nuit la veille et n'a rien de prévu. (09/09/2026)
 - « bricodépôt », « RN 141 devant le dépôt » sont des **chantiers**, pas des dépôts. (09/09/2026)

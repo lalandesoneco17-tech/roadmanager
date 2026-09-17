@@ -372,7 +372,7 @@ function getForfaitPrice(data: any, cid: string, machine: any, ft: string, citOp
 // On ne devine JAMAIS : en cas de doute on renvoie une erreur que l'agent
 // transforme en question a l'admin.
 // Surnoms utilises par papa dans le classeur -> prenom RoadManager
-const GS_SURNOMS: any = { jj: "jiji" };
+const GS_SURNOMS: any = { moi: "sebastien" };
 function resolveEmployee(data: any, q: string): any {
   let n = normTxt(q);
   if (GS_SURNOMS[n]) n = GS_SURNOMS[n];
@@ -914,9 +914,12 @@ function buildProposal(data: any, a: any, kind: string, baseJob?: any): any {
   if (a.gps) j.gps = String(a.gps).replace(/\s+/g, "");
   if (typeof a.transfert === "boolean") j.hasTransfer = a.transfert;
 
+  // Citerne louee sans chauffeur (« sc » dans le classeur de papa) : pas de salarie, tarif « Sans chauffeur ».
+  if (a.sans_chauffeur) { j.employeeId = ""; j.citOption = "Sans chauffeur"; }
   if (!j.date) return { error: "Date manquante." };
-  if (!j.employeeId) return { error: "Chauffeur manquant." };
+  if (!j.employeeId && !a.sans_chauffeur) return { error: "Chauffeur manquant." };
   if (!j.machineId) return { error: "Machine manquante." };
+  { const mc0 = (data.machines || []).find((x: any) => x.id === j.machineId); if (mc0 && mc0.type === "Citerne" && !j.citOption) j.citOption = "Avec chauffeur"; }
 
   // Prix : calcule avec la meme grille que l'app (client existant uniquement).
   const mac = (data.machines || []).find((x: any) => x.id === j.machineId);
@@ -1578,9 +1581,24 @@ function gsEtat(g: any): any {
   const t = normTxt((g.lieu || "") + " " + (g.client || ""));
   if (!t) return null;
   if (/^repos\b/.test(t)) return { etat: "repos", texte: t };
-  const m = t.match(/^(?:\d{1,2}\s*h\s*\d{0,2}\s+)?(?:au\s+)?depot\b\s*(.*)$/);
-  if (m) return { etat: "depot", texte: t, reste: (m[1] || "").trim() };
+  // Seul « depot » tout seul (ou « 8h au depot ») veut dire NOTRE depot ; « depot colas » est un chantier chez un client.
+  if (/^(?:\d{1,2}\s*h\s*\d{0,2}\s+)?(?:au\s+)?depot$/.test(t)) return { etat: "depot", texte: t, reste: "" };
   return null;
+}
+// Arguments de chantier a partir d'une ligne du classeur : « sc » = citerne sans chauffeur,
+// et pour une citerne papa ecrit 4 ou 8 = demi-journee ou journee.
+function gsArgsLigne(g: any, machArg: string): any {
+  const sansChauffeur = normTxt(g.chauffeur) === "sc";
+  let forfait = g.forfait || undefined;
+  if (g.categorie === "citerne" && forfait) forfait = /^(2|4)h$/.test(forfait) ? "Demi-journee" : "Journee";
+  return { chauffeur: sansChauffeur ? undefined : g.chauffeur, sans_chauffeur: sansChauffeur, machine: machArg, client: g.client, lieu: g.lieu, heure: g.heure || undefined, nuit: !!g.nuit, forfait, chef: g.chef || undefined };
+}
+function gsRetirerEtat(full: any, empId: string, iso: string): void {
+  const j = (full.jobs || []).find((x: any) => x.type === "depot" && x.date === iso && x.employeeId === empId && x.source === "gsheet");
+  if (!j) return;
+  full._tombstones = full._tombstones || {}; full._tombstones.jobs = full._tombstones.jobs || {};
+  full._tombstones.jobs[j.id] = Date.now();
+  full.jobs = full.jobs.filter((x: any) => x.id !== j.id);
 }
 function gsSignature(g: any): string {
   return normTxt([g.lieu, g.client, g.chef, g.forfait, g.nuit ? "nuit" : ""].join(" "));
@@ -1861,15 +1879,8 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
       }
     }
     const socle = baseCorrigee || baseDeplacee;
-    const prop = socle ? buildProposal(full, {
-      job_id: socle.id, chauffeur: n.g.chauffeur, machine: machArg,
-      client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
-      nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
-    }, "update", socle) : buildProposal(full, {
-      date: n.iso, chauffeur: n.g.chauffeur, machine: machArg,
-      client: n.g.client, lieu: n.g.lieu, heure: n.g.heure || undefined,
-      nuit: !!n.g.nuit, forfait: n.g.forfait || undefined, chef: n.g.chef || undefined,
-    }, "create");
+    const argsL = gsArgsLigne(n.g, machArg);
+    const prop = socle ? buildProposal(full, { job_id: socle.id, ...argsL }, "update", socle) : buildProposal(full, { date: n.iso, ...argsL }, "create");
     if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); traitees.add(n.key); continue; }
     // Deja dans RoadManager a l'identique : on n'envoie rien (la ligne est deja marquee vue).
     if (!socle && chantierDejaDansRM(full, prop.job)) { traitees.add(n.key); continue; }
@@ -1997,14 +2008,17 @@ async function gsAutoJour(tg: any, iso: string, notifier: boolean): Promise<{ re
         if (!g.machineRM) { const code = (String(g.machine).match(/\(([^)]+)\)\s*$/) || [])[1] || g.machine; recap.push("⚠️ " + (g.chauffeur || "?") + " : aucune " + g.categorie + " de RoadManager pour le code « " + code + " »"); erreurs++; continue; }
         machArg = g.machineRMId || g.machineRM;
       }
-      const e1 = resolveEmployee(full, g.chauffeur).emp;
+      const sansChauffeur = normTxt(g.chauffeur) === "sc";
+      const e1 = sansChauffeur ? null : resolveEmployee(full, g.chauffeur).emp;
+      // Une ligne qui etait « depot »/« repos » et devient un chantier : on retire l'etat du planning.
+      if (ent && typeof ent === "object" && ent.e && e1) gsRetirerEtat(full, e1.id, iso);
       // Chantier existant : celui retenu en memoire, sinon meme jour + chauffeur + lieu, sinon le seul chantier du chauffeur pas encore lie.
       let base: any = null;
       if (ent && typeof ent === "object" && ent.j) base = (full.jobs || []).find((x: any) => x.id === ent.j) || null;
       if (!base && e1 && g.lieu) base = jobsDuJour().find((x: any) => x.employeeId === e1.id && normTxt(x.location || "") === normTxt(g.lieu)) || null;
       if (!base && e1) { const lies = dejaLies(); const cands = jobsDuJour().filter((x: any) => x.employeeId === e1.id && !lies.has(x.id)); if (cands.length === 1) base = cands[0]; }
       if (base && ent && typeof ent === "object" && ent.s === sig && ent.j === base.id) { inchanges++; continue; }
-      const args = { chauffeur: g.chauffeur, machine: machArg, client: g.client, lieu: g.lieu, heure: g.heure || undefined, nuit: !!g.nuit, forfait: g.forfait || undefined, chef: g.chef || undefined };
+      const args = gsArgsLigne(g, machArg);
       const prop = base ? buildProposal(full, { job_id: base.id, ...args }, "update", base) : buildProposal(full, { date: iso, ...args }, "create");
       if (prop.error) { recap.push("⚠️ " + (g.chauffeur || "?") + " : " + prop.error); erreurs++; continue; }
       if (!base) {
