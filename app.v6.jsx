@@ -25,7 +25,7 @@ const localTs=()=>{try{return Number(localStorage.getItem(SKEY+'_ts'))||0}catch(
 // Date de la derniere version du bloc vue par cet appareil : le rafraichissement periodique ne retelecharge le bloc (1 Mo)
 // que si elle a change (10/09/2026 : 5,6 Go de sortie par mois, quota Supabase depasse).
 let _lastSeenUpdatedAt=null;
-const loadData=async()=>{if(sb){try{const{data:row,error}=await sb.from('app_data').select('data,updated_at').eq('id','main').single();if(!error&&row&&row.data&&Object.keys(row.data).length>0){if(row.updated_at)_lastSeenUpdatedAt=row.updated_at;const merged={...defaultData(),...row.data};localSave(merged);console.log('Loaded from Supabase');return merged}}catch(e){console.warn('Supabase load failed, fallback localStorage',e)}}const local=localLoad();if(local){if(sb){try{await saveData(local);console.log('Migrated localStorage to Supabase')}catch(e){console.warn('Migration to Supabase failed',e)}}return local}return defaultData()};
+const loadData=async()=>{if(sb){try{const{data:row,error}=await sb.from('app_data').select('data,updated_at').eq('id','main').single();if(!error&&row&&row.data&&Object.keys(row.data).length>0){if(row.updated_at)_lastSeenUpdatedAt=row.updated_at;const merged={...defaultData(),...row.data};localSave(merged);console.log('Loaded from Supabase');return merged}}catch(e){console.warn('Supabase load failed, fallback localStorage',e)}}const local=localLoad();if(local){if(sb){try{await saveData(local);console.log('Migrated localStorage to Supabase')}catch(e){console.warn('Migration to Supabase failed',e)}}return local}return{...defaultData(),_indisponible:true}};
 // Filtre les items dont l'id est dans tombstones (marqueurs de suppression)
 const filterTombstones=(arr,ts)=>{if(!ts)return arr;return(arr||[]).filter(it=>!it||!it.id||!ts[it.id])};
 const mergeArraysById=(local,remote,ts)=>{if(!remote||!remote.length)return filterTombstones(local,ts);if(!local||!local.length)return filterTombstones(remote,ts);const map=new Map();remote.forEach(item=>{if(item&&item.id)map.set(item.id,item)});local.forEach(item=>{if(item&&item.id)map.set(item.id,item)});return filterTombstones([...map.values()],ts)};
@@ -3748,7 +3748,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.10-2</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.17-1</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
@@ -5144,11 +5144,15 @@ const savingRef=useRef(false);
 const savesInProgress=useRef(0);
 const undoStack=useRef([]);
 const dataRef=useRef(data);
+const[panne,setPanne]=useState(false); // base injoignable et aucune copie locale : on le dit au lieu de faire tourner le logo
 useEffect(()=>{dataRef.current=data;_liveData=data},[data]);
 useEffect(()=>{try{localStorage.setItem('rm-session',JSON.stringify({screen,empId}))}catch(e){}},[screen,empId]);
 useEffect(()=>{
 // Charge le blob app_data, puis fusionne/migre les pointages depuis time_entries / time_entries_validated
-loadData().then(async d=>{const migrated=await teMigrateFromBlob(d);setData(migrated)});
+// Panne Supabase du 17/09/2026 : le logo tournait sans fin. Si la base ne repond pas en 4 s, on ouvre tout de suite
+// la copie locale (lecture + saisie, renvoyee au retour de la base), puis on fusionne quand Supabase repond enfin.
+let _affLocal=false;const _tLocal=setTimeout(()=>{const local=localLoad();if(local&&!dataRef.current){_affLocal=true;setData(local);console.warn('Supabase ne repond pas : ouverture sur la copie locale')}else if(!dataRef.current)setPanne(true)},4000);
+loadData().then(async d=>{clearTimeout(_tLocal);if(d&&d._indisponible){setPanne(true);setTimeout(()=>{if(!dataRef.current)window.location.reload()},20000);return}let migrated=d;try{migrated=await teMigrateFromBlob(d)}catch(e){}setPanne(false);setData(prev=>(prev&&_affLocal)?mergeFullData(prev,migrated):migrated)}).catch(e=>{clearTimeout(_tLocal);console.warn('chargement',e);const local=localLoad();if(local&&!dataRef.current)setData(local);else{setPanne(true);setTimeout(()=>{if(!dataRef.current)window.location.reload()},20000)}});
 // Subscribe blob changes (machines, employes, missions, etc.) — comportement existant
 const unsub=subscribeToChanges((nd)=>{if(!savingRef.current)setData(nd)},()=>dataRef.current);
 // Subscribe aux tables dediees pointage : toute modif d'un autre client met a jour la vue
@@ -5173,7 +5177,7 @@ try{await saveData(nd)}catch(e){console.warn('save error',e);try{localSave(nd)}c
 const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);stampUpdatedAt(dataRef.current&&dataRef.current.jobs,prevData&&prevData.jobs);savesInProgress.current++;savingRef.current=true;setData(prevData);dataRef.current=prevData;_liveData=prevData;try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},5000)}},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else if(type==='station'){setScreen('station')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
-if(!data)return(<div style={{position:'fixed',inset:0,background:'#000',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9998}}><img src="icone.png" alt="" style={{width:240,height:240,maxWidth:'62vw',maxHeight:'62vw',objectFit:'contain',animation:'rm-tourne 4s linear infinite'}}/></div>);
+if(!data)return(<div style={{position:'fixed',inset:0,background:'#000',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:9998,gap:18}}><img src="icone.png" alt="" style={{width:240,height:240,maxWidth:'62vw',maxHeight:'62vw',objectFit:'contain',animation:'rm-tourne 4s linear infinite'}}/>{panne&&<div style={{color:'#fff',textAlign:'center',padding:'0 24px',maxWidth:420,fontSize:16,lineHeight:1.5}}><b>La base de données ne répond pas.</b><br/>RoadManager réessaie tout seul toutes les 20 secondes. Les pointages faits pendant la panne sont gardés sur le téléphone et repartiront après.<br/><button onClick={()=>window.location.reload()} style={{marginTop:14,padding:'10px 18px',borderRadius:8,border:'none',background:'#008965',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer'}}>Réessayer maintenant</button></div>}</div>);
 if(screen==='login')return(<LoginScreen data={data} onLogin={onLogin}/>);
 if(screen==='mechanic')return(<MechanicView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
 if(screen==='employee')return(<EmployeeView data={data} save={doSave} empId={empId} onLogout={onLogout}/>);
