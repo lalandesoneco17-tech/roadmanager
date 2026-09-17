@@ -1268,7 +1268,8 @@ function gsExtractId(txt: string): string { const m = String(txt || "").match(/s
 // repos / absence / depot : ce sont des etats, pas des chantiers a recopier.
 function gsEstNonChantier(g: any): boolean {
   const t = normTxt((g.lieu || "") + " " + (g.client || ""));
-  return !t || /^(repos|absent|absent le matin|absente|conge|conges|depot|prepa|effacage)\b/.test(t) || t === "depot";
+  // « deb 16h » = heure de debauche notee par papa ; « chef 0664... » = numero du chef sur la 2e ligne : des notes, pas des chantiers.
+  return !t || /^(repos|absent|absent le matin|absente|conge|conges|depot|prepa|effacage|deb|debauche|chef)\b/.test(t) || t === "depot";
 }
 
 async function toolComparerPlanning(data: any, iso: string): Promise<string> {
