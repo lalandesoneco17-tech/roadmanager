@@ -371,8 +371,11 @@ function getForfaitPrice(data: any, cid: string, machine: any, ft: string, citOp
 // ---- Resolution des noms dictes -> vrais enregistrements -------------------
 // On ne devine JAMAIS : en cas de doute on renvoie une erreur que l'agent
 // transforme en question a l'admin.
+// Surnoms utilises par papa dans le classeur -> prenom RoadManager
+const GS_SURNOMS: any = { jj: "jiji" };
 function resolveEmployee(data: any, q: string): any {
-  const n = normTxt(q);
+  let n = normTxt(q);
+  if (GS_SURNOMS[n]) n = GS_SURNOMS[n];
   const list = (data.employees || []).filter((e: any) => e && e.name);
   if (!n) return { error: "Chauffeur non precise." };
   const first = (e: any) => normTxt(e.name).split(" ")[0];
@@ -392,6 +395,10 @@ function resolveMachine(data: any, q: string, emp?: any): any {
   const dg = (raw.match(/\d+/) || [])[0] || "";
   const list = (data.machines || []).filter((m: any) => m && m.name);
   if (!n) return { error: "Machine non precisee." };
+  // Un identifiant RoadManager (machine deja tranchee par sa position dans le classeur de papa) : pas d'ambiguite
+  // possible entre la balayeuse « volvo » et la citerne « volvo ».
+  const parId = list.find((m: any) => m.id === raw);
+  if (parId) return { machine: parId };
   const numOf = (m: any) => (String(m.name).match(/\d+/) || [])[0] || "";
   // Le pere ecrit "100 cfi", RoadManager stocke "100cfi" : on compare sans les espaces.
   const squash = (x: any) => normTxt(x).replace(/ /g, "");
@@ -1178,19 +1185,20 @@ function gsDayJobs(rows: any, start: number, data?: any): any[] {
       const nuit = gsTrue(gsCell(rows, k + 1, C.chk));
       const paye = gsTrue(gsCell(rows, k, C.paye)) || gsTrue(gsCell(rows, k + 1, C.paye));
       const bon = gsTrue(gsCell(rows, k, C.bon)) || gsTrue(gsCell(rows, k + 1, C.bon));
-      let categorie = b.type, machine = machRaw, machineRM = machRaw;
+      let categorie = b.type, machine = machRaw, machineRM = machRaw, machineRMId = "";
       if (!categorie) {
         categorie = s >= GS_CITERNE_FROM ? "citerne" : "balayeuse";
         // Affichage et cle inchanges (sinon toutes les lignes deja vues repartiraient),
         // mais on transporte le vrai nom RoadManager a cote.
         machine = (GS_MARQUES[machRaw.toUpperCase()] || machRaw) + (machRaw ? " (" + machRaw + ")" : "");
         machineRM = (resolues[s] && resolues[s].name) || "";
+        machineRMId = (resolues[s] && resolues[s].id) || "";
       }
       for (const rr of [k, k + 1]) {
         const cli = gsCell(rows, rr, C.cli), lieu = gsCell(rows, rr, C.lieu), ff = gsCell(rows, rr, C.ff);
         if (!cli && !lieu && !ff) continue;
         out.push({
-          categorie, machine, machineRM, chauffeur: nom, client: cli, chef: gsCell(rows, rr, C.chef),
+          categorie, machine, machineRM, machineRMId, chauffeur: nom, client: cli, chef: gsCell(rows, rr, C.chef),
           lieu, heure: gsHeure(lieu), forfait: ff ? ff + "h" : "",
           nuit, informe, paye, bonEnvoye: bon, ligne: rr + 1,
         });
@@ -1826,7 +1834,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
         traitees.add(n.key);
         continue;
       }
-      machArg = n.g.machineRM;
+      machArg = n.g.machineRMId || n.g.machineRM;
     }
     const e1 = resolveEmployee(full, n.g.chauffeur).emp;
     // CORRECTION : la ligne deja envoyee a ete retouchee. Si le chantier a ete valide dans
@@ -1987,7 +1995,7 @@ async function gsAutoJour(tg: any, iso: string, notifier: boolean): Promise<{ re
       let machArg = String(g.machine || "").replace(/\s*\(.*\)$/, "");
       if (g.categorie !== "raboteuse") {
         if (!g.machineRM) { const code = (String(g.machine).match(/\(([^)]+)\)\s*$/) || [])[1] || g.machine; recap.push("⚠️ " + (g.chauffeur || "?") + " : aucune " + g.categorie + " de RoadManager pour le code « " + code + " »"); erreurs++; continue; }
-        machArg = g.machineRM;
+        machArg = g.machineRMId || g.machineRM;
       }
       const e1 = resolveEmployee(full, g.chauffeur).emp;
       // Chantier existant : celui retenu en memoire, sinon meme jour + chauffeur + lieu, sinon le seul chantier du chauffeur pas encore lie.
