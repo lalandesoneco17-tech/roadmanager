@@ -84,6 +84,11 @@ ce fichier ET le code en même temps.
 
 ## Les pointages
 
+- La **position** n'est demandée qu'une fois par ouverture de l'app ; chaque pointage réutilise la dernière
+  position connue (moins de 3 minutes), sans nouvelle demande. (17/09/2026)
+- Un échec de connexion n'est **jamais mémorisé** : l'app réessaie à chaque pointage et toutes les 30 s, et le
+  chauffeur voit un bandeau tant que des pointages attendent d'être envoyés. (17/09/2026)
+
 - Chaque pointage est une ligne à part dans Supabase. Une **colonne manquante** côté Supabase
   ne bloque plus l'envoi : le champ est ignoré et le pointage part quand même. (08/09/2026)
 - Les pointages qui n'ont pas pu partir sont **rejoués automatiquement** toutes les 30 secondes,
