@@ -2920,6 +2920,17 @@ const _feuilleChef=j=>setFeuille({type:'chef',job:j});
 const _feuilleGps=j=>setFeuille({type:'gps',job:j});
 const _feuilleManque=j=>setFeuille({type:'manque',job:j});
 const MANQUES=['Le point GPS du chantier',"Le chef de chantier et son numéro","L'heure exacte de rendez-vous",'Comment accéder au chantier','Autre chose'];
+// La carte « Maintenant / Je commence » se place APRES les chantiers deja termines de la journee : une fois debauche
+// le midi, le bouton pour re-embaucher le soir vient sous le chantier du matin, pas au-dessus (23/09/2026).
+const _carteDebut=(<div className={'noeud '+(status==='off'?'actif':'fait')}>
+<div className={'carte'+(status==='off'?' actif':'')}>
+<div className="etiquette"><span>{status==='off'?'Maintenant':status==='pause'?'En pause':'Embauche'}</span><span className="h">{status==='off'?(pad2(new Date().getHours())+':'+pad2(new Date().getMinutes())):(lastEntry&&lastEntry.startTime)||''}</span></div>
+{status==='off'&&<div style={{marginTop:9}}><button onClick={()=>doTime('start')}>▶ Je commence</button></div>}
+{status!=='off'&&<div className="meta">Journée commencée.</div>}
+
+</div>
+</div>);
+const _posDebut=(()=>{let p=0;_jourJobs.forEach((j,k)=>{if(j.signature)p=k+1});return p})();
 const _envoyerManque=(j,quoi)=>{
   const nd=JSON.parse(JSON.stringify(_liveData||data));
   if(!nd.messages)nd.messages=[];
@@ -3198,20 +3209,13 @@ return(
 {isNightShift&&<div className="noeud"><div className="alerte" onClick={()=>setVue('heures')} style={{cursor:'pointer'}}><b>⚠</b><span>Journée du {fmtDate(new Date(lastEntry.date))} encore ouverte — vérifie tes heures.</span></div></div>}
 {_enAttente>0&&<div className="noeud"><div className="alerte" onClick={()=>{teQueueFlush().catch(()=>{})}} style={{cursor:'pointer',background:'#fef3c7',borderColor:'#d97706'}}><b>⏳</b><span>{_enAttente} pointage{_enAttente>1?'s':''} pas encore envoyé{_enAttente>1?'s':''} au bureau. Ils partiront tout seuls dès que le réseau répond. Touche ici pour réessayer.</span></div></div>}
 
-<div className={'noeud '+(status==='off'?'actif':'fait')}>
-<div className={'carte'+(status==='off'?' actif':'')}>
-<div className="etiquette"><span>{status==='off'?'Maintenant':status==='pause'?'En pause':'Embauche'}</span><span className="h">{status==='off'?(pad2(new Date().getHours())+':'+pad2(new Date().getMinutes())):(lastEntry&&lastEntry.startTime)||''}</span></div>
-{status==='off'&&<div style={{marginTop:9}}><button onClick={()=>doTime('start')}>▶ Je commence</button></div>}
-{status!=='off'&&<div className="meta">Journée commencée.</div>}
-
-</div>
-</div>
+{_posDebut===0&&_carteDebut}
 
 {_jourJobs.length===0&&<div className="noeud"><div className="carte"><div className="meta" style={{textAlign:'center'}}>Aucun chantier prévu aujourd'hui.</div></div></div>}
 
 {_jourJobs.map((j,k)=>{const fini=!!j.signature;const actif=!fini&&status!=='off';const gps=_gpsDe(j);const complet=j.siteManager&&j.siteManagerPhone&&gps;
-return(
-<div key={j.id} className={'noeud '+(fini?'fait':(actif?'actif':''))}>
+return(<React.Fragment key={j.id}>{k===_posDebut&&k>0&&_carteDebut}
+<div className={'noeud '+(fini?'fait':(actif?'actif':''))}>
 <div className={'carte'+(actif?' actif':'')+(fini?' fini':'')}>
 <div className="etiquette"><span>{(j._hierSoir?'Hier soir · ':'')+(fini?'Chantier '+(k+1)+' terminé':'Chantier '+(k+1)+' sur '+_jourJobs.length)}</span><span className="h">{j.billingStart||''}</span></div>
 <div className="tete">
@@ -3232,7 +3236,8 @@ return(
 {fini&&<div className="fin"><span>Terminé</span><b>{j.signature.signedAt?_hDe(j.signature.signedAt):'✓'}</b></div>}
 {actif&&_blocActions(j,k+1>=_jourJobs.length)}
 </div>
-</div>)})}
+</div></React.Fragment>)})}
+{_jourJobs.length>0&&_posDebut>=_jourJobs.length&&_carteDebut}
 
 {status!=='off'&&_jourJobs.every(j=>j.signature)&&<div className="noeud actif">
 <div className="carte actif">
@@ -3779,7 +3784,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-5</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-6</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
