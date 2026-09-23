@@ -2803,6 +2803,11 @@ if(typeof Notification!=='undefined'&&Notification.permission==='granted'){try{c
 }
 },[data.jobs,empId,data.clients,data.machines]);
 useEffect(()=>{posSuivre()},[]); // une seule demande d'autorisation, a l'ouverture
+// Mes heures : toucher une heure (embauche, pause, reprise, debauche) modifie ou supprime CETTE heure seulement,
+// sans ouvrir la fiche complete (23/09/2026). Supprimer une embauche/debauche supprime le pointage entier.
+const[editChip,setEditChip]=useState(null);
+const _chipSave=()=>{if(!editChip)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const e=(nd.timeEntries||[]).find(t=>t.id===editChip.teId);if(!e){setEditChip(null);return}const v=editChip.val||'';if(editChip.idx>=0){const lp=Array.isArray(e.pauses)?e.pauses:[];if(lp[editChip.idx]){lp[editChip.idx]={...lp[editChip.idx],[editChip.cle]:v||null}}e.pauses=lp;e.pauseMin=lp.reduce((acc,p)=>acc+((p&&p.d&&p.f)?calcDiffMin(p.d,p.f):0),0);const d0=lp[0]||{};e.breakStart=d0.d||'';e.breakEnd=d0.f||''}else{e[editChip.cle]=v;if(editChip.cle==='endTime'&&v&&e.type!=='absence'&&e.type!=='pending'){e.type='done';e.pauseStart=null}if(editChip.cle==='endTime'&&!v){e.type='start'}}save(nd);setEditChip(null)};
+const _chipDelete=()=>{if(!editChip)return;if(editChip.idx>=0){if(!confirm('Supprimer cette pause ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));const e=(nd.timeEntries||[]).find(t=>t.id===editChip.teId);if(e){const lp=(Array.isArray(e.pauses)?e.pauses:[]).filter((_,i)=>i!==editChip.idx);e.pauses=lp;e.pauseMin=lp.reduce((acc,p)=>acc+((p&&p.d&&p.f)?calcDiffMin(p.d,p.f):0),0);const d0=lp[0]||{};e.breakStart=d0.d||'';e.breakEnd=d0.f||'';if(e.type==='pause_start')e.type='start';e.pauseStart=null}save(nd);setEditChip(null)}else{if(!confirm('Supprimer ce pointage en entier (embauche, pauses et débauche) ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));nd.timeEntries=(nd.timeEntries||[]).filter(t=>t.id!==editChip.teId);nd._teDeletes=[{key:'timeEntries',id:editChip.teId}];save(nd);setEditChip(null)}};
 // pointages restes dans la file du telephone (pas encore dans la base) : le chauffeur doit le voir
 const[_enAttente,_setEnAttente]=useState(teQueueGet().length);
 useEffect(()=>{const id=setInterval(()=>_setEnAttente(teQueueGet().length),5000);return()=>clearInterval(id)},[]);
@@ -3306,8 +3311,15 @@ return(
 <div className="ev-haut"><div className="ev-t">{e.t}</div>{e.fige?<span className="prevu">{'prévu '+(e.h||'--:--')}</span>:null}</div>
 {e.sub?<div className="ev-s">{e.sub}</div>:null}
 </div>
-{e.fige?null:<button className={'hchip'+(e.h?'':' vide')+(souci&&e.k==='deb'?' souci':'')} onClick={()=>{if(e.te){setEditTE({...e.te});}}}>{e.h||'--:--'}</button>}
+{e.fige?null:<button className={'hchip'+(e.h?'':' vide')+(souci&&e.k==='deb'?' souci':'')} onClick={()=>{if(!e.te)return;const idx=(e.pause&&Array.isArray(e.te.pauses))?e.te.pauses.indexOf(e.pause):-1;const cle=e.cle||(e.k==='pa1'?'d':'f');const same=editChip&&editChip.teId===e.te.id&&editChip.cle===cle&&editChip.idx===idx;setEditChip(same?null:{teId:e.te.id,cle,idx,val:e.h||''})}}>{e.h||'--:--'}</button>}
 </div>
+{(()=>{if(!e.te||!editChip||editChip.teId!==e.te.id)return null;const idx=(e.pause&&Array.isArray(e.te.pauses))?e.te.pauses.indexOf(e.pause):-1;const cle=e.cle||(e.k==='pa1'?'d':'f');if(editChip.cle!==cle||editChip.idx!==idx)return null;
+ return(<div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',margin:'4px 0 6px',background:'#1e293b',borderRadius:10,border:'1px solid #475569'}}>
+  <input type="time" value={editChip.val} onChange={ev2=>setEditChip({...editChip,val:ev2.target.value})} style={{fontSize:18,fontWeight:800,padding:'8px 10px',borderRadius:8,border:'2px solid #008965',background:'#0f172a',color:'#fff',minWidth:120}}/>
+  <button onClick={_chipSave} style={{padding:'10px 14px',borderRadius:8,border:'none',background:'#008965',color:'#fff',fontWeight:800,fontSize:14}}>OK</button>
+  <button onClick={_chipDelete} style={{padding:'10px 12px',borderRadius:8,border:'2px solid #dc2626',background:'transparent',color:'#dc2626',fontWeight:800,fontSize:14}}>{idx>=0?'Supprimer la pause':'Supprimer le pointage'}</button>
+  <button onClick={()=>setEditChip(null)} style={{padding:'10px 10px',borderRadius:8,border:'none',background:'transparent',color:'#94a3b8',fontWeight:700,fontSize:14}}>Annuler</button>
+ </div>)})()}
 {e.k==='ch2'?<div className="sep"></div>:null}
 </React.Fragment>)})}
 </div>
@@ -3767,7 +3779,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-3</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-4</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
