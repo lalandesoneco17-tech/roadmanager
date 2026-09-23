@@ -57,8 +57,10 @@ ce fichier ET le code en même temps.
 - Un deuxième chauffeur sur la même machine (ex. la 35 : Jérémy le jour, Cédric la nuit) va dans
   le carré de gauche, **au-dessus, séparé par un trait**, en face de sa ligne. Le petit + dans le
   coin du carré sert à l'ajouter.
-- Les cases de papa sont là : **nuit** (ligne rouge), **payé** (client rose), **bon envoyé**
-  (forfait jaune). Les cases client, chef, lieu, forfait restent **blanches, sans texte** dedans.
+- Les cases de papa sont là : **nuit** (ligne rouge), **bon envoyé** (forfait jaune), et **payé** tout à
+  gauche de la carte, un bouton par ligne de chantier, aligné sur sa ligne (client en violet). Les cases
+  client, chef, lieu, forfait restent **blanches, sans texte** dedans. Plus de boutons Dépôt / Repos sur
+  les cartes : les dépôts et repos viennent du planning de papa. (23/09/2026)
 - **L'heure se tape dans le lieu** (« … à 21h ») et devient l'heure du chantier. Aucune heure
   pointée n'est affichée sur le planning : les heures sont dans la page Heures.
 - Le **chiffre d'affaires** du jour est en haut, par raboteuses, balayeuses, citernes et total.
