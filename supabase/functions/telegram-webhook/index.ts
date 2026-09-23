@@ -1881,7 +1881,7 @@ async function gsEnvoyer(tg: any, full: any, sc: any): Promise<any> {
     }
     const socle = baseCorrigee || baseDeplacee;
     const argsL = gsArgsLigne(n.g, machArg);
-    const prop = socle ? buildProposal(full, { job_id: socle.id, ...argsL }, "update", socle) : buildProposal(full, { date: n.iso, ...argsL }, "create");
+    const prop = socle ? buildProposal(full, { job_id: socle.id, ...argsL }, "update", socle) : buildProposal(full, { date: n.iso, ...argsL, transfert: true }, "create");
     if (prop.error) { echecs.push((n.g.chauffeur || "?") + " " + n.iso + " : " + prop.error); traitees.add(n.key); continue; }
     // Deja dans RoadManager a l'identique : on n'envoie rien (la ligne est deja marquee vue).
     if (!socle && chantierDejaDansRM(full, prop.job)) { traitees.add(n.key); continue; }
@@ -2020,7 +2020,8 @@ async function gsAutoJour(tg: any, iso: string, notifier: boolean): Promise<{ re
       if (!base && e1) { const lies = dejaLies(); const cands = jobsDuJour().filter((x: any) => x.employeeId === e1.id && !lies.has(x.id)); if (cands.length === 1) base = cands[0]; }
       if (base && ent && typeof ent === "object" && ent.s === sig && ent.j === base.id) { inchanges++; continue; }
       const args = gsArgsLigne(g, machArg);
-      const prop = base ? buildProposal(full, { job_id: base.id, ...args }, "update", base) : buildProposal(full, { date: iso, ...args }, "create");
+      // Un chantier recopie du classeur part avec le transfert coche d'office (regle du 23/09/2026) ; une mise a jour ne touche pas au choix de l'admin.
+      const prop = base ? buildProposal(full, { job_id: base.id, ...args }, "update", base) : buildProposal(full, { date: iso, ...args, transfert: true }, "create");
       if (prop.error) { recap.push("⚠️ " + (g.chauffeur || "?") + " : " + prop.error); erreurs++; continue; }
       if (!base) {
         const ex = chantierDejaDansRM(full, prop.job);

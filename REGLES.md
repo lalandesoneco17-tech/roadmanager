@@ -27,6 +27,8 @@ ce fichier ET le code en même temps.
 - **Plusieurs chauffeurs au même endroit, chacun avec sa machine, c'est fréquent** : chacun a
   son chantier. Un « chantier déplacé » n'est proposé que si l'ancien chauffeur n'a plus aucune
   ligne ce jour-là, et la fiche dit à qui le chantier est pris. (08/09/2026)
+- Un chantier recopié du classeur a le **transfert coché d'office** (prix de transfert calculé) ; une mise à jour
+  ne change pas ce que l'admin a choisi. Le bouton T est juste à côté du forfait. (23/09/2026)
 - **Pas d'heure inventée, nulle part** : si papa n'écrit pas d'horaire dans le lieu, la fiche n'a
   pas d'heure, et l'app n'affiche pas de 08:00 à sa place. Un chantier créé dans le planning peut
   rester sans heure ; la case heure se vide si on l'efface. (08 et 09/09/2026)
