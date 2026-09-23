@@ -65,7 +65,15 @@ ce fichier ET le code en même temps.
   les cartes : les dépôts et repos viennent du planning de papa. (23/09/2026)
 - **L'heure se tape dans le lieu** (« … à 21h ») et devient l'heure du chantier. Aucune heure
   pointée n'est affichée sur le planning : les heures sont dans la page Heures.
-- Le **chiffre d'affaires** du jour est en haut, par raboteuses, balayeuses, citernes et total.
+- La **barre du haut** (23/09/2026) : la date tout à gauche, au milieu le **chiffre d'affaires** du jour
+  en tableau, **forfaits et transferts séparés**, par raboteuses, balayeuses, citernes, avec le total.
+  Plus d'en-tête de colonne, plus de bouton « pannes » ni « carte planning » dans cette vue.
+- Trois boutons de **déplacement** à droite : **Chauffeur** (on attrape le prénom et on le lâche sur
+  une autre carte, ses chantiers du jour suivent), **Chantier** (on attrape une ligne et on la lâche sur
+  une autre carte, elle prend le chauffeur de cette carte) et **Machine** (on attrape une carte et on la
+  lâche à la place d'une autre ; l'ordre est mémorisé). On recliques le bouton ou « Terminer » pour sortir.
+- Le bouton **Aa** règle l'écriture du planning : taille (A- / A+), gras, style de police. Réglage commun
+  à tous les postes, « Réglage d'origine » remet Arial 14 non gras.
 - La journée entière **tient sur l'écran** : la vue se réduit automatiquement à la taille de
   l'écran, sans défiler. Le bouton « Vue classique » redonne l'ancien planning.
 
