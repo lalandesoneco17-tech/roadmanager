@@ -1313,7 +1313,7 @@ return(
 <div style={{fontSize:PL.empFont,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} title="Ajouter un chantier" style={{background:machColor2,color:'#fff',border:'none',borderRadius:4,width:20,height:20,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'18px',padding:0,flexShrink:0}}>+</button></div>
 {defMach&&<div style={{fontSize:PL.machFont,fontWeight:700,color:machColor2,textAlign:'center',lineHeight:'1.2'}}>{defMach.name}</div>}
-{(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te2=>te2.date===d&&te2.startTime&&te2.endTime);return s+(best?calcWorkedMin(best):0)},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<div style={{fontSize:11,color:C.dim,textAlign:'center',marginTop:2,lineHeight:1.3,background:'#f1f5f9',borderRadius:6,padding:'3px 4px',width:'100%'}}><div>J <b style={{color:C.accent,fontSize:12}}>{fmtDuration(dayMin)}</b></div><div>S <b style={{color:C.accent,fontSize:12}}>{fmtDuration(weekMin)}</b></div></div>)})()}
+{(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{return s+wkTEs.filter(te2=>te2.date===d&&te2.startTime&&te2.endTime).reduce((acc,te2)=>acc+calcWorkedMin(te2),0)},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<div style={{fontSize:11,color:C.dim,textAlign:'center',marginTop:2,lineHeight:1.3,background:'#f1f5f9',borderRadius:6,padding:'3px 4px',width:'100%'}}><div>J <b style={{color:C.accent,fontSize:12}}>{fmtDuration(dayMin)}</b></div><div>S <b style={{color:C.accent,fontSize:12}}>{fmtDuration(weekMin)}</b></div></div>)})()}
 </div>
 {/* Côté droit : ligne placeholder pour saisie chantier (atténuée tant qu'aucun chantier n'a été créé) */}
 <div style={{flex:1,minWidth:0}}>
@@ -1341,7 +1341,7 @@ return(
 <div style={{fontSize:PL.empFont,fontWeight:800,color:C.text,textAlign:'center',lineHeight:'1.2'}}>{emp.name}</div>
 <button onClick={e=>{e.stopPropagation();const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.jobs)nd.jobs=[];nd.jobs.push({id:uid(),date:selDate,employeeId:eId,machineId:grp.m?grp.m.id:emp.machineId||'',clientId:'',agencyName:'',siteManager:'',siteManagerPhone:'',location:'',gps:'',forfaitType:'',priceForfait:0,isNight:false,hasTransfer:false,transferPrice:0,billingStart:'',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false});save(nd)}} title="Ajouter un chantier" style={{background:machColor,color:'#fff',border:'none',borderRadius:4,width:20,height:20,cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:'18px',padding:0,flexShrink:0}}>+</button></div>
 <div style={{fontSize:PL.machFont,fontWeight:700,color:machColor,textAlign:'center',lineHeight:'1.2'}}>{grp.m?grp.m.name:'?'}</div>
-{(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te2=>te2.date===d&&te2.startTime&&te2.endTime);return s+(best?calcWorkedMin(best):0)},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<div style={{fontSize:11,color:C.dim,textAlign:'center',marginTop:2,lineHeight:1.3,background:'#f1f5f9',borderRadius:6,padding:'3px 4px',width:'100%'}}><div>J <b style={{color:C.accent,fontSize:12}}>{fmtDuration(dayMin)}</b></div><div>S <b style={{color:C.accent,fontSize:12}}>{fmtDuration(weekMin)}</b></div></div>)})()}
+{(()=>{const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);const wkTEs=(data.timeEntries||[]).filter(te2=>te2.empId===eId&&te2.date>=monISO&&te2.date<=selDate);const wkDates=[...new Set(wkTEs.filter(te2=>te2.startTime&&te2.endTime).map(te2=>te2.date))];const weekMin=wkDates.reduce((s,d)=>{return s+wkTEs.filter(te2=>te2.date===d&&te2.startTime&&te2.endTime).reduce((acc,te2)=>acc+calcWorkedMin(te2),0)},0);const dayMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):workMin;if(dayMin<=0&&weekMin<=0)return null;return(<div style={{fontSize:11,color:C.dim,textAlign:'center',marginTop:2,lineHeight:1.3,background:'#f1f5f9',borderRadius:6,padding:'3px 4px',width:'100%'}}><div>J <b style={{color:C.accent,fontSize:12}}>{fmtDuration(dayMin)}</b></div><div>S <b style={{color:C.accent,fontSize:12}}>{fmtDuration(weekMin)}</b></div></div>)})()}
 {isMonthly&&<div style={{fontSize:11,color:C.dim,textAlign:'center'}}>{fmtMoney(dailySalary)}/j</div>}
 </div>
 {/* Côté droit: lignes de chantiers */}
@@ -1378,7 +1378,7 @@ const jourMin=(mainTE&&mainTE.startTime&&mainTE.endTime)?calcWorkedMin(mainTE):w
 const dowN=new Date(selDate).getDay();const dfmN=dowN===0?6:dowN-1;const monN=new Date(selDate);monN.setDate(monN.getDate()-dfmN);const monISO=fmtDateISO(monN);
 const wkTEs=(data.timeEntries||[]).filter(te=>te.empId===eId&&te.date>=monISO&&te.date<=selDate);
 const wkDates=[...new Set(wkTEs.filter(te=>te.startTime&&te.endTime).map(te=>te.date))];
-const wkMin=wkDates.reduce((s,d)=>{const best=wkTEs.find(te=>te.date===d&&te.startTime&&te.endTime);return s+(best?calcWorkedMin(best):0)},0);
+const wkMin=wkDates.reduce((s,d)=>s+wkTEs.filter(te=>te.date===d&&te.startTime&&te.endTime).reduce((acc,te)=>acc+calcWorkedMin(te),0),0);
 // Timeline triée chronologiquement (endTime = carré 2 séparé)
 const toM=t=>{if(!t)return 9999;const[h,m]=t.split(':').map(Number);return h*60+m};
 const tItems=[];
@@ -2844,38 +2844,45 @@ const _dateLongue=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'num
 const _pauses=t=>{if(Array.isArray(t.pauses)&&t.pauses.length)return t.pauses;if(t.breakStart&&t.breakEnd)return[{d:t.breakStart,f:t.breakEnd}];return[]};
 
 // la journee comme une suite d'instants, pour l'ecran Mes heures
-const _chaine=(dte,te)=>{
+const _chaine=(dte,tes)=>{
+  tes=(Array.isArray(tes)?tes:(tes?[tes]:[])).slice().sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));
+  const te=tes[0]||null;
   const jbs=_mesJobs.filter(j=>j.date===dte).sort((a,b)=>String(a.billingStart||'').localeCompare(String(b.billingStart||'')));
   const mil=[];
   jbs.forEach(j=>{
     if(j.billingStart) mil.push({k:'ch1',t:j.location||_cli(j)||'Chantier',sub:[_cli(j),_mach(j)].filter(Boolean).join(' · '),h:j.billingStart,fige:true});
     if(j.signature&&j.signature.signedAt) mil.push({k:'ch2',t:'Fin · '+(j.location||_cli(j)||'chantier'),h:_hDe(j.signature.signedAt),job:j});
   });
-  (te?_pauses(te):[]).forEach(p=>{
-    if(p.d) mil.push({k:'pa1',t:'Pause'+(te.mealType?' · '+te.mealType.toLowerCase():''),h:p.d,pause:p,te:te});
-    if(p.f) mil.push({k:'pa2',t:'Reprise',h:p.f,pause:p,te:te});
+  tes.forEach((t2,ix)=>{
+    if(ix>0&&t2.startTime) mil.push({k:'emb',t:'Ré-embauche',h:t2.startTime,te:t2,cle:'startTime'});
+    _pauses(t2).forEach(p=>{
+      if(p.d) mil.push({k:'pa1',t:'Pause'+(t2.mealType?' · '+t2.mealType.toLowerCase():''),h:p.d,pause:p,te:t2});
+      if(p.f) mil.push({k:'pa2',t:'Reprise',h:p.f,pause:p,te:t2});
+    });
+    if(ix<tes.length-1&&t2.endTime) mil.push({k:'deb',t:'Débauche',h:t2.endTime,te:t2,cle:'endTime'});
   });
+  const last=tes[tes.length-1]||null;
   // on classe depuis l'embauche : un chantier de nuit traverse minuit
   const _ref=(te&&te.startTime)||'00:00';
   mil.forEach((e,i)=>{e.i=i;e.k2=e.h?_mn(_ref,e.h):9999});
   mil.sort((a,b)=>a.k2-b.k2||a.i-b.i);
-  const ev=[].concat(te&&te.startTime?[{k:'emb',t:'Embauche',h:te.startTime,te:te,cle:'startTime'}]:[],mil,te&&te.endTime?[{k:'deb',t:'Débauche',h:te.endTime,te:te,cle:'endTime'}]:[]);
+  const ev=[].concat(te&&te.startTime?[{k:'emb',t:'Embauche',h:te.startTime,te:te,cle:'startTime'}]:[],mil,last&&last.endTime?[{k:'deb',t:'Débauche',h:last.endTime,te:last,cle:'endTime'}]:[]);
   const out=[];let dans=false;
   ev.forEach((e,i)=>{
     if(e.k==='ch1')dans=true;
     out.push({ev:e,dans:dans});
-    if(e.k==='ch2')dans=false;
+    if(e.k==='ch2'||e.k==='deb')dans=false;
     const n=ev[i+1];if(!n)return;
-    out.push({nat:e.k==='pa1'?'pause':(dans?'chantier':'trajet'),d:(e.h&&n.h)?_mn(e.h,n.h):null});
+    out.push({nat:e.k==='pa1'?'pause':(e.k==='deb'?'coupure':(dans?'chantier':'trajet')),d:(e.h&&n.h)?_mn(e.h,n.h):null});
   });
   return out;
 };
 
 const _joursHeures=(()=>{
   const par={};
-  (hist30||[]).forEach(t=>{par[t.date]=t});
-  _mesJobs.filter(j=>j.date<=today&&j.date>=(()=>{const d=new Date();d.setDate(d.getDate()-30);return fmtDateISO(d)})()).forEach(j=>{if(!par[j.date])par[j.date]=null});
-  return Object.keys(par).sort().reverse().slice(0,14).map(dte=>({date:dte,te:par[dte]}));
+  (hist30||[]).forEach(t=>{(par[t.date]=par[t.date]||[]).push(t)});
+  _mesJobs.filter(j=>j.date<=today&&j.date>=(()=>{const d=new Date();d.setDate(d.getDate()-30);return fmtDateISO(d)})()).forEach(j=>{if(!par[j.date])par[j.date]=[]});
+  return Object.keys(par).sort().reverse().slice(0,14).map(dte=>({date:dte,tes:par[dte]}));
 })();
 
 const _repasFait=!!(lastEntry&&Array.isArray(lastEntry.pauses)&&lastEntry.pauses.some(p=>p&&p.repas));
@@ -3271,10 +3278,10 @@ return(
 </div>
 <div className="liste-jours">
 {_joursHeures.length===0&&<div className="aide">Aucun pointage sur les 30 derniers jours.</div>}
-{_joursHeures.map(({date:dte,te})=>{
- const ch=_chaine(dte,te);
- const paye=te?calcWorkedMin(te):0;
- const souci=te&&te.startTime&&!te.endTime&&dte<today;
+{_joursHeures.map(({date:dte,tes})=>{
+ const ch=_chaine(dte,tes);
+ const paye=tes.reduce((acc,t)=>acc+calcWorkedMin(t),0);
+ const souci=tes.some(t=>t.startTime&&!t.endTime)&&dte<today;
  return(
 <div key={dte} className={'jour'+(souci?' souci':'')}>
 <div className="jour-tete"><span>{fmtDate(new Date(dte))}</span><span className="tot">{paye?_hm(paye):'—'}</span></div>
@@ -3297,12 +3304,12 @@ return(
 <div className="ev-haut"><div className="ev-t">{e.t}</div>{e.fige?<span className="prevu">{'prévu '+(e.h||'--:--')}</span>:null}</div>
 {e.sub?<div className="ev-s">{e.sub}</div>:null}
 </div>
-{e.fige?null:<button className={'hchip'+(e.h?'':' vide')+(souci&&e.k==='deb'?' souci':'')} onClick={()=>{if(te){setEditTE({...te});}}}>{e.h||'--:--'}</button>}
+{e.fige?null:<button className={'hchip'+(e.h?'':' vide')+(souci&&e.k==='deb'?' souci':'')} onClick={()=>{if(e.te){setEditTE({...e.te});}}}>{e.h||'--:--'}</button>}
 </div>
 {e.k==='ch2'?<div className="sep"></div>:null}
 </React.Fragment>)})}
 </div>
-{te&&<button className="ajout" onClick={()=>{setEditTE({...te})}}>✎ Corriger cette journée</button>}
+{tes.length>0&&<button className="ajout" onClick={()=>{setEditTE({...tes[tes.length-1]})}}>✎ Corriger cette journée</button>}
 </div>)})}
 <div className="aide">Touche une heure pour la corriger.</div>
 </div>
@@ -3453,9 +3460,12 @@ const entries=useMemo(()=>(data.timeEntries||[]).filter(t=>t.empId===selEmp&&t.d
 // Validated entries
 const validated=useMemo(()=>(data.timeEntriesValidated||[]).filter(t=>t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd).sort((a,b)=>a.date.localeCompare(b.date)),[data.timeEntriesValidated,selEmp,dateStart,dateEnd]);
 // Build rows per date for declared
-const declaredRows=useMemo(()=>{return allDates.map(date=>{const holiday=getFrenchHoliday(date);const refDay=getDayRefHours(date);const te=entries.find(t=>t.date===date);if(!te)return{date,week:getISOWeek(date),empty:true,holiday,ref:refDay};const pauseMin=te.pauseMin||0;const worked=toDecHours(te.startTime,te.endTime,pauseMin);const brS=te.breakStart||te.pauseStart||'';const brE=te.breakEnd||te.pauseEnd||'';const createdAt=te.createdAt?new Date(te.createdAt):null;const horodateur=createdAt?pad2(createdAt.getDate())+'/'+pad2(createdAt.getMonth()+1)+' '+pad2(createdAt.getHours())+'h':'';return{date,week:getISOWeek(date),horodateur,absence:te.absenceType||'',start:te.startTime||'',breakStart:brS,meal:te.mealType||'',breakEnd:brE,end:te.endTime||'',worked,night:calcNightHours(te.startTime,te.endTime,data.nightStart||'21:00',data.nightEnd||'06:00'),ref:refDay,holiday,empty:false,id:te.id}})},[allDates,entries]);
+// Plusieurs pointages le meme jour (matin puis re-embauche le soir, chantier de nuit) : la journee est la SOMME
+// de tous ses pointages. Debut = 1re embauche, debauche = derniere, coupure = pause du 1er pointage ou, a defaut,
+// le trou entre deux pointages. (23/09/2026 : seul le 1er pointage etait compte.)
+const declaredRows=useMemo(()=>{return allDates.map(date=>{const holiday=getFrenchHoliday(date);const refDay=getDayRefHours(date);const tes=entries.filter(t=>t.date===date).sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));if(!tes.length)return{date,week:getISOWeek(date),empty:true,holiday,ref:refDay};const te=tes[0];const last=tes[tes.length-1];const worked=tes.reduce((acc,t)=>acc+toDecHours(t.startTime,t.endTime,t.pauseMin||0),0);const night=tes.reduce((acc,t)=>acc+calcNightHours(t.startTime,t.endTime,data.nightStart||'21:00',data.nightEnd||'06:00'),0);let brS=te.breakStart||te.pauseStart||'';let brE=te.breakEnd||te.pauseEnd||'';if(tes.length>1&&!brS){brS=te.endTime||'';brE=tes[1].startTime||''}const abs=tes.find(t=>t.absenceType);const createdAt=te.createdAt?new Date(te.createdAt):null;const horodateur=createdAt?pad2(createdAt.getDate())+'/'+pad2(createdAt.getMonth()+1)+' '+pad2(createdAt.getHours())+'h':'';const segments=tes.length>1?tes.map(t=>(t.startTime||'?')+'▸'+(t.endTime||'?')).join(' + '):'';return{date,week:getISOWeek(date),horodateur,absence:abs?abs.absenceType:'',start:te.startTime||'',breakStart:brS,meal:te.mealType||'',breakEnd:brE,end:last.endTime||'',worked:Math.round(worked*100)/100,night:Math.round(night*100)/100,ref:refDay,holiday,empty:false,id:te.id,nb:tes.length,segments}})},[allDates,entries]);
 // Build rows per date for validated
-const validatedRows=useMemo(()=>{return allDates.map(date=>{const holiday=getFrenchHoliday(date);const refDay=getDayRefHours(date);const te=validated.find(t=>t.date===date);const orig=entries.find(t=>t.date===date);if(!te&&!orig)return{date,week:getISOWeek(date),empty:true,holiday,ref:refDay};if(!te&&orig){const pauseMin=orig.pauseMin||0;const worked=toDecHours(orig.startTime,orig.endTime,pauseMin);return{date,week:getISOWeek(date),start:orig.startTime||'',breakStart:orig.breakStart||orig.pauseStart||'',meal:orig.mealType||'PANIER',breakEnd:orig.breakEnd||orig.pauseEnd||'',end:orig.endTime||'',absence:orig.absenceType||'',night:calcNightHours(orig.startTime,orig.endTime,data.nightStart||'21:00',data.nightEnd||'06:00'),ref:refDay,holiday,worked,empty:false,fromDeclared:true}}const pauseMin2=te.breakStart&&te.breakEnd?((h,m)=>{const[sh2,sm2]=te.breakStart.split(':').map(Number);const[eh2,em2]=te.breakEnd.split(':').map(Number);return(eh2*60+em2)-(sh2*60+sm2)})(0,0):0;const worked2=toDecHours(te.startTime,te.endTime,pauseMin2);return{date,week:getISOWeek(date),start:te.startTime||'',breakStart:te.breakStart||'',meal:te.mealType||'',breakEnd:te.breakEnd||'',end:te.endTime||'',absence:te.absenceType||'',night:calcNightHours(te.startTime,te.endTime,data.nightStart||'21:00',data.nightEnd||'06:00'),ref:te.refHours!=null?te.refHours:refDay,holiday,worked:worked2,empty:false,fromDeclared:false,id:te.id}})},[allDates,validated,entries]);
+const validatedRows=useMemo(()=>{return allDates.map(date=>{const holiday=getFrenchHoliday(date);const refDay=getDayRefHours(date);const te=validated.find(t=>t.date===date);const orig=declaredRows.find(r0=>r0.date===date&&!r0.empty);if(!te&&!orig)return{date,week:getISOWeek(date),empty:true,holiday,ref:refDay};if(!te&&orig){return{...orig,meal:orig.meal||'PANIER',ref:refDay,fromDeclared:true}}const pauseMin2=te.breakStart&&te.breakEnd?((h,m)=>{const[sh2,sm2]=te.breakStart.split(':').map(Number);const[eh2,em2]=te.breakEnd.split(':').map(Number);return(eh2*60+em2)-(sh2*60+sm2)})(0,0):0;const worked2=toDecHours(te.startTime,te.endTime,pauseMin2+(Number(te.pauseMin)||0));return{date,week:getISOWeek(date),start:te.startTime||'',breakStart:te.breakStart||'',meal:te.mealType||'',breakEnd:te.breakEnd||'',end:te.endTime||'',absence:te.absenceType||'',night:calcNightHours(te.startTime,te.endTime,data.nightStart||'21:00',data.nightEnd||'06:00'),ref:te.refHours!=null?te.refHours:refDay,holiday,worked:worked2,empty:false,fromDeclared:false,id:te.id}})},[allDates,validated,entries,declaredRows]);
 // Group by week for totals
 const weekTotals=(rows)=>{const wk={};rows.forEach(r=>{if(!wk[r.week])wk[r.week]={total:0,night:0};if(!r.empty&&!r.absence)wk[r.week].total+=r.worked;wk[r.week].night+=(r.night||0)});const result={};Object.keys(wk).forEach(w=>{const{h25,h50}=calcSupp(wk[w].total,seuil25,seuil50);result[w]={total:wk[w].total,h25,h50,night:wk[w].night}});return result};
 const declWeeks=useMemo(()=>weekTotals(declaredRows),[declaredRows,seuil25,seuil50]);
@@ -3464,9 +3474,9 @@ const valWeeks=useMemo(()=>weekTotals(validatedRows),[validatedRows,seuil25,seui
 const periodTotals=(wks)=>{let t=0,h25=0,h50=0,night=0;Object.values(wks).forEach(w=>{t+=w.total;h25+=w.h25;h50+=w.h50;night+=w.night});return{t,h25,h50,night}};
 const declTot=periodTotals(declWeeks);const valTot=periodTotals(valWeeks);
 // Update validated entry
-const updateVal=(date,field,value)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntriesValidated)nd.timeEntriesValidated=[];let idx=nd.timeEntriesValidated.findIndex(t=>t.empId===selEmp&&t.date===date);if(idx<0){const orig=(nd.timeEntries||[]).find(t=>t.empId===selEmp&&t.date===date);const base=orig?{startTime:orig.startTime||'',breakStart:orig.breakStart||orig.pauseStart||'',mealType:orig.mealType||'PANIER',breakEnd:orig.breakEnd||orig.pauseEnd||'',endTime:orig.endTime||'',absenceType:orig.absenceType||'',nightHours:orig.nightHours||0,refHours:refH}:{startTime:'',breakStart:'12:00',mealType:'PANIER',breakEnd:'13:00',endTime:'',absenceType:'',nightHours:0,refHours:refH};nd.timeEntriesValidated.push({id:uid(),empId:selEmp,date,...base});idx=nd.timeEntriesValidated.length-1}nd.timeEntriesValidated[idx][field]=value;save(nd)};
+const updateVal=(date,field,value)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntriesValidated)nd.timeEntriesValidated=[];let idx=nd.timeEntriesValidated.findIndex(t=>t.empId===selEmp&&t.date===date);if(idx<0){const orig=declaredRows.find(r0=>r0.date===date&&!r0.empty);const base=orig?{startTime:orig.start||'',breakStart:orig.breakStart||'',mealType:orig.meal||'PANIER',breakEnd:orig.breakEnd||'',endTime:orig.end||'',absenceType:orig.absence||'',nightHours:orig.night||0,refHours:refH,pauseMin:Math.max(0,calcDiffMin(orig.start,orig.end)-Math.round(orig.worked*60)-((orig.breakStart&&orig.breakEnd)?calcDiffMin(orig.breakStart,orig.breakEnd):0))}:{startTime:'',breakStart:'12:00',mealType:'PANIER',breakEnd:'13:00',endTime:'',absenceType:'',nightHours:0,refHours:refH};nd.timeEntriesValidated.push({id:uid(),empId:selEmp,date,...base});idx=nd.timeEntriesValidated.length-1}nd.timeEntriesValidated[idx][field]=value;save(nd)};
 // Copy from declared
-const copyFromDeclared=()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntriesValidated)nd.timeEntriesValidated=[];const _rem=nd.timeEntriesValidated.filter(t=>(t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd)).map(t=>t.id);nd.timeEntriesValidated=nd.timeEntriesValidated.filter(t=>!(t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd));nd._teDeletes=_rem.map(id=>({key:'timeEntriesValidated',id}));entries.forEach(te=>{nd.timeEntriesValidated.push({id:uid(),empId:selEmp,date:te.date,startTime:te.startTime||'',breakStart:te.breakStart||te.pauseStart||'',mealType:te.mealType||'PANIER',breakEnd:te.breakEnd||te.pauseEnd||'',endTime:te.endTime||'',absenceType:te.absenceType||'',nightHours:te.nightHours||0,refHours:refH})});save(nd);alert('Heures copiees depuis declare !')};
+const copyFromDeclared=()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntriesValidated)nd.timeEntriesValidated=[];const _rem=nd.timeEntriesValidated.filter(t=>(t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd)).map(t=>t.id);nd.timeEntriesValidated=nd.timeEntriesValidated.filter(t=>!(t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd));nd._teDeletes=_rem.map(id=>({key:'timeEntriesValidated',id}));declaredRows.filter(r0=>!r0.empty).forEach(r0=>{const coupure=(r0.breakStart&&r0.breakEnd)?calcDiffMin(r0.breakStart,r0.breakEnd):0;const extra=Math.max(0,calcDiffMin(r0.start,r0.end)-Math.round(r0.worked*60)-coupure);nd.timeEntriesValidated.push({id:uid(),empId:selEmp,date:r0.date,startTime:r0.start||'',breakStart:r0.breakStart||'',mealType:r0.meal||'PANIER',breakEnd:r0.breakEnd||'',endTime:r0.end||'',absenceType:r0.absence||'',nightHours:r0.night||0,refHours:refH,pauseMin:extra})});save(nd);alert('Heures copiees depuis declare !')};
 // CSV export per table
 const doExportCSV=(type)=>{const rows2=(type==='declared'?declaredRows:validatedRows).filter(r=>!r.empty);const label=type==='declared'?'declarees':'validees';let csv='Semaine;Date;Absence;Debut;Coupure;Repas;Reprise;Debauche;Travail;Ref;Nuit\n';rows2.forEach(r=>{csv+=r.week+';'+frDay(r.date)+';'+(r.absence||'')+';'+r.start+';'+r.breakStart+';'+r.meal+';'+r.breakEnd+';'+r.end+';'+fmtDec(r.worked)+';'+fmtDec(r.ref||0)+';'+fmtDec(r.night||0)+'\n'});const wks=type==='declared'?declWeeks:valWeeks;Object.keys(wks).forEach(w=>{const wk=wks[w];csv+='\nSemaine '+w+';'+fmtDec(wk.total)+';25%: '+fmtDec(wk.h25)+';50%: '+fmtDec(wk.h50)+';Nuit: '+fmtDec(wk.night)+'\n'});const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='soneco_heures_'+label+'_'+empName.replace(/\s/g,'_')+'_'+dateStart+'.csv';a.click();URL.revokeObjectURL(url)};
 // Mail per table
@@ -3504,7 +3514,7 @@ if(r.empty){trs.push(<tr key={r.date} style={{background:bg}}><td style={tdS}></
 const origRow=editable?declaredRows.find(d=>d.date===r.date):null;
 const isDiff=(field)=>editable&&origRow&&!origRow.empty&&origRow[field]!==r[field];
 const cellBg=(field)=>isDiff(field)?'#fff7ed':'transparent';
-if(!editable){trs.push(<tr key={r.date} style={{background:bg}}><td style={tdS}>{r.horodateur||''}</td><td style={tdS}>{r.week}</td>{dateCell}<td style={{...tdS,color:r.absence?C.red:C.dim}}>{r.absence||''}</td><td style={tdS}>{r.start}</td><td style={tdS}>{r.breakStart}</td><td style={{...tdS,fontWeight:600,color:r.meal==='PANIER'?C.accent:C.orange}}>{r.meal}</td><td style={tdS}>{r.breakEnd}</td><td style={tdS}>{r.end}</td><td style={{...tdS,fontWeight:600}}>{fmtDec(r.worked)}</td><td style={tdS}>{fmtDec(r.ref||0)} <span style={{color:C.purple}}>{fmtDec(r.night||0)}</span></td></tr>)}else{
+if(!editable){trs.push(<tr key={r.date} style={{background:bg}}><td style={tdS}>{r.horodateur||''}</td><td style={tdS}>{r.week}</td>{dateCell}<td style={{...tdS,color:r.absence?C.red:C.dim}}>{r.absence||''}</td><td style={tdS}>{r.start}{r.nb>1&&<div style={{fontSize:9,color:C.dim,whiteSpace:'nowrap'}}>{r.nb} pointages : {r.segments}</div>}</td><td style={tdS}>{r.breakStart}</td><td style={{...tdS,fontWeight:600,color:r.meal==='PANIER'?C.accent:C.orange}}>{r.meal}</td><td style={tdS}>{r.breakEnd}</td><td style={tdS}>{r.end}</td><td style={{...tdS,fontWeight:600}}>{fmtDec(r.worked)}</td><td style={tdS}>{fmtDec(r.ref||0)} <span style={{color:C.purple}}>{fmtDec(r.night||0)}</span></td></tr>)}else{
 trs.push(<tr key={r.date} style={{background:bg}}><td style={tdS}></td><td style={tdS}>{r.week}</td>{dateCell}<td style={{...tdS,background:cellBg('absence')}}><select value={r.absence||''} onChange={e=>updateVal(r.date,'absenceType',e.target.value)} style={{...inpSelS,background:cellBg('absence')||'#f8fafc'}}><option value=""></option><option value="maladie">Maladie</option><option value="conge">Conge</option><option value="rtt">RTT</option><option value="autre">Autre</option></select></td><td style={{...tdS,background:cellBg('start')}}><input type="time" value={r.start} onChange={e=>updateVal(r.date,'startTime',e.target.value)} style={{...inpTimeS,background:cellBg('start')||'#f8fafc'}}/></td><td style={{...tdS,background:cellBg('breakStart')}}><input type="time" value={r.breakStart} onChange={e=>updateVal(r.date,'breakStart',e.target.value)} style={{...inpTimeS,background:cellBg('breakStart')||'#f8fafc'}}/></td><td style={{...tdS,background:cellBg('meal')}}><select value={r.meal} onChange={e=>updateVal(r.date,'mealType',e.target.value)} style={{...inpSelS,background:cellBg('meal')||'#f8fafc',fontWeight:600,color:r.meal==='PANIER'?C.accent:C.orange}}><option value="PANIER">PANIER</option><option value="RESTO">RESTO</option></select></td><td style={{...tdS,background:cellBg('breakEnd')}}><input type="time" value={r.breakEnd} onChange={e=>updateVal(r.date,'breakEnd',e.target.value)} style={{...inpTimeS,background:cellBg('breakEnd')||'#f8fafc'}}/></td><td style={{...tdS,background:cellBg('end')}}><input type="time" value={r.end} onChange={e=>updateVal(r.date,'endTime',e.target.value)} style={{...inpTimeS,background:cellBg('end')||'#f8fafc'}}/></td><td style={{...tdS,fontWeight:600}}>{fmtDec(r.worked)}</td><td style={{...tdS,color:C.purple,fontWeight:600}} title="Calcul automatique selon la plage nuit configuree dans les Parametres">{fmtDec(r.night||0)}</td></tr>)}});
 if(lastWeek!==null&&weeks[lastWeek]){const w=weeks[lastWeek];trs.push(<tr key={'w'+lastWeek}><td colSpan={11} style={weekRowS}>Semaine {lastWeek} : <span style={{color:C.accent}}>{fmtDec(w.total)}</span> <span style={{color:C.orange,marginLeft:8}}>25%: {fmtDec(w.h25)}</span> <span style={{color:C.red,marginLeft:8}}>50%: {fmtDec(w.h50)}</span> <span style={{color:C.purple,marginLeft:8}}>Nuit: {fmtDec(w.night)}</span></td></tr>)}
 return(<table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}><thead><tr><th style={thS}>Horodateur</th><th style={thS}>Sem.</th><th style={{...thS,textAlign:'left'}}>DATE</th><th style={thS}>ABSENCE</th><th style={thS}>DEBUT</th><th style={thS}>COUPURE</th><th style={thS}>REPAS</th><th style={thS}>REPRISE</th><th style={thS}>DEBAUCHE</th><th style={thS}>Tps tr.</th><th style={thS}>Ref/Nuit</th></tr></thead><tbody>{trs}</tbody></table>)};
@@ -3755,7 +3765,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-1</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-2</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>

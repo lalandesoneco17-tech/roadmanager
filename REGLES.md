@@ -84,6 +84,10 @@ ce fichier ET le code en même temps.
 
 ## Les pointages
 
+- **Plusieurs pointages dans la journée** (matin puis ré-embauche le soir) : la journée est la somme de tous
+  ses pointages, dans « Mes heures » comme dans la page Heures. Début = première embauche, débauche = dernière,
+  coupure = pause du premier pointage ou le trou entre les deux. (23/09/2026)
+
 - **Chantier de nuit** : le bouton « Je débauche » est toujours accessible sur la dernière carte, même si un
   chantier du lendemain est déjà affiché. Un pointage qui a une heure de débauche est terminé, même corrigé à
   la main dans « Mes heures ». Les heures d'une nuit comptent sur le jour de l'embauche. (23/09/2026)
