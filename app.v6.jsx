@@ -1895,22 +1895,16 @@ return(
 {PL.vue!=='classique'&&(()=>{const rows=[['Raboteuses',caDetail('Raboteuse'),MC.Raboteuse],['Balayeuses',caDetail('Balayeuse'),MC.Balayeuse],['Citernes',caDetail('Citerne'),MC.Citerne]];const tot={f:rows.reduce((a,r)=>a+r[1].f,0),t:rows.reduce((a,r)=>a+r[1].t,0)};
 const modeBtn=(k,txt,title)=>(<button onClick={()=>setModeTab(modeTab===k?'':k)} title={title} style={{...btnStyle(modeTab===k?'#f59e0b':C.dim,modeTab===k),fontSize:12,padding:'5px 9px'}}>{txt}</button>);
 const cell={padding:'1px 8px',fontSize:12,textAlign:'right',whiteSpace:'nowrap'};
-return(<div style={{display:'flex',alignItems:'center',marginBottom:8,gap:10}}>
+return(<div style={{marginBottom:8}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
 {/* Gauche : la date */}
 <div style={{display:'flex',alignItems:'center',gap:6}}>
 <button onClick={()=>navDate(-1)} style={{...btnStyle(C.dim),padding:'6px 12px'}}>{'<'}</button>
-<span style={{fontWeight:800,fontSize:30,color:'#fff',padding:'2px 10px',letterSpacing:'0.5px',whiteSpace:'nowrap'}}>{fmtDate(new Date(selDate))}</span>
+<span style={{fontWeight:800,fontSize:26,color:'#fff',padding:'2px 8px',letterSpacing:'0.5px',whiteSpace:'nowrap'}}>{fmtDate(new Date(selDate))}</span>
 <button onClick={()=>navDate(1)} style={{...btnStyle(C.dim),padding:'6px 12px'}}>{'>'}</button>
 <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:135,marginLeft:4,padding:'6px 8px'}}/>
 </div>
-{/* Milieu : chiffre d'affaires, forfaits et transferts separes */}
-<div style={{margin:'0 auto',background:C.card,borderRadius:8,border:'1px solid '+C.border,padding:'2px 4px'}}>
-<table style={{borderCollapse:'collapse'}}><thead><tr><th style={{...cell,textAlign:'left',color:C.dim,fontWeight:600,fontSize:10}}></th><th style={{...cell,color:C.dim,fontWeight:600,fontSize:10}}>FORFAITS</th><th style={{...cell,color:C.dim,fontWeight:600,fontSize:10}}>TRANSFERTS</th><th style={{...cell,color:C.dim,fontWeight:600,fontSize:10}}>TOTAL</th></tr></thead>
-<tbody>{rows.map(([lb,v,cc])=><tr key={lb}><td style={{...cell,textAlign:'left',fontWeight:700,color:cc}}>{lb}</td><td style={cell}>{fmtMoney(v.f)}</td><td style={{...cell,color:C.purple}}>{fmtMoney(v.t)}</td><td style={{...cell,fontWeight:700}}>{fmtMoney(v.f+v.t)}</td></tr>)}
-<tr style={{borderTop:'1px solid '+C.border}}><td style={{...cell,textAlign:'left',fontWeight:800}}>Total</td><td style={{...cell,fontWeight:700}}>{fmtMoney(tot.f)}</td><td style={{...cell,fontWeight:700,color:C.purple}}>{fmtMoney(tot.t)}</td><td style={{...cell,fontWeight:800,color:C.accent}}>{fmtMoney(tot.f+tot.t)}</td></tr></tbody></table>
-</div>
 {/* Droite : deplacer, ecriture, vue */}
-<div style={{display:'flex',gap:6,alignItems:'center',position:'relative'}}>
+<div style={{display:'flex',gap:6,alignItems:'center',position:'relative',marginLeft:'auto'}}>
 {modeBtn('chauffeur','👤 Chauffeur','Déplacer un chauffeur : glisse son nom sur une autre carte')}
 {modeBtn('chantier','🚧 Chantier','Déplacer un chantier : glisse sa ligne sur une autre carte')}
 {modeBtn('machine','🚜 Machine','Déplacer une machine : glisse sa carte à la place d une autre')}
@@ -1924,6 +1918,15 @@ return(<div style={{display:'flex',alignItems:'center',marginBottom:8,gap:10}}>
 <button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));nd.planningLayout={...(nd.planningLayout||{}),vue:'classique'};save(nd)}} style={{...btnStyle(C.dim),fontSize:12,padding:'5px 9px'}} title="Revenir a l ancienne vue">Vue classique</button>
 <button onClick={()=>{if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen().catch(()=>{})}}} style={{...btnStyle('#7c3aed'),fontSize:12,padding:'5px 9px'}} title="Plein ecran (Echap pour sortir)">⛶</button>
 {typeof setSbHidden==='function'&&<button onClick={()=>setSbHidden(!sbHidden)} style={{...btnStyle('#0f766e'),fontSize:12,padding:'5px 9px'}} title={sbHidden?'Reafficher le menu':'Masquer le menu'}>{sbHidden?'▶':'◀'}</button>}
+</div>
+</div>
+{/* Milieu : chiffre d'affaires, forfaits et transferts separes, en largeur et en gros */}
+<div style={{display:'flex',gap:10,alignItems:'stretch',flexWrap:'wrap'}}>
+{[...rows.map(([lb,v,cc])=>[lb,v,cc,false]),['TOTAL',tot,C.accent,true]].map(([lb,v,cc,isTot])=>{const eur=x=>(Number(x)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';const nb=(titre,val,col)=>(<div style={{textAlign:'center',flex:1}}><div style={{fontSize:11,color:C.dim,fontWeight:600,letterSpacing:.5}}>{titre}</div><div style={{fontSize:22,fontWeight:800,color:col,whiteSpace:'nowrap',lineHeight:1.15}}>{eur(val)}</div></div>);
+return(<div key={lb} style={{background:C.card,border:'1px solid '+(isTot?cc:C.border),borderLeft:'5px solid '+cc,borderRadius:8,padding:'4px 12px',display:'flex',flexDirection:'column',gap:1,flex:1,minWidth:330}}>
+<div style={{fontWeight:800,color:cc,fontSize:13,textTransform:'uppercase',letterSpacing:.6}}>{lb}</div>
+<div style={{display:'flex',alignItems:'center',gap:8}}>{nb('FORFAITS',v.f,C.text)}<span style={{color:C.dim,fontSize:18}}>+</span>{nb('TRANSFERTS',v.t,C.purple)}<span style={{color:C.dim,fontSize:18}}>=</span>{nb('TOTAL',v.f+v.t,isTot?cc:C.text)}</div>
+</div>)})}
 </div>
 </div>)})()}
 {modeTab&&PL.vue!=='classique'&&<div style={{background:'#fef3c7',border:'1px solid #f59e0b',color:'#92400e',borderRadius:8,padding:'6px 12px',marginBottom:8,fontSize:13,fontWeight:600}}>{modeTab==='chauffeur'?'Déplacement des chauffeurs : attrape un prénom et lâche-le sur une autre carte. Ses chantiers du jour suivent.':modeTab==='chantier'?'Déplacement des chantiers : attrape une ligne et lâche-la sur une autre carte.':'Déplacement des machines : attrape une carte et lâche-la à la place d une autre.'} <span onClick={()=>setModeTab('')} style={{marginLeft:12,cursor:'pointer',textDecoration:'underline'}}>Terminer</span></div>}
@@ -3831,7 +3834,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-12</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-13</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
