@@ -1820,8 +1820,6 @@ return(<div key={j.id} style={{display:'flex',alignItems:'center',gap:5,padding:
 <select value={j.forfaitType||''} title="Forfait" onChange={e=>{const val=e.target.value;modif(j.id,(jj,nd)=>{jj.forfaitType=val;if(!m)return;const p=getForfaitPrice(nd,jj.clientId,m,val,jj.citOption,jj.isNight);if(p)jj.priceForfait=p;else if(val){let k=getForfaitKey(nd,jj.clientId,m)||'?';if(m.type==='Citerne')k+='_'+(jj.citOption||'Avec chauffeur');const cn=((nd.clients||[]).find(c=>c.id===jj.clientId)||{}).name||'(pas de client)';setTimeout(()=>alert('⚠ Aucun tarif configure\n\nMachine : '+m.name+'\nForfait : '+val+'\nClient : '+cn+'\n\nCle recherchee : '+k+'\n\nVa dans Forfaits pour saisir le tarif.'),50)}})}} style={boxS(50,{...jaune,padding:'2px 2px',textAlign:'center'})}><option value=""></option>{(m&&m.type==='Citerne'?['Demi-journee','Journee']:['2h','4h','6h','8h','10h']).map(f=><option key={f} value={f}>{f}</option>)}</select>
 {petitBtn('T','Transfert',()=>modif(j.id,(jj,nd)=>{jj.hasTransfer=!jj.hasTransfer;if(jj.hasTransfer&&!jj.transferPrice&&m){const tp=getTransferPrice(nd,jj.clientId,m,jj.citOption,jj.isNight);jj.transferPrice=tp||0}}),C.purple,!!j.hasTransfer)}
 <Coche on={!!j.bonEnvoye} color="#ca8a04" label="bon" title="Bon envoyé" onClick={()=>modif(j.id,jj=>{jj.bonEnvoye=!jj.bonEnvoye})}/>
-{petitBtn('D','Dupliquer sur les jours suivants',()=>{setDupJobId(j.id);setDupDays(1)},'#d97706',false)}
-{petitBtn('▼','Détails du chantier (GPS, trajets, coûts, rapport machine)',()=>setViewDetail(j.id),C.dim,false)}
 <button title="Supprimer" onClick={()=>{if(confirm('Supprimer ?')){const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'jobs',j.id);nd.jobs=nd.jobs.filter(x=>x.id!==j.id);save(nd)}}} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red,padding:'0 2px',lineHeight:1}}>×</button>
 </div>)};
 const ligneDepot=(dj)=>{const dep=getDepot(dj.depotId);const isRest=dj.rest||dj.depotActivity==='Repos';return(<div key={dj.id} style={{display:'flex',alignItems:'center',gap:8,padding:'3px 10px',height:H+8,boxSizing:'border-box',background:isRest?'#fee2e2':'#f1f5f9',borderBottom:'1px solid '+C.border+'66'}}><span style={{fontSize:14,fontWeight:700,color:isRest?C.red:'#64748b'}}>{isRest?'😴 REPOS':'🏭 Dépôt'+(dep?' — '+dep.name:'')+(dj.depotActivity?' — '+dj.depotActivity:'')+(dj.depotDescription?' ('+dj.depotDescription+')':'')}</span><button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));tombstone(nd,'jobs',dj.id);nd.jobs=nd.jobs.filter(x=>x.id!==dj.id);save(nd)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.red}}>×</button></div>)};
@@ -3785,7 +3783,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-9</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-10</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
