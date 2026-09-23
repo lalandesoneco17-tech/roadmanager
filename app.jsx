@@ -2880,9 +2880,11 @@ const _chaine=(dte,tes)=>{
 
 const _joursHeures=(()=>{
   const par={};
+  // Tous les jours des 14 derniers jours, meme sans pointage : le chauffeur doit pouvoir ajouter une journee oubliee (23/09/2026)
+  for(let k=0;k<14;k++){const d=new Date();d.setDate(d.getDate()-k);par[fmtDateISO(d)]=[]}
   (hist30||[]).forEach(t=>{(par[t.date]=par[t.date]||[]).push(t)});
   _mesJobs.filter(j=>j.date<=today&&j.date>=(()=>{const d=new Date();d.setDate(d.getDate()-30);return fmtDateISO(d)})()).forEach(j=>{if(!par[j.date])par[j.date]=[]});
-  return Object.keys(par).sort().reverse().slice(0,14).map(dte=>({date:dte,tes:par[dte]}));
+  return Object.keys(par).sort().reverse().slice(0,21).map(dte=>({date:dte,tes:par[dte]}));
 })();
 
 const _repasFait=!!(lastEntry&&Array.isArray(lastEntry.pauses)&&lastEntry.pauses.some(p=>p&&p.repas));
@@ -3309,7 +3311,7 @@ return(
 {e.k==='ch2'?<div className="sep"></div>:null}
 </React.Fragment>)})}
 </div>
-{tes.length>0&&<button className="ajout" onClick={()=>{setEditTE({...tes[tes.length-1]})}}>✎ Corriger cette journée</button>}
+{tes.length>0?<button className="ajout" onClick={()=>{setEditTE({...tes[tes.length-1]})}}>✎ Corriger cette journée</button>:<button className="ajout" onClick={()=>{setManDate(dte);setShowManual(true)}}>➕ Ajouter mes heures de ce jour</button>}
 </div>)})}
 <div className="aide">Touche une heure pour la corriger.</div>
 </div>
@@ -3765,7 +3767,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-2</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-3</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
