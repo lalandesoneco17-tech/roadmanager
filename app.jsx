@@ -2669,8 +2669,9 @@ const dayEntries=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date===toda
 const openShift=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.startTime&&!t.endTime&&t.type!=='absence'&&t.type!=='pending').sort((a,b)=>(b.date+(b.startTime||'')).localeCompare(a.date+(a.startTime||'')))[0];
 // lastEntry = shift en cours (peut etre d'un jour anterieur si shift de nuit), sinon dernier de la journee
 const lastEntry=openShift||dayEntries[dayEntries.length-1];
-const status=!lastEntry||lastEntry.type==='done'?'off':lastEntry.type==='pause_start'?'pause':'on';
-const isNightShift=lastEntry&&lastEntry.date!==today&&lastEntry.type!=='done';
+// Chantiers de nuit (23/09/2026) : un pointage qui a une debauche est termine, meme corrige a la main (type reste 'start').
+const status=!lastEntry||lastEntry.type==='done'||lastEntry.endTime?'off':lastEntry.type==='pause_start'?'pause':'on';
+const isNightShift=lastEntry&&lastEntry.date!==today&&lastEntry.type!=='done'&&!lastEntry.endTime;
 const doTime=(type)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntries)nd.timeEntries=[];const now=new Date();const time=pad2(now.getHours())+':'+pad2(now.getMinutes());let _cibleId=null;
 if(type==='start'){_cibleId=uid();nd.timeEntries.push({id:_cibleId,empId,date:today,type:'start',startTime:time,endTime:null,pauseStart:null,pauseEnd:null,pauseMin:0,pauses:[],createdAt:new Date().toISOString(),breakStart:'',breakEnd:'',mealType:'PANIER',absenceType:'',nightHours:0})}
 else if(type==='pause_start'&&lastEntry){_cibleId=lastEntry.id;const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='pause_start';e.pauseStart=time;e.breakStart=time;e.pauses=[...(Array.isArray(e.pauses)?e.pauses:[]),{d:time,f:null}]}}
@@ -2695,7 +2696,7 @@ let totalWork=0,totalPause=0;periodTE.forEach(t=>{if(t.startTime&&t.endTime){tot
 const weeklyTotal=useMemo(()=>{const now=new Date();const day=now.getDay();const diff=now.getDate()-day+(day===0?-6:1);const mon=new Date(now);mon.setDate(diff);const sun=new Date(mon);sun.setDate(mon.getDate()+6);const ws=fmtDateISO(mon);const we=fmtDateISO(sun);let wt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ws&&t.date<=we).forEach(t=>{wt+=calcWorkedMin(t)});return wt},[data.timeEntries,empId]);
 const monthlyTotal=useMemo(()=>{const now=new Date();const ms=now.getFullYear()+'-'+pad2(now.getMonth()+1)+'-01';const last=new Date(now.getFullYear(),now.getMonth()+1,0);const me=fmtDateISO(last);let mt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ms&&t.date<=me).forEach(t=>{mt+=calcWorkedMin(t)});return mt},[data.timeEntries,empId]);
 const dates=[...new Set([...periodTE.map(t=>t.date),...periodJobs.map(j=>j.date)])].sort().reverse();
-const saveEdit=()=>{if(!editTE)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const idx=nd.timeEntries.findIndex(t=>t.id===editTE.id);if(idx>=0)nd.timeEntries[idx]=editTE;save(nd);setEditTE(null)};
+const saveEdit=()=>{if(!editTE)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const idx=nd.timeEntries.findIndex(t=>t.id===editTE.id);if(idx>=0){const e2={...editTE};if(e2.startTime&&e2.endTime&&e2.type!=='absence'&&e2.type!=='pending'){e2.type='done';e2.pauseStart=null}nd.timeEntries[idx]=e2}save(nd);setEditTE(null)};
 const delTE=(tid)=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));nd.timeEntries=nd.timeEntries.filter(t=>t.id!==tid);nd._teDeletes=[{key:'timeEntries',id:tid}];save(nd)};
 const[tab,setTab]=useState('heures');
 const[selectedMachineId,setSelectedMachineId]=useState((emp&&emp.machineId)||'');
@@ -2895,7 +2896,8 @@ const _blocActions=(job,dernier)=>(
     :<React.Fragment>
       <button className="pausebtn" onClick={()=>doTime('pause_start')}>⏸ Pause</button>
       {job
-       ?<button className="creux" onClick={()=>endJob(job)}>{'🏁 '+(dernier?'Fin de chantier':'Fin · passer au suivant')}</button>
+       ?<React.Fragment><button className="creux" onClick={()=>endJob(job)}>{'🏁 '+(dernier?'Fin de chantier':'Fin · passer au suivant')}</button>
+         {dernier&&<button className="rouge" onClick={()=>{if(confirm('Débaucher maintenant ? Le chantier restera sans fin de chantier.'))doTime('done')}}>🌙 Je débauche</button>}</React.Fragment>
        :<button className="rouge" onClick={()=>doTime('done')}>🌙 Je débauche</button>}
      </React.Fragment>}
    </div>);
@@ -3753,7 +3755,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.17-4</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-1</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>

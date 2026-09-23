@@ -84,6 +84,10 @@ ce fichier ET le code en même temps.
 
 ## Les pointages
 
+- **Chantier de nuit** : le bouton « Je débauche » est toujours accessible sur la dernière carte, même si un
+  chantier du lendemain est déjà affiché. Un pointage qui a une heure de débauche est terminé, même corrigé à
+  la main dans « Mes heures ». Les heures d'une nuit comptent sur le jour de l'embauche. (23/09/2026)
+
 - Un **point GPS** est pris uniquement à l'embauche, à la pause, à la reprise, à la débauche et à la fin de
   chantier. Aucun suivi en continu. L'autorisation du téléphone est demandée une fois, à l'ouverture. (17/09/2026)
 - Un échec de connexion n'est **jamais mémorisé** : l'app réessaie à chaque pointage et toutes les 30 s, et le
