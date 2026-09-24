@@ -1069,8 +1069,8 @@ const envoyerChantier=async(j)=>{const cfg=_liveData||data;const tok=cfg.telegra
 const fitRef=useRef(null);
 // Vue tableau (23/09/2026) : mode de deplacement (chauffeur / chantier / machine par glisser-deposer), reglage de l'ecriture
 const[modeTab,setModeTab]=useState('');const[dragTab,setDragTab]=useState(null);const[showFont,setShowFont]=useState(false);
-const caWrapRef=useRef(null),caRowRef=useRef(null);const[caZoom,setCaZoom]=useState(1);
-useEffect(()=>{const f=()=>{const w=caWrapRef.current,r=caRowRef.current;if(!w||!r)return;const nat=r.scrollWidth/(caZoom||1);const z=Math.max(0.7,Math.min(1,(w.clientWidth-4)/Math.max(1,nat)));if(Math.abs(z-caZoom)>0.01)setCaZoom(z)};f();window.addEventListener('resize',f);return()=>window.removeEventListener('resize',f)});
+const caWrapRef=useRef(null),caRowRef=useRef(null),barRef=useRef(null),dateRef=useRef(null),btnRef=useRef(null);const[caZoom,setCaZoom]=useState(1);const[caLigne2,setCaLigne2]=useState(false);
+useEffect(()=>{const f=()=>{const r=caRowRef.current,b=barRef.current,dt=dateRef.current,bt=btnRef.current;if(!r||!b||!dt||!bt)return;const nat=r.scrollWidth/(caLigne2?1:(caZoom||1));const avail=b.clientWidth-dt.offsetWidth-bt.offsetWidth-24;const z=avail/Math.max(1,nat);if(z>=0.7){if(caLigne2)setCaLigne2(false);const nz=Math.min(1,z);if(Math.abs(nz-caZoom)>0.01)setCaZoom(nz)}else{if(!caLigne2)setCaLigne2(true);if(caZoom!==1)setCaZoom(1)}};f();window.addEventListener('resize',f);return()=>window.removeEventListener('resize',f)});
 const TF={size:14,bold:false,family:'Arial',...(PL.tabFont||{})};
 const setTabFont=(patch)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));nd.planningLayout={...(nd.planningLayout||{}),tabFont:{...TF,...patch}};save(nd)};
 const caDetail=t=>{const js=dayMissions.filter(j=>((data.machines||[]).find(m=>m.id===j.machineId)||{}).type===t);return{f:js.reduce((a,j)=>a+(j.priceForfait||0),0),t:js.reduce((a,j)=>a+(j.hasTransfer?(j.transferPrice||0):0),0)}};
@@ -1897,17 +1897,17 @@ return(
 {PL.vue!=='classique'&&(()=>{const rows=[['Raboteuses',caDetail('Raboteuse'),MC.Raboteuse],['Balayeuses',caDetail('Balayeuse'),MC.Balayeuse],['Citernes',caDetail('Citerne'),MC.Citerne]];const tot={f:rows.reduce((a,r)=>a+r[1].f,0),t:rows.reduce((a,r)=>a+r[1].t,0)};
 const modeBtn=(k,txt,title)=>(<button onClick={()=>setModeTab(modeTab===k?'':k)} title={title} style={{...btnStyle(modeTab===k?'#f59e0b':C.dim,modeTab===k),fontSize:12,padding:'5px 7px',whiteSpace:'nowrap'}}>{txt}</button>);
 const cell={padding:'1px 8px',fontSize:12,textAlign:'right',whiteSpace:'nowrap'};
-return(<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+return(<div ref={barRef} style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,flexWrap:'wrap'}}>
 {/* Gauche : la date */}
-<div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+<div ref={dateRef} style={{display:'flex',alignItems:'center',gap:6,flexShrink:0,order:0}}>
 <button onClick={()=>navDate(-1)} style={{...btnStyle(C.dim),padding:'6px 12px'}}>{'<'}</button>
 <span style={{fontWeight:800,fontSize:22,color:'#fff',padding:'2px 4px',letterSpacing:'0.3px',whiteSpace:'nowrap'}}>{fmtDate(new Date(selDate))}</span>
 <button onClick={()=>navDate(1)} style={{...btnStyle(C.dim),padding:'6px 12px'}}>{'>'}</button>
 <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:122,marginLeft:2,padding:'5px 6px'}}/>
 </div>
 {/* Milieu : chiffre d'affaires, forfaits et transferts separes, fond sombre, reduit pour tenir entre la date et les boutons */}
-<div ref={caWrapRef} style={{flex:1,minWidth:0,display:'flex',justifyContent:'center',overflow:'hidden'}}>
-<div ref={caRowRef} style={{display:'flex',gap:8,alignItems:'stretch',zoom:caZoom}}>
+<div ref={caWrapRef} style={caLigne2?{flexBasis:'100%',display:'flex',justifyContent:'center',order:2,marginTop:2}:{flex:1,minWidth:0,display:'flex',justifyContent:'center',overflow:'hidden',order:1}}>
+<div ref={caRowRef} style={{display:'flex',gap:8,alignItems:'stretch',zoom:caLigne2?1:caZoom,flexWrap:caLigne2?'wrap':'nowrap',justifyContent:'center'}}>
 {[...rows.map(([lb,v,cc])=>[lb,v,cc,false]),['TOTAL',tot,'#fbbf24',true]].map(([lb,v,cc,isTot])=>{const eur=x=>(Number(x)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';const petit=(titre,val,col)=>(<div style={{display:'flex',justifyContent:'space-between',gap:8,lineHeight:1.15}}><span style={{fontSize:9,color:'#94a3b8',fontWeight:600,letterSpacing:.4}}>{titre}</span><span style={{fontSize:12,fontWeight:700,color:col,whiteSpace:'nowrap'}}>{eur(val)}</span></div>);
 return(<div key={lb} style={{background:'#0b1220',border:'1px solid '+(isTot?cc:'#334155'),borderLeft:'5px solid '+cc,borderRadius:8,padding:'3px 8px',display:'flex',flexDirection:'column',gap:1}}>
 <div style={{fontWeight:800,color:cc,fontSize:11,textTransform:'uppercase',letterSpacing:.6,lineHeight:1.1}}>{lb}</div>
@@ -1920,7 +1920,7 @@ return(<div key={lb} style={{background:'#0b1220',border:'1px solid '+(isTot?cc:
 </div>
 </div>
 {/* Droite : deplacer, ecriture, vue */}
-<div style={{display:'flex',gap:6,alignItems:'center',position:'relative',flexShrink:0}}>
+<div ref={btnRef} style={{display:'flex',gap:6,alignItems:'center',position:'relative',flexShrink:0,order:caLigne2?1:2,marginLeft:caLigne2?'auto':0}}>
 {modeBtn('chauffeur','👤 Chauffeur','Déplacer un chauffeur : glisse son nom sur une autre carte')}
 {modeBtn('chantier','🚧 Chantier','Déplacer un chantier : glisse sa ligne sur une autre carte')}
 {modeBtn('machine','🚜 Machine','Déplacer une machine : glisse sa carte à la place d une autre')}
@@ -3841,7 +3841,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-3</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-4</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
@@ -4504,7 +4504,8 @@ Date du jour : ${t} (${fmtDate(t)}). Heure : ${new Date().toTimeString().slice(0
 Tu parles francais, naturellement, comme un collegue : phrases courtes, pas de listes, pas de mise en forme, pas de jargon. Va droit au but. Si l'admin te coupe, arrete-toi.
 Tu n'inventes JAMAIS une donnee : pour repondre sur le planning, les heures, les pannes, le chiffre d'affaires ou le stock, appelle d'abord l'outil correspondant, puis reponds avec ce qu'il renvoie. Si l'outil ne renvoie rien, dis-le.
 Quand l'admin demande de creer, modifier ou supprimer un chantier, ou de retenir une regle, utilise proposer_modification ou memoriser_regle : ca cree une proposition que l'admin valide a l'ecran. Dis-lui clairement que c'est en attente de sa validation. Ne dis jamais que c'est fait tant que tu n'as pas recu la confirmation.
-Si un nom de chauffeur, de machine ou de client est ambigu, pose la question avant de proposer.
+Les prenoms des chauffeurs sont enregistres en minuscules et sans accent (« jerome » = Jerome, « jean phi » = Jean-Philippe) : fais le rapprochement toi-meme, ne dis jamais que tu ne trouves pas quelqu'un qui est dans la liste. Un chauffeur absent du planning du jour n'a rien de prevu ce jour-la : dis-le comme ca.
+Si un nom de chauffeur, de machine ou de client est vraiment ambigu, pose la question avant de proposer.
 Regles de l'entreprise :
 - Jamais d'heure inventee : si l'admin ne donne pas d'heure de debut, on n'en met pas (pas de 08:00 par defaut).
 - « depot » seul = notre depot (le chauffeur reste au depot) ; « depot Colas » ou un depot client = un chantier.
@@ -4518,7 +4519,7 @@ const emps=d.employees||[],machs=d.machines||[],clis=d.clients||[];
 const empN=id=>{const e=emps.find(x=>x.id===id);return e?e.name:''};const machOf=id=>machs.find(x=>x.id===id);const cliN=id=>{const c=clis.find(x=>x.id===id);return c?c.name:''};
 const chantiers=(date)=>(d.jobs||[]).filter(j=>j.date===date).map(j=>{const m=machOf(j.machineId);const sig=j.signature||{};return{id:j.id,statut:j.type==='depot'?'depot':j.type==='repos'?'repos':'chantier',chauffeur:empN(j.employeeId),machine:m?m.name:'',type_machine:m?m.type:'',client:cliN(j.clientId)||j.agencyName||'',lieu:j.location||'',heure_debut:j.billingStart||'',forfait:j.forfaitType||'',prix_forfait:j.priceForfait||0,transfert:!!j.hasTransfer,prix_transfert:j.hasTransfer?(j.transferPrice||0):0,nuit:!!j.isNight,chef:j.siteManager||'',envoye_au_chauffeur:!!j.sent,lu_par_chauffeur:!!j.ack,fin_de_chantier_pointee:sig.signedAt?String(sig.signedAt).slice(11,16):'',duree_min:sig.durationMin||0,paye:!!j.paid}});
 const ca=(list)=>{const r={};list.forEach(j=>{if(j.statut!=='chantier')return;const k=j.type_machine||'Autre';r[k]=r[k]||{forfaits:0,transferts:0,nb:0};r[k].forfaits+=j.prix_forfait;r[k].transferts+=j.prix_transfert;r[k].nb++});const tot={forfaits:0,transferts:0,nb:0};Object.values(r).forEach(v=>{tot.forfaits+=v.forfaits;tot.transferts+=v.transferts;tot.nb+=v.nb});r.total={...tot,total:tot.forfaits+tot.transferts};return r};
-if(name==='planning'){const date=vocalDate(args.date);const list=chantiers(date);return{date,jour:fmtDate(date),chantiers:list,chiffre_affaires:ca(list)}}
+if(name==='planning'){const date=vocalDate(args.date);const list=chantiers(date);const presents=new Set(list.map(c=>c.chauffeur));return{date,jour:fmtDate(date),chantiers:list,chauffeurs_sans_rien_de_prevu:emps.map(e=>e.name).filter(n=>n&&!presents.has(n)),chiffre_affaires:ca(list)}}
 if(name==='pointages'){const date=vocalDate(args.date);const tes=(d.timeEntries||[]).filter(t=>t.date===date&&!t.deleted);const parEmp={};tes.forEach(t=>{const n=empN(t.empId)||t.empId;parEmp[n]=parEmp[n]||[];parEmp[n].push({embauche:t.startTime||'',debauche:t.endTime||'',pause_min:t.pauseMin||0,heures:t.startTime&&t.endTime?+(toDecHours(t.startTime,t.endTime,t.pauseMin||0)).toFixed(2):null,en_cours:!!t.startTime&&!t.endTime})});const avecChantier=[...new Set((d.jobs||[]).filter(j=>j.date===date&&j.type!=='depot'&&j.type!=='repos').map(j=>empN(j.employeeId)).filter(Boolean))];const sansPointage=avecChantier.filter(n=>!parEmp[n]);return{date,jour:fmtDate(date),pointages:parEmp,chauffeurs_avec_chantier_sans_pointage:sansPointage}}
 if(name==='chauffeurs_et_machines'){return{chauffeurs:emps.map(e=>({nom:e.name,machine_habituelle:(machOf(e.machineId)||{}).name||''})),machines:machs.map(m=>({nom:m.name,type:m.type,largeur:getMachineWidth(m)||''}))}}
 if(name==='pannes'){const eqs=[...machs,...(d.trucks||[]),...(d.cars||[])];return{pannes:(d.panneReports||[]).filter(p=>p.status!=='resolved').map(p=>{const eq=eqs.find(x=>x.id===(p.equipId||p.equipmentId||p.machineId));return{date:p.date,equipement:eq?eq.name:(p.equipName||''),gravite:p.severity||'',description:p.description||'',signale_par:empN(p.reportedBy)||'',statut:p.status||''}})}}
