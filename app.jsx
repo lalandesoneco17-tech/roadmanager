@@ -3841,7 +3841,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-2</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-3</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
@@ -4570,7 +4570,7 @@ const offer=await pc.createOffer();await pc.setLocalDescription(offer);
 const res=await fetch('https://api.openai.com/v1/realtime/calls?model='+encodeURIComponent(j.model||'gpt-realtime-2'),{method:'POST',headers:{Authorization:'Bearer '+j.value,'Content-Type':'application/sdp'},body:offer.sdp});
 if(!res.ok)throw new Error('OpenAI a refuse la connexion ('+res.status+')');
 await pc.setRemoteDescription({type:'answer',sdp:await res.text()});
-}catch(e){setErr(String(e.message||e));raccrocher();setEtat('erreur')}};
+}catch(e){const m=String(e.message||e);setErr(/permission|denied|NotAllowed/i.test(m)?'Micro refusé : autorise le micro pour RoadManager dans le navigateur (icône à gauche de l adresse), puis réessaie.':m);raccrocher();setEtat('erreur')}};
 const toggleMuet=()=>{const ms=msRef.current;if(!ms)return;const on=!muet;ms.getAudioTracks().forEach(t=>{t.enabled=!on});setMuet(on)};
 const decider=(pr,ok)=>{let texte='';if(ok){try{const{nd,texte:tx}=vocalAppliquer(_liveData||data,pr);save(nd);texte=tx}catch(e){alert('Erreur : '+e.message);return}}
 setProps(p=>p.map(x=>x.id===pr.id?{...x,statut:ok?'ok':'non',texte}:x));
