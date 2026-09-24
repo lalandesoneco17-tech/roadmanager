@@ -77,6 +77,24 @@ ce fichier ET le code en même temps.
 - La journée entière **tient sur l'écran** : la vue se réduit automatiquement à la taille de
   l'écran, sans défiler. Le bouton « Vue classique » redonne l'ancien planning.
 
+## L'assistant vocal (24/09/2026)
+
+- Bouton **🎙** en bas à droite de l'espace admin (à côté du chatbot écrit). « Démarrer », puis on lui
+  parle comme au téléphone ; il répond à la voix en moins d'une seconde et on peut le couper.
+- Cerveau : **OpenAI Realtime** (modèle gpt-realtime-2), séparé du chatbot écrit qui reste sur Claude.
+  Les deux ont la **même boîte à outils** : planning d'un jour, pointages, chauffeurs et machines,
+  pannes, chiffre d'affaires entre deux dates, clients, stock bas, proposer une modification,
+  mémoriser une règle.
+- Même règle que le chatbot : **il propose, l'admin valide** dans le panneau (Valider / Refuser).
+  Rien n'est écrit dans le planning sans clic. Il connaît les règles métier de ce fichier (jamais
+  d'heure inventée, dépôt seul = notre dépôt, forfaits citerne 4/8, etc.) et le contexte entreprise
+  écrit dans Réglages.
+- La **clé OpenAI** est un secret Supabase (`OPENAI_API_KEY`) lu par la fonction `assistant-vocal` :
+  elle ne va jamais dans le navigateur ni dans la base. La fonction vérifie l'identifiant et le mot de
+  passe admin avant de donner un jeton temporaire (10 minutes).
+- Coût : facturé à la minute de conversation sur le compte OpenAI (ordre de 10 à 20 centimes la minute).
+  Le compteur de durée est affiché dans le panneau ; « Raccrocher » coupe tout.
+
 ## Le bot Telegram
 
 - Le bot **propose, l'admin valide**. Aucune écriture dans le planning sans bouton Valider,

@@ -1891,7 +1891,7 @@ return(
 <button onClick={()=>setShowPlanMap(true)} style={{...btnStyle('#0891b2'),fontSize:13,padding:'6px 12px'}} title="Voir le planning sur la carte (optimiser les trajets)">🗺 Carte planning</button>
 <button onClick={()=>{if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen().catch(()=>{})}}} style={{...btnStyle('#7c3aed'),fontSize:13,padding:'6px 12px'}} title="Passer en plein ecran (Echap pour sortir)">⛶ Plein ecran</button>
 {typeof setSbHidden==='function'&&<button onClick={()=>setSbHidden(!sbHidden)} style={{...btnStyle('#0f766e'),fontSize:13,padding:'6px 12px'}} title={sbHidden?'Reafficher le menu de gauche':'Masquer le menu de gauche pour gagner de la place'}>{sbHidden?'▶ Menu':'◀ Masquer menu'}</button>}
-<button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a'),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
+<button onClick={()=>setShowJdImport(true)} style={{...btnStyle('#16a34a',true),fontSize:13,padding:'6px 12px'}} title="Importer rapport John Deere">📥 JD</button>
 <input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file,selDate);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
 </div>}
 {PL.vue!=='classique'&&(()=>{const rows=[['Raboteuses',caDetail('Raboteuse'),MC.Raboteuse],['Balayeuses',caDetail('Balayeuse'),MC.Balayeuse],['Citernes',caDetail('Citerne'),MC.Citerne]];const tot={f:rows.reduce((a,r)=>a+r[1].f,0),t:rows.reduce((a,r)=>a+r[1].t,0)};
@@ -3841,7 +3841,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-1</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-2</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
@@ -4455,6 +4455,7 @@ return(
 {content()}
 </div>
 <AdminChatbot data={data} save={save}/>
+<AssistantVocal data={data} save={save}/>
 </div>)};
 
 // ======== CHATBOT IA ========
@@ -4479,6 +4480,117 @@ return{intro,proposal:obj};
 }catch(e){}
 return null;
 };
+// ============================================================================
+// ASSISTANT VOCAL (24/09/2026) — conversation en direct avec OpenAI Realtime (WebRTC).
+// Cerveau separe du chatbot ecrit (AdminChatbot, Claude) : meme boite a outils, meme regle
+// « il propose, l'admin valide ». La cle OpenAI reste dans l'Edge Function assistant-vocal.
+// ============================================================================
+const VOCAL_FN_URL=(window.SUPABASE_URL||'https://valtmsgqhrkvwjsdqfdc.supabase.co')+'/functions/v1/assistant-vocal';
+const vocalOutils=[
+{type:'function',name:'planning',description:'Le planning d une journee : chantiers, chauffeurs, machines, clients, lieux, heures, forfaits, transferts, nuit, envoye/lu par le chauffeur, et le chiffre d affaires du jour.',parameters:{type:'object',properties:{date:{type:'string',description:'Date AAAA-MM-JJ (vide = aujourd hui)'}},required:[]}},
+{type:'function',name:'pointages',description:'Les heures pointees par les chauffeurs un jour donne (embauche, debauche, pauses, heures travaillees, pointage en cours) et les chauffeurs qui avaient un chantier mais n ont pas pointe.',parameters:{type:'object',properties:{date:{type:'string',description:'Date AAAA-MM-JJ (vide = aujourd hui)'}},required:[]}},
+{type:'function',name:'chauffeurs_et_machines',description:'La liste des chauffeurs avec leur machine habituelle, et la liste des machines (raboteuses avec largeur, balayeuses, citernes).',parameters:{type:'object',properties:{},required:[]}},
+{type:'function',name:'pannes',description:'Les pannes signalees non resolues (equipement, gravite, description, date, qui l a signalee).',parameters:{type:'object',properties:{},required:[]}},
+{type:'function',name:'chiffre_affaires',description:'Le chiffre d affaires (forfaits + transferts) entre deux dates, par type de machine.',parameters:{type:'object',properties:{date_debut:{type:'string',description:'AAAA-MM-JJ'},date_fin:{type:'string',description:'AAAA-MM-JJ'}},required:['date_debut','date_fin']}},
+{type:'function',name:'clients',description:'La liste des clients connus.',parameters:{type:'object',properties:{},required:[]}},
+{type:'function',name:'stock_bas',description:'Les pieces et produits dont le stock est au minimum ou en dessous.',parameters:{type:'object',properties:{},required:[]}},
+{type:'function',name:'proposer_modification',description:'Propose de creer, modifier ou supprimer un chantier du planning. Rien n est applique tant que l admin n a pas valide a l ecran. Donne les noms (chauffeur, machine, client) tels que l admin les dit.',parameters:{type:'object',properties:{action:{type:'string',enum:['creer_chantier','modifier_chantier','supprimer_chantier']},chantier_id:{type:'string',description:'Id du chantier (obtenu avec planning) pour modifier ou supprimer'},date:{type:'string',description:'AAAA-MM-JJ'},chauffeur:{type:'string'},machine:{type:'string'},client:{type:'string'},lieu:{type:'string'},heure_debut:{type:'string',description:'HH:MM, seulement si l admin donne une heure'},forfait:{type:'string',description:'Forfait. Raboteuses : 2h, 3h, 4h, 6h, 8h ou 10h. Balayeuses et citernes : Journee ou Demi-journee (citerne : 8 = Journee, 4 = Demi-journee).'},sans_chauffeur:{type:'boolean',description:'Citerne louee sans chauffeur (« sc »)'},nuit:{type:'boolean'},transfert:{type:'boolean'},chef:{type:'string',description:'Chef de chantier'}},required:['action']}},
+{type:'function',name:'memoriser_regle',description:'Propose d ajouter une regle ou une habitude de l entreprise a la memoire de l assistant (validee par l admin).',parameters:{type:'object',properties:{texte:{type:'string'}},required:['texte']}}
+];
+const vocalDate=(s)=>{const t=String(s||'').trim().toLowerCase();const d=new Date();if(!t||t==="aujourd'hui"||t==='aujourd hui'||t==='today')return fmtDateISO(d);if(t==='demain'){d.setDate(d.getDate()+1);return fmtDateISO(d)}if(t==='hier'){d.setDate(d.getDate()-1);return fmtDateISO(d)}if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;const m=t.match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?$/);if(m){const y=m[3]?(m[3].length===2?'20'+m[3]:m[3]):String(d.getFullYear());return y+'-'+pad2(+m[2])+'-'+pad2(+m[1])}return fmtDateISO(d)};
+const vocalTrouver=(arr,nom)=>{const q=String(nom||'').trim().toLowerCase();if(!q)return null;const n=x=>String(x.name||'').toLowerCase();return (arr||[]).find(x=>n(x)===q)||(arr||[]).find(x=>n(x).startsWith(q))||(arr||[]).find(x=>n(x).includes(q))||(arr||[]).find(x=>q.includes(n(x))&&n(x).length>=3)||null};
+const vocalInstructions=(d)=>{const t=fmtDateISO(new Date());return `Tu es l'assistant vocal de SONECO (rabotage routier, balayeuses, citernes, Charente-Maritime), integre au logiciel RoadManager. Tu parles a l'admin, Sebastien.
+Date du jour : ${t} (${fmtDate(t)}). Heure : ${new Date().toTimeString().slice(0,5)}.
+Tu parles francais, naturellement, comme un collegue : phrases courtes, pas de listes, pas de mise en forme, pas de jargon. Va droit au but. Si l'admin te coupe, arrete-toi.
+Tu n'inventes JAMAIS une donnee : pour repondre sur le planning, les heures, les pannes, le chiffre d'affaires ou le stock, appelle d'abord l'outil correspondant, puis reponds avec ce qu'il renvoie. Si l'outil ne renvoie rien, dis-le.
+Quand l'admin demande de creer, modifier ou supprimer un chantier, ou de retenir une regle, utilise proposer_modification ou memoriser_regle : ca cree une proposition que l'admin valide a l'ecran. Dis-lui clairement que c'est en attente de sa validation. Ne dis jamais que c'est fait tant que tu n'as pas recu la confirmation.
+Si un nom de chauffeur, de machine ou de client est ambigu, pose la question avant de proposer.
+Regles de l'entreprise :
+- Jamais d'heure inventee : si l'admin ne donne pas d'heure de debut, on n'en met pas (pas de 08:00 par defaut).
+- « depot » seul = notre depot (le chauffeur reste au depot) ; « depot Colas » ou un depot client = un chantier.
+- Plusieurs chauffeurs peuvent etre sur le meme chantier, chacun avec sa machine et sa propre ligne.
+- Citernes : forfait 4 = demi-journee, forfait 8 = journee. « sc » = citerne sans chauffeur. « moi » = Sebastien.
+- Un chantier recopie du planning de papa a le transfert coche d'office.
+- Les chauffeurs recoivent leur planning du lendemain sur Telegram a 19h ; le matin on ne les derange pas.
+${d.companyContext&&d.companyContext.trim()?'Contexte entreprise ecrit par l\'admin :\n'+d.companyContext.trim()+'\n':''}`};
+const vocalExecuter=(d,name,args)=>{
+const emps=d.employees||[],machs=d.machines||[],clis=d.clients||[];
+const empN=id=>{const e=emps.find(x=>x.id===id);return e?e.name:''};const machOf=id=>machs.find(x=>x.id===id);const cliN=id=>{const c=clis.find(x=>x.id===id);return c?c.name:''};
+const chantiers=(date)=>(d.jobs||[]).filter(j=>j.date===date).map(j=>{const m=machOf(j.machineId);const sig=j.signature||{};return{id:j.id,statut:j.type==='depot'?'depot':j.type==='repos'?'repos':'chantier',chauffeur:empN(j.employeeId),machine:m?m.name:'',type_machine:m?m.type:'',client:cliN(j.clientId)||j.agencyName||'',lieu:j.location||'',heure_debut:j.billingStart||'',forfait:j.forfaitType||'',prix_forfait:j.priceForfait||0,transfert:!!j.hasTransfer,prix_transfert:j.hasTransfer?(j.transferPrice||0):0,nuit:!!j.isNight,chef:j.siteManager||'',envoye_au_chauffeur:!!j.sent,lu_par_chauffeur:!!j.ack,fin_de_chantier_pointee:sig.signedAt?String(sig.signedAt).slice(11,16):'',duree_min:sig.durationMin||0,paye:!!j.paid}});
+const ca=(list)=>{const r={};list.forEach(j=>{if(j.statut!=='chantier')return;const k=j.type_machine||'Autre';r[k]=r[k]||{forfaits:0,transferts:0,nb:0};r[k].forfaits+=j.prix_forfait;r[k].transferts+=j.prix_transfert;r[k].nb++});const tot={forfaits:0,transferts:0,nb:0};Object.values(r).forEach(v=>{tot.forfaits+=v.forfaits;tot.transferts+=v.transferts;tot.nb+=v.nb});r.total={...tot,total:tot.forfaits+tot.transferts};return r};
+if(name==='planning'){const date=vocalDate(args.date);const list=chantiers(date);return{date,jour:fmtDate(date),chantiers:list,chiffre_affaires:ca(list)}}
+if(name==='pointages'){const date=vocalDate(args.date);const tes=(d.timeEntries||[]).filter(t=>t.date===date&&!t.deleted);const parEmp={};tes.forEach(t=>{const n=empN(t.empId)||t.empId;parEmp[n]=parEmp[n]||[];parEmp[n].push({embauche:t.startTime||'',debauche:t.endTime||'',pause_min:t.pauseMin||0,heures:t.startTime&&t.endTime?+(toDecHours(t.startTime,t.endTime,t.pauseMin||0)).toFixed(2):null,en_cours:!!t.startTime&&!t.endTime})});const avecChantier=[...new Set((d.jobs||[]).filter(j=>j.date===date&&j.type!=='depot'&&j.type!=='repos').map(j=>empN(j.employeeId)).filter(Boolean))];const sansPointage=avecChantier.filter(n=>!parEmp[n]);return{date,jour:fmtDate(date),pointages:parEmp,chauffeurs_avec_chantier_sans_pointage:sansPointage}}
+if(name==='chauffeurs_et_machines'){return{chauffeurs:emps.map(e=>({nom:e.name,machine_habituelle:(machOf(e.machineId)||{}).name||''})),machines:machs.map(m=>({nom:m.name,type:m.type,largeur:getMachineWidth(m)||''}))}}
+if(name==='pannes'){const eqs=[...machs,...(d.trucks||[]),...(d.cars||[])];return{pannes:(d.panneReports||[]).filter(p=>p.status!=='resolved').map(p=>{const eq=eqs.find(x=>x.id===(p.equipId||p.equipmentId||p.machineId));return{date:p.date,equipement:eq?eq.name:(p.equipName||''),gravite:p.severity||'',description:p.description||'',signale_par:empN(p.reportedBy)||'',statut:p.status||''}})}}
+if(name==='chiffre_affaires'){const a=vocalDate(args.date_debut),b=vocalDate(args.date_fin);const list=(d.jobs||[]).filter(j=>j.date>=a&&j.date<=b).map(j=>{const m=machOf(j.machineId);return{statut:j.type==='depot'?'depot':j.type==='repos'?'repos':'chantier',type_machine:m?m.type:'',prix_forfait:j.priceForfait||0,prix_transfert:j.hasTransfer?(j.transferPrice||0):0}});return{du:a,au:b,chiffre_affaires:ca(list)}}
+if(name==='clients'){return{clients:clis.map(c=>c.name)}}
+if(name==='stock_bas'){const parts=(d.parts||[]).filter(p=>(p.quantity||0)<=(p.minStock||0)).map(p=>({piece:p.name,quantite:p.quantity||0,minimum:p.minStock||0}));const prods=(d.stationProducts||[]).filter(p=>(p.quantity||0)<=(p.minStock||0)).map(p=>{const s=(d.stations||[]).find(x=>x.id===p.stationId);return{produit:p.name,station:s?s.name:'',quantite:p.quantity||0,minimum:p.minStock||0}});return{pieces:parts,produits_stations:prods}}
+if(name==='proposer_modification'){const p={action:args.action};const manque=[];if(args.action==='creer_chantier'||args.action==='modifier_chantier'){if(args.chauffeur){const e=vocalTrouver(emps,args.chauffeur);if(e)p.employeeId=e.id;else manque.push('chauffeur « '+args.chauffeur+' » inconnu')}if(args.machine){const m=vocalTrouver(machs,args.machine);if(m)p.machineId=m.id;else manque.push('machine « '+args.machine+' » inconnue')}if(args.client){const c=vocalTrouver(clis,args.client);if(c)p.clientId=c.id;else p.agencyName=args.client}if(args.date)p.date=vocalDate(args.date);if(args.lieu!=null)p.location=args.lieu;if(args.heure_debut)p.billingStart=args.heure_debut;if(args.forfait!=null){const f=String(args.forfait).toLowerCase().replace(/\s|heures?|h$/g,'');const mm=machs.find(x=>x.id===p.machineId)||(args.chantier_id?machOf(((d.jobs||[]).find(x=>x.id===args.chantier_id)||{}).machineId):null);const typ=mm?mm.type:'';if(typ==='Raboteuse'){const h=f.match(/^(\d{1,2})/);p.forfaitType=h?h[1]+'h':args.forfait}else if(typ==='Citerne'||typ==='Balayeuse'){p.forfaitType=/demi|1\/2|^4$|^4h$/.test(f)?'Demi-journee':/journ|^8$|^8h$|^1$/.test(f)?'Journee':args.forfait}else p.forfaitType=args.forfait}if(args.sans_chauffeur!=null)p.citOption=args.sans_chauffeur?'Sans chauffeur':'Avec chauffeur';if(args.nuit!=null)p.isNight=!!args.nuit;if(args.transfert!=null)p.hasTransfer=!!args.transfert;if(args.chef!=null)p.siteManager=args.chef}
+if(args.action!=='creer_chantier'){if(!args.chantier_id)manque.push('id du chantier manquant (utilise planning)');else{const j=(d.jobs||[]).find(x=>x.id===args.chantier_id);if(!j)manque.push('chantier introuvable');else p.jobId=j.id}}
+if(args.action==='creer_chantier'&&!p.date)p.date=fmtDateISO(new Date());
+if(manque.length)return{erreur:manque.join(' ; ')};
+const lib=(p.action==='creer_chantier'?'Créer un chantier':p.action==='modifier_chantier'?'Modifier le chantier':'Supprimer le chantier');const det=[];if(p.date)det.push(fmtDate(p.date));if(p.employeeId)det.push(empN(p.employeeId));if(p.machineId)det.push((machOf(p.machineId)||{}).name);if(p.clientId||p.agencyName)det.push(cliN(p.clientId)||p.agencyName);if(p.location)det.push(p.location);if(p.billingStart)det.push('à '+p.billingStart);if(p.forfaitType)det.push('forfait '+p.forfaitType);if(p.isNight)det.push('nuit');if(p.hasTransfer)det.push('transfert');if(p.jobId&&!p.date){const j=(d.jobs||[]).find(x=>x.id===p.jobId);if(j)det.unshift(fmtDate(j.date)+' '+empN(j.employeeId)+' '+(j.location||''))}
+return{_proposition:{...p,resume:lib+' : '+det.join(', ')},statut:'en_attente_validation_admin'}}
+if(name==='memoriser_regle'){const t=String(args.texte||'').trim();if(!t)return{erreur:'texte vide'};return{_proposition:{action:'memoriser_regle',text:t,resume:'Retenir : '+t},statut:'en_attente_validation_admin'}}
+return{erreur:'outil inconnu '+name}};
+const vocalAppliquer=(d,p)=>{const nd=JSON.parse(JSON.stringify(d));if(!nd.jobs)nd.jobs=[];
+if(p.action==='creer_chantier'){const j={id:uid(),date:p.date,employeeId:p.employeeId||'',machineId:p.machineId||'',clientId:p.clientId||'',agencyName:p.agencyName||'',siteManager:p.siteManager||'',siteManagerPhone:'',location:p.location||'',gps:'',forfaitType:p.forfaitType||'',priceForfait:0,citOption:p.citOption||'',isNight:!!p.isNight,hasTransfer:!!p.hasTransfer,transferPrice:0,billingStart:p.billingStart||'',startFrom:'',endAt:'',machineFuelL:0,machineFuelDepot:'',kmAller:0,kmRetour:0,travelMinAller:0,travelMinRetour:0,distanceKm:0,travelMin:0,sent:false,_updatedAt:Date.now()};const m=(nd.machines||[]).find(x=>x.id===j.machineId);if(m&&j.clientId&&j.forfaitType){try{j.priceForfait=getForfaitPrice(nd,j.clientId,m,j.forfaitType,j.citOption,j.isNight)||0}catch(e){}}if(m&&j.clientId&&j.hasTransfer){try{j.transferPrice=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight)||0}catch(e){}}nd.jobs.push(j);return{nd,texte:'Chantier créé'}}
+if(p.action==='modifier_chantier'){const i=nd.jobs.findIndex(x=>x.id===p.jobId);if(i<0)throw new Error('Chantier introuvable');const ch={};['date','employeeId','machineId','clientId','agencyName','location','billingStart','forfaitType','citOption','isNight','hasTransfer','siteManager'].forEach(k=>{if(p[k]!==undefined)ch[k]=p[k]});const j={...nd.jobs[i],...ch,_updatedAt:Date.now()};const m=(nd.machines||[]).find(x=>x.id===j.machineId);if(m&&j.clientId&&j.forfaitType&&(ch.forfaitType!==undefined||ch.clientId!==undefined||ch.machineId!==undefined||ch.isNight!==undefined)){try{j.priceForfait=getForfaitPrice(nd,j.clientId,m,j.forfaitType,j.citOption,j.isNight)||0}catch(e){}}if(m&&j.clientId&&j.hasTransfer&&!j.transferPrice){try{j.transferPrice=getTransferPrice(nd,j.clientId,m,j.citOption,j.isNight)||0}catch(e){}}nd.jobs[i]=j;return{nd,texte:'Chantier modifié'}}
+if(p.action==='supprimer_chantier'){const i=nd.jobs.findIndex(x=>x.id===p.jobId);if(i<0)throw new Error('Chantier introuvable');tombstone(nd,'jobs',p.jobId);nd.jobs.splice(i,1);return{nd,texte:'Chantier supprimé'}}
+if(p.action==='memoriser_regle'){const cur=(nd.companyContext||'').replace(/\s+$/,'');nd.companyContext=(cur?cur+'\n':'')+p.text;return{nd,texte:'Règle mémorisée'}}
+throw new Error('Action inconnue')};
+const AssistantVocal=({data,save})=>{
+const[open,setOpen]=useState(false);const[etat,setEtat]=useState('off');// off | connexion | pret | erreur
+const[lignes,setLignes]=useState([]);const[props,setProps]=useState([]);const[muet,setMuet]=useState(false);const[err,setErr]=useState('');const[sec,setSec]=useState(0);const[parle,setParle]=useState('');
+const pcRef=useRef(null),dcRef=useRef(null),msRef=useRef(null),audioRef=useRef(null),botRef=useRef(null),timerRef=useRef(null);
+useEffect(()=>{if(botRef.current)botRef.current.scrollIntoView({behavior:'smooth'})},[lignes,props]);
+const envoyer=(ev)=>{const dc=dcRef.current;if(dc&&dc.readyState==='open')dc.send(JSON.stringify(ev))};
+const ajouter=(role,text)=>{if(!text)return;setLignes(p=>[...p.slice(-60),{role,text,t:Date.now()}])};
+const raccrocher=()=>{try{if(dcRef.current)dcRef.current.close()}catch(e){}try{if(pcRef.current)pcRef.current.close()}catch(e){}try{if(msRef.current)msRef.current.getTracks().forEach(t=>t.stop())}catch(e){}dcRef.current=null;pcRef.current=null;msRef.current=null;if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null}setEtat('off');setParle('')};
+useEffect(()=>()=>raccrocher(),[]);
+const onEvent=(ev)=>{const t=ev.type||'';
+if(t==='conversation.item.input_audio_transcription.completed'){ajouter('user',ev.transcript);return}
+if(t==='response.output_audio_transcript.done'||t==='response.audio_transcript.done'){ajouter('assistant',ev.transcript);setParle('');return}
+if(t==='input_audio_buffer.speech_started'){setParle('vous');return}
+if(t==='response.output_audio.delta'||t==='response.audio.delta'){setParle('assistant');return}
+if(t==='response.done'){setParle('');return}
+if(t==='error'){setErr((ev.error&&ev.error.message)||'Erreur OpenAI');return}
+if(t==='response.output_item.done'&&ev.item&&ev.item.type==='function_call'){let args={};try{args=JSON.parse(ev.item.arguments||'{}')}catch(e){}let out;try{out=vocalExecuter(_liveData||data,ev.item.name,args)}catch(e){out={erreur:String(e.message||e)}}
+if(out&&out._proposition){const pr={...out._proposition,id:uid(),statut:'attente'};setProps(p=>[...p,pr]);out={statut:'en_attente_validation_admin',resume:pr.resume}}
+envoyer({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.item.call_id,output:JSON.stringify(out)}});envoyer({type:'response.create'});return}};
+const demarrer=async()=>{setErr('');setEtat('connexion');setLignes([]);try{
+if(!navigator.mediaDevices||!window.RTCPeerConnection)throw new Error('Ce navigateur ne permet pas la voix en direct');
+const d=_liveData||data;const r=await fetch(VOCAL_FN_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:d.adminUser||'admin',pass:d.adminPass||'admin',instructions:vocalInstructions(d),tools:vocalOutils})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.value)throw new Error(j.error||('Serveur : '+r.status));
+const pc=new RTCPeerConnection();pcRef.current=pc;pc.ontrack=e=>{if(audioRef.current){audioRef.current.srcObject=e.streams[0];audioRef.current.play().catch(()=>{})}};
+const ms=await navigator.mediaDevices.getUserMedia({audio:true});msRef.current=ms;pc.addTrack(ms.getTracks()[0],ms);
+const dc=pc.createDataChannel('oai-events');dcRef.current=dc;dc.onmessage=e=>{try{onEvent(JSON.parse(e.data))}catch(x){}};
+dc.onopen=()=>{setEtat('pret');setSec(0);timerRef.current=setInterval(()=>setSec(s=>s+1),1000);envoyer({type:'response.create',response:{instructions:"Dis juste bonjour a Sebastien en une phrase et demande ce qu'il veut."}})};
+dc.onclose=()=>{if(pcRef.current)raccrocher()};
+const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+const res=await fetch('https://api.openai.com/v1/realtime/calls?model='+encodeURIComponent(j.model||'gpt-realtime-2'),{method:'POST',headers:{Authorization:'Bearer '+j.value,'Content-Type':'application/sdp'},body:offer.sdp});
+if(!res.ok)throw new Error('OpenAI a refuse la connexion ('+res.status+')');
+await pc.setRemoteDescription({type:'answer',sdp:await res.text()});
+}catch(e){setErr(String(e.message||e));raccrocher();setEtat('erreur')}};
+const toggleMuet=()=>{const ms=msRef.current;if(!ms)return;const on=!muet;ms.getAudioTracks().forEach(t=>{t.enabled=!on});setMuet(on)};
+const decider=(pr,ok)=>{let texte='';if(ok){try{const{nd,texte:tx}=vocalAppliquer(_liveData||data,pr);save(nd);texte=tx}catch(e){alert('Erreur : '+e.message);return}}
+setProps(p=>p.map(x=>x.id===pr.id?{...x,statut:ok?'ok':'non',texte}:x));
+envoyer({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:ok?'[Validation admin] '+pr.resume+' : appliqué ('+texte+'). Confirme-le en une phrase.':'[Validation admin] '+pr.resume+' : refusé. Prends-en note en une phrase.'}]}});envoyer({type:'response.create'})};
+const mm=Math.floor(sec/60),ss=pad2(sec%60);
+const bouton=(<button onClick={()=>{setOpen(o=>!o)}} title="Assistant vocal" style={{position:'fixed',bottom:20,right:84,zIndex:1000,width:52,height:52,borderRadius:'50%',border:'none',background:etat==='pret'?'#16a34a':'#0f766e',color:'#fff',fontSize:24,cursor:'pointer',boxShadow:'0 4px 14px rgba(0,0,0,.35)'}}>🎙</button>);
+return(<React.Fragment>{bouton}<audio ref={audioRef} autoPlay style={{display:'none'}}/>
+{open&&<div style={{position:'fixed',bottom:84,right:20,width:380,maxWidth:'calc(100vw - 40px)',height:560,maxHeight:'calc(100vh - 110px)',background:'#fff',borderRadius:12,boxShadow:'0 10px 40px rgba(0,0,0,.35)',zIndex:1001,display:'flex',flexDirection:'column',overflow:'hidden',fontFamily:'system-ui,Arial,sans-serif'}}>
+<div style={{background:'#0f766e',color:'#fff',padding:'10px 14px',display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>🎙</span><div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>Assistant vocal</div><div style={{fontSize:11,opacity:.85}}>{etat==='off'?'Prêt à démarrer':etat==='connexion'?'Connexion…':etat==='pret'?('En ligne · '+mm+':'+ss+(parle==='vous'?' · je vous écoute':parle==='assistant'?' · il parle':'')):'Erreur'}</div></div><button onClick={()=>setOpen(false)} style={{background:'transparent',border:'none',color:'#fff',fontSize:18,cursor:'pointer'}}>×</button></div>
+<div style={{flex:1,overflowY:'auto',padding:12,background:'#f8fafc'}}>
+{etat==='off'&&lignes.length===0&&<div style={{color:'#475569',fontSize:13,lineHeight:1.5}}>Appuie sur <b>Démarrer</b> et parle-lui comme au téléphone : « qu'est-ce qu'on a demain ? », « qui n'a pas pointé ? », « mets Franck sur la 200 à Cognac demain ». Il propose, tu valides ici.</div>}
+{err&&<div style={{background:'#fee2e2',color:'#991b1b',padding:'8px 10px',borderRadius:8,fontSize:12,marginBottom:8}}>{err}</div>}
+{lignes.map((l,i)=><div key={i} style={{display:'flex',justifyContent:l.role==='user'?'flex-end':'flex-start',marginBottom:6}}><div style={{maxWidth:'85%',padding:'7px 10px',borderRadius:10,fontSize:13,lineHeight:1.4,background:l.role==='user'?'#0f766e':'#fff',color:l.role==='user'?'#fff':'#0f172a',border:l.role==='user'?'none':'1px solid #e2e8f0'}}>{l.text}</div></div>)}
+{props.map(pr=><div key={pr.id} style={{border:'2px solid '+(pr.statut==='attente'?'#f59e0b':pr.statut==='ok'?'#16a34a':'#94a3b8'),borderRadius:10,padding:'8px 10px',marginBottom:8,background:'#fff',fontSize:13}}><div style={{fontWeight:700,marginBottom:4}}>{pr.statut==='attente'?'Proposition à valider':pr.statut==='ok'?'✓ Appliqué':'Refusé'}</div><div style={{color:'#334155'}}>{pr.resume}</div>{pr.statut==='attente'&&<div style={{display:'flex',gap:6,marginTop:8}}><button onClick={()=>decider(pr,true)} style={{...btnStyle('#16a34a',true),padding:'5px 12px',fontSize:12}}>Valider</button><button onClick={()=>decider(pr,false)} style={{...btnStyle('#64748b',true),padding:'5px 12px',fontSize:12}}>Refuser</button></div>}</div>)}
+<div ref={botRef}/></div>
+<div style={{padding:10,borderTop:'1px solid #e2e8f0',display:'flex',gap:8,background:'#fff'}}>
+{etat!=='pret'?<button onClick={demarrer} disabled={etat==='connexion'} style={{...btnStyle('#16a34a',true),flex:1,padding:'10px',fontSize:14,fontWeight:700}}>{etat==='connexion'?'Connexion…':'▶ Démarrer'}</button>
+:<React.Fragment><button onClick={toggleMuet} style={{...btnStyle(muet?'#f59e0b':'#64748b',true),flex:1,padding:'10px',fontSize:13}}>{muet?'🔇 Micro coupé':'🎤 Micro ouvert'}</button><button onClick={raccrocher} style={{...btnStyle('#dc2626',true),flex:1,padding:'10px',fontSize:13,fontWeight:700}}>■ Raccrocher</button></React.Fragment>}
+</div></div>}</React.Fragment>)};
+
 const AdminChatbot=({data,save})=>{
 const[open,setOpen]=useState(false);
 const[msgs,setMsgs]=useState([]);
