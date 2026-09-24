@@ -77,6 +77,14 @@ ce fichier ET le code en même temps.
 - La journée entière **tient sur l'écran** : la vue se réduit automatiquement à la taille de
   l'écran, sans défiler. Le bouton « Vue classique » redonne l'ancien planning.
 
+- **Sur le téléphone** (écran de moins de 700 px, 24/09/2026) : le planning prend une autre disposition,
+  uniquement sur mobile. Une seule colonne, les cartes empilées (raboteuses, balayeuses, citernes),
+  le chauffeur et la machine en tête de carte, chaque chantier sur trois lignes : client + chef,
+  lieu en pleine largeur, puis heure, fin de chantier, forfait, transfert, bon et suppression. Le bouton
+  payé reste à gauche. Une seule ligne vide par carte ; une machine sans chauffeur ni chantier n'affiche
+  que sa tête (le + sert à ajouter un chauffeur). Pas de zoom, pas de boutons de déplacement ; le
+  chiffre d'affaires tient sur une ligne (Rab / Bal / Cit / Total). Sur PC rien ne change.
+
 ## L'assistant vocal (24/09/2026)
 
 - Bouton **🎙** en bas à droite de l'espace admin (à côté du chatbot écrit). « Démarrer », puis on lui
