@@ -1069,6 +1069,8 @@ const envoyerChantier=async(j)=>{const cfg=_liveData||data;const tok=cfg.telegra
 const fitRef=useRef(null);
 // Vue tableau (23/09/2026) : mode de deplacement (chauffeur / chantier / machine par glisser-deposer), reglage de l'ecriture
 const[modeTab,setModeTab]=useState('');const[dragTab,setDragTab]=useState(null);const[showFont,setShowFont]=useState(false);
+const caWrapRef=useRef(null),caRowRef=useRef(null);const[caZoom,setCaZoom]=useState(1);
+useEffect(()=>{const f=()=>{const w=caWrapRef.current,r=caRowRef.current;if(!w||!r)return;const nat=r.scrollWidth/(caZoom||1);const z=Math.max(0.7,Math.min(1,(w.clientWidth-4)/Math.max(1,nat)));if(Math.abs(z-caZoom)>0.01)setCaZoom(z)};f();window.addEventListener('resize',f);return()=>window.removeEventListener('resize',f)});
 const TF={size:14,bold:false,family:'Arial',...(PL.tabFont||{})};
 const setTabFont=(patch)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));nd.planningLayout={...(nd.planningLayout||{}),tabFont:{...TF,...patch}};save(nd)};
 const caDetail=t=>{const js=dayMissions.filter(j=>((data.machines||[]).find(m=>m.id===j.machineId)||{}).type===t);return{f:js.reduce((a,j)=>a+(j.priceForfait||0),0),t:js.reduce((a,j)=>a+(j.hasTransfer?(j.transferPrice||0):0),0)}};
@@ -1893,18 +1895,32 @@ return(
 <input ref={wirtgenRef} type="file" accept=".zip" style={{display:'none'}} onChange={async e=>{const file=e.target.files[0];if(!file)return;try{const report=await parseWirtgenZip(file,selDate);if(!report){alert('Impossible de lire le ZIP Wirtgen — vérifier le format');return;}const mNorm=s=>String(s||'').toUpperCase().replace(/[\s\-_]/g,'');const matchedMach=(data.machines||[]).find(m=>mNorm(m.name)===mNorm(report.machineName));if(matchedMach)report.machineName=matchedMach.name;else if(wirtgenTargetMach)report.machineName=wirtgenTargetMach;const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.machineReports)nd.machineReports=[];nd.machineReports=nd.machineReports.filter(r=>!(mNorm(r.machineName)===mNorm(report.machineName)&&r.date===report.date));nd.machineReports.push(report);save(nd);alert('✅ Rapport Wirtgen importé — '+report.machineName+' / '+report.date);}catch(err){alert('Erreur ZIP: '+err.message);}e.target.value='';}}/>
 </div>}
 {PL.vue!=='classique'&&(()=>{const rows=[['Raboteuses',caDetail('Raboteuse'),MC.Raboteuse],['Balayeuses',caDetail('Balayeuse'),MC.Balayeuse],['Citernes',caDetail('Citerne'),MC.Citerne]];const tot={f:rows.reduce((a,r)=>a+r[1].f,0),t:rows.reduce((a,r)=>a+r[1].t,0)};
-const modeBtn=(k,txt,title)=>(<button onClick={()=>setModeTab(modeTab===k?'':k)} title={title} style={{...btnStyle(modeTab===k?'#f59e0b':C.dim,modeTab===k),fontSize:12,padding:'5px 9px'}}>{txt}</button>);
+const modeBtn=(k,txt,title)=>(<button onClick={()=>setModeTab(modeTab===k?'':k)} title={title} style={{...btnStyle(modeTab===k?'#f59e0b':C.dim,modeTab===k),fontSize:12,padding:'5px 7px',whiteSpace:'nowrap'}}>{txt}</button>);
 const cell={padding:'1px 8px',fontSize:12,textAlign:'right',whiteSpace:'nowrap'};
-return(<div style={{marginBottom:8}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+return(<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
 {/* Gauche : la date */}
-<div style={{display:'flex',alignItems:'center',gap:6}}>
+<div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
 <button onClick={()=>navDate(-1)} style={{...btnStyle(C.dim),padding:'6px 12px'}}>{'<'}</button>
-<span style={{fontWeight:800,fontSize:26,color:'#fff',padding:'2px 8px',letterSpacing:'0.5px',whiteSpace:'nowrap'}}>{fmtDate(new Date(selDate))}</span>
+<span style={{fontWeight:800,fontSize:22,color:'#fff',padding:'2px 4px',letterSpacing:'0.3px',whiteSpace:'nowrap'}}>{fmtDate(new Date(selDate))}</span>
 <button onClick={()=>navDate(1)} style={{...btnStyle(C.dim),padding:'6px 12px'}}>{'>'}</button>
-<input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:135,marginLeft:4,padding:'6px 8px'}}/>
+<input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...inputStyle,width:122,marginLeft:2,padding:'5px 6px'}}/>
+</div>
+{/* Milieu : chiffre d'affaires, forfaits et transferts separes, fond sombre, reduit pour tenir entre la date et les boutons */}
+<div ref={caWrapRef} style={{flex:1,minWidth:0,display:'flex',justifyContent:'center',overflow:'hidden'}}>
+<div ref={caRowRef} style={{display:'flex',gap:8,alignItems:'stretch',zoom:caZoom}}>
+{[...rows.map(([lb,v,cc])=>[lb,v,cc,false]),['TOTAL',tot,'#fbbf24',true]].map(([lb,v,cc,isTot])=>{const eur=x=>(Number(x)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';const petit=(titre,val,col)=>(<div style={{display:'flex',justifyContent:'space-between',gap:8,lineHeight:1.15}}><span style={{fontSize:9,color:'#94a3b8',fontWeight:600,letterSpacing:.4}}>{titre}</span><span style={{fontSize:12,fontWeight:700,color:col,whiteSpace:'nowrap'}}>{eur(val)}</span></div>);
+return(<div key={lb} style={{background:'#0b1220',border:'1px solid '+(isTot?cc:'#334155'),borderLeft:'5px solid '+cc,borderRadius:8,padding:'3px 8px',display:'flex',flexDirection:'column',gap:1}}>
+<div style={{fontWeight:800,color:cc,fontSize:11,textTransform:'uppercase',letterSpacing:.6,lineHeight:1.1}}>{lb}</div>
+<div style={{display:'flex',alignItems:'center',gap:8}}>
+<div style={{display:'flex',flexDirection:'column',minWidth:118}}>{petit('FORFAITS',v.f,'#fff')}{petit('TRANSFERTS',v.t,'#c4b5fd')}</div>
+<div style={{width:1,alignSelf:'stretch',background:'#334155'}}></div>
+<div style={{textAlign:'center'}}><div style={{fontSize:9,color:'#94a3b8',fontWeight:600,letterSpacing:.4}}>TOTAL</div><div style={{fontSize:17,fontWeight:800,color:isTot?cc:'#fff',whiteSpace:'nowrap',lineHeight:1.05}}>{eur(v.f+v.t)}</div></div>
+</div>
+</div>)})}
+</div>
 </div>
 {/* Droite : deplacer, ecriture, vue */}
-<div style={{display:'flex',gap:6,alignItems:'center',position:'relative',marginLeft:'auto'}}>
+<div style={{display:'flex',gap:6,alignItems:'center',position:'relative',flexShrink:0}}>
 {modeBtn('chauffeur','👤 Chauffeur','Déplacer un chauffeur : glisse son nom sur une autre carte')}
 {modeBtn('chantier','🚧 Chantier','Déplacer un chantier : glisse sa ligne sur une autre carte')}
 {modeBtn('machine','🚜 Machine','Déplacer une machine : glisse sa carte à la place d une autre')}
@@ -1915,18 +1931,9 @@ return(<div style={{marginBottom:8}}><div style={{display:'flex',alignItems:'cen
 <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:12,color:C.dim,width:60}}>Style</span><select value={TF.family} onChange={e=>setTabFont({family:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontFamily:TF.family}}>{['Arial','Helvetica','Verdana','Tahoma','Trebuchet MS','Georgia','Times New Roman','Courier New'].map(f=><option key={f} value={f} style={{fontFamily:f}}>{f}</option>)}</select></div>
 <button onClick={()=>setTabFont({size:14,bold:false,family:'Arial'})} style={{...btnStyle(C.dim),padding:'4px 8px',fontSize:12}}>Réglage d origine</button>
 </div>}
-<button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));nd.planningLayout={...(nd.planningLayout||{}),vue:'classique'};save(nd)}} style={{...btnStyle(C.dim),fontSize:12,padding:'5px 9px'}} title="Revenir a l ancienne vue">Vue classique</button>
+<button onClick={()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));nd.planningLayout={...(nd.planningLayout||{}),vue:'classique'};save(nd)}} style={{...btnStyle(C.dim),fontSize:12,padding:'5px 9px'}} title="Revenir a l ancienne vue">Classique</button>
 <button onClick={()=>{if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen().catch(()=>{})}}} style={{...btnStyle('#7c3aed'),fontSize:12,padding:'5px 9px'}} title="Plein ecran (Echap pour sortir)">⛶</button>
 {typeof setSbHidden==='function'&&<button onClick={()=>setSbHidden(!sbHidden)} style={{...btnStyle('#0f766e'),fontSize:12,padding:'5px 9px'}} title={sbHidden?'Reafficher le menu':'Masquer le menu'}>{sbHidden?'▶':'◀'}</button>}
-</div>
-</div>
-{/* Milieu : chiffre d'affaires, forfaits et transferts separes, en largeur et en gros */}
-<div style={{display:'flex',gap:10,alignItems:'stretch',flexWrap:'wrap'}}>
-{[...rows.map(([lb,v,cc])=>[lb,v,cc,false]),['TOTAL',tot,C.accent,true]].map(([lb,v,cc,isTot])=>{const eur=x=>(Number(x)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';const nb=(titre,val,col)=>(<div style={{textAlign:'center',flex:1}}><div style={{fontSize:11,color:C.dim,fontWeight:600,letterSpacing:.5}}>{titre}</div><div style={{fontSize:22,fontWeight:800,color:col,whiteSpace:'nowrap',lineHeight:1.15}}>{eur(val)}</div></div>);
-return(<div key={lb} style={{background:C.card,border:'1px solid '+(isTot?cc:C.border),borderLeft:'5px solid '+cc,borderRadius:8,padding:'4px 12px',display:'flex',flexDirection:'column',gap:1,flex:1,minWidth:330}}>
-<div style={{fontWeight:800,color:cc,fontSize:13,textTransform:'uppercase',letterSpacing:.6}}>{lb}</div>
-<div style={{display:'flex',alignItems:'center',gap:8}}>{nb('FORFAITS',v.f,C.text)}<span style={{color:C.dim,fontSize:18}}>+</span>{nb('TRANSFERTS',v.t,C.purple)}<span style={{color:C.dim,fontSize:18}}>=</span>{nb('TOTAL',v.f+v.t,isTot?cc:C.text)}</div>
-</div>)})}
 </div>
 </div>)})()}
 {modeTab&&PL.vue!=='classique'&&<div style={{background:'#fef3c7',border:'1px solid #f59e0b',color:'#92400e',borderRadius:8,padding:'6px 12px',marginBottom:8,fontSize:13,fontWeight:600}}>{modeTab==='chauffeur'?'Déplacement des chauffeurs : attrape un prénom et lâche-le sur une autre carte. Ses chantiers du jour suivent.':modeTab==='chantier'?'Déplacement des chantiers : attrape une ligne et lâche-la sur une autre carte.':'Déplacement des machines : attrape une carte et lâche-la à la place d une autre.'} <span onClick={()=>setModeTab('')} style={{marginLeft:12,cursor:'pointer',textDecoration:'underline'}}>Terminer</span></div>}
@@ -3834,7 +3841,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.23-13</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-1</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
