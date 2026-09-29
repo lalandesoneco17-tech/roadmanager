@@ -16,6 +16,7 @@ const SEVERITIES=['urgent','normal','mineur'];
 const sb=window.supabaseClient;
 // ID de session local : permet d'ignorer notre propre echo Supabase quand on recoit un UPDATE qu'on vient d'envoyer
 const _localSessionId=Math.random().toString(36).slice(2)+Date.now().toString(36);
+let _saveRetryTimer=null; // enregistrement reporte quand Supabase ne repond pas a la lecture prealable
 let _liveData=null; // dernier etat applicatif connu, toujours frais (anti stale-closure: les editeurs clonent depuis ici)
 // localStorage helpers
 const localLoad=()=>{try{for(const k of[SKEY,'roadmanager-v4','roadmanager-v3','roadmanager-v2','roadmanager-data']){const raw=localStorage.getItem(k);if(raw){const d=JSON.parse(raw);if(k!==SKEY)localStorage.setItem(SKEY,JSON.stringify(d));return{...defaultData(),...d};}}}catch(e){}return null};
@@ -86,7 +87,13 @@ const _R=row.data;
 if(!merged.telegramBotToken&&_R.telegramBotToken)merged.telegramBotToken=_R.telegramBotToken;
 if(!merged.telegramAdminChatId&&_R.telegramAdminChatId)merged.telegramAdminChatId=_R.telegramAdminChatId;
 {const _am=new Map();(_R.telegramAdminChats||[]).forEach(a=>{if(a&&a.chatId)_am.set(String(a.chatId),a)});(d.telegramAdminChats||[]).forEach(a=>{if(a&&a.chatId)_am.set(String(a.chatId),a)});if(_am.size)merged.telegramAdminChats=[..._am.values()]}
-merged.telegramEmpChats={...(_R.telegramEmpChats||{}),...(d.telegramEmpChats||{})}}else{merged={...d}}
+merged.telegramEmpChats={...(_R.telegramEmpChats||{}),...(d.telegramEmpChats||{})}}else{
+// Lecture distante impossible (Supabase lent ou en panne) : on n'ecrase JAMAIS la base avec notre copie locale
+// (incident du 28/09/2026 : une vieille copie a efface la journee du lendemain et la memoire du bot -> doublons).
+// La copie locale est deja gardee (localSave) ; on reessaie l'envoi un peu plus tard.
+console.warn('Supabase : lecture avant enregistrement impossible, envoi reporte');
+if(!_saveRetryTimer){_saveRetryTimer=setTimeout(()=>{_saveRetryTimer=null;try{saveData(_liveData||d)}catch(e){}},15000)}
+return}
 // Tague avec notre session ID -> permet a subscribeToChanges d'ignorer notre propre echo
 merged._lastSaver=_localSessionId;merged._lastSaveAt=Date.now();
 const _tsSave=new Date().toISOString();const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:_tsSave});if(error)console.error('Supabase save error:',error);else{_lastSeenUpdatedAt=_tsSave;localSave(merged);console.log('Saved to Supabase (merged)')}}catch(e){console.warn('Supabase save failed',e)}}};
@@ -3850,7 +3857,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.24-6</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.29-1</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>

@@ -120,6 +120,15 @@ ce fichier ET le code en même temps.
 - Un pointage ne se supprime que par une **suppression explicite** : jamais déduit d'une
   absence. (juillet 2026)
 
+## Enregistrement et pannes de Supabase (29/09/2026)
+
+- Avant d'enregistrer, chaque appareil relit la base pour fusionner. Si cette lecture échoue (Supabase
+  lent ou en panne), l'appareil **n'écrase plus la base avec sa copie locale** : il garde la saisie chez
+  lui et réessaie 15 secondes plus tard. Incident du 28/09 : une vieille copie avait effacé la journée du
+  mardi et la mémoire du bot, d'où la journée en double le lundi et rien le mardi.
+- Réparer une journée en double : `outils/reparer-doublons-2026-09-28.sql` (modèle), lancé avec
+  `outils/sql.sh`. On garde les chantiers d'origine (envoyés aux chauffeurs) et on repointe la mémoire du bot.
+
 ## Les pointages
 
 - **Plusieurs pointages dans la journée** (matin puis ré-embauche le soir) : la journée est la somme de tous
