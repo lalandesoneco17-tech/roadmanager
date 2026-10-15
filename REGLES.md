@@ -17,6 +17,12 @@ ce fichier ET le code en même temps.
     En journée, cocher une case ne déclenche plus rien.
 - La case « prévenu » de la feuille reste l'information de papa ; RoadManager envoie le chantier au
   chauffeur à 19h quel que soit l'état de la case. (17/09/2026)
+- Le bot retrouve l'onglet d'une semaine par son **identifiant**, plus par son nom.
+  Les onglets ont un nombre variable d'espaces devant (« SEMAINE 41 », «  SEMAINE 42 »), et
+  Google renvoyait silencieusement le **premier onglet** quand le nom ne collait pas au
+  caractère près : octobre ne se lisait que sur la semaine 41. **Tu peux nommer tes onglets
+  comme tu veux**, tant qu'ils contiennent « SEMAINE » et le numéro de semaine de l'année.
+  (15/10/2026)
 - Le bot lit **tout le classeur** (tous les jours à venir), pas seulement le lendemain.
   Ça ne consomme aucun token. (08/09/2026)
 - **Une ligne = une fiche, une seule fois.** Deux cases cochées coup sur coup ne renvoient

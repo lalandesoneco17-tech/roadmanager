@@ -1214,6 +1214,47 @@ function gsDayJobs(rows: any, start: number, data?: any): any[] {
 function gsBooks(data: any): any[] {
   return (data.gsheetBooks || []).slice().sort((a: any, b: any) => (b.at || 0) - (a.at || 0));
 }
+// Les onglets du pere ont un nombre variable d'espaces devant leur nom
+// (" SEMAINE 41", "  SEMAINE 42", "   SEMAINE 43"...). Quand le nom demande ne
+// correspond pas au caractere pres, Google n'emet aucune erreur : il renvoie
+// TOUJOURS le premier onglet. D'ou "il lit la semaine 41 mais pas la 42".
+// On passe donc par le gid de chaque onglet, qui ne depend d'aucun nom.
+const _ongletsCache: Record<string, { at: number; list: Array<{ nom: string; gid: string }> }> = {};
+async function gsOnglets(bookId: string): Promise<Array<{ nom: string; gid: string }>> {
+  const c = _ongletsCache[bookId];
+  if (c && Date.now() - c.at < 600000) return c.list;
+  const out: Array<{ nom: string; gid: string }> = [];
+  try {
+    const r = await fetch("https://docs.google.com/spreadsheets/d/" + bookId + "/htmlview");
+    if (r.ok) {
+      const h = await r.text();
+      const re = /items\.push\(\{name:\s*"((?:[^"\\]|\\.)*)"[^}]*?gid:\s*"(\d+)"/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(h))) {
+        out.push({ nom: m[1].replace(/\\(.)/g, "$1").replace(/\s+/g, " ").trim().toUpperCase(), gid: m[2] });
+      }
+    }
+  } catch (_e) { /* on retombera sur la recherche par nom */ }
+  // On ne memorise jamais un echec : sinon le classeur resterait illisible toute la session.
+  if (out.length) _ongletsCache[bookId] = { at: Date.now(), list: out };
+  return out;
+}
+async function gsFetchGid(bookId: string, gid: string): Promise<string | null> {
+  const u = "https://docs.google.com/spreadsheets/d/" + bookId + "/gviz/tq?tqx=out:csv&gid=" + gid;
+  try { const r = await fetch(u); if (!r.ok) return null; return await r.text(); } catch (_e) { return null; }
+}
+// La feuille d'une semaine, quel que soit l'habillage de son nom.
+async function gsFetchSemaine(bookId: string, w: number): Promise<string | null> {
+  const cible = "SEMAINE " + w;
+  const ongs = await gsOnglets(bookId);
+  const o = ongs.find((x) => x.nom === cible);
+  if (o) { const csv = await gsFetchGid(bookId, o.gid); if (csv) return csv; }
+  for (const nm of [cible, " " + cible, "  " + cible, "   " + cible]) {
+    const csv = await gsFetchSheet(bookId, nm);
+    if (csv) return csv;
+  }
+  return null;
+}
 async function gsFetchSheet(bookId: string, sheetName: string): Promise<string | null> {
   const u = "https://docs.google.com/spreadsheets/d/" + bookId + "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(sheetName);
   try { const r = await fetch(u); if (!r.ok) return null; return await r.text(); } catch (_e) { return null; }
@@ -1226,13 +1267,12 @@ async function gsLookupDay(data: any, iso: string): Promise<any> {
   if (!books.length) return { error: "Aucun classeur Google Sheets enregistre. L'admin doit envoyer le lien du classeur du mois." };
   const w = gsIsoWeek(iso);
   for (const b of books) {
-    for (const name of ["SEMAINE " + w, " SEMAINE " + w]) {
-      const csv = await gsFetchSheet(b.id, name);
-      if (!csv) continue;
+    const csv = await gsFetchSemaine(b.id, w);
+    if (csv) {
       const rows = gsParseCsv(csv);
       const start = gsFindDay(rows, iso);
-      if (start < 0) continue;   // mauvaise feuille renvoyee par Google : on ignore
-      return { jobs: gsDayJobs(rows, start, data), semaine: w, book: b };
+      // mauvaise feuille renvoyee par Google : on ignore ce classeur
+      if (start >= 0) return { jobs: gsDayJobs(rows, start, data), semaine: w, book: b };
     }
   }
   return { error: "Le " + gsDayLabel(iso) + " (semaine " + w + ") n'a pas ete trouve dans les classeurs enregistres." };
@@ -1427,11 +1467,10 @@ async function gsBilan(data: any, d1: string, d2: string, chauffeur?: string): P
     if (!(w in semaines)) {
       semaines[w] = null;
       for (const b of books) {
-        for (const nm of ["SEMAINE " + w, " SEMAINE " + w]) {
-          const csv = await gsFetchSheet(b.id, nm);
-          if (!csv) continue;
+        const csv = await gsFetchSemaine(b.id, w);
+        if (csv) {
           const rows = gsParseCsv(csv);
-          if (gsFindDay(rows, iso) >= 0) { semaines[w] = rows; break; }
+          if (gsFindDay(rows, iso) >= 0) semaines[w] = rows;
         }
         if (semaines[w]) break;
       }
@@ -1697,12 +1736,11 @@ async function gsScan(data: any, seen: any, cache: any): Promise<any> {
       const ck = b.id + "|" + w;
       if (!(ck in cache)) {
         cache[ck] = null;
-        for (const nm of ["SEMAINE " + w, " SEMAINE " + w]) {
-          const csv = await gsFetchSheet(b.id, nm);
-          if (!csv) continue;
+        const csv = await gsFetchSemaine(b.id, w);
+        if (csv) {
           const rows = gsParseCsv(csv);
-          // Google renvoie la 1re feuille si le nom n'existe pas : on verifie que le jour y est.
-          if (gsFindDay(rows, iso) >= 0) { cache[ck] = rows; break; }
+          // Google renvoie la 1re feuille si l'onglet est introuvable : on verifie que le jour y est.
+          if (gsFindDay(rows, iso) >= 0) cache[ck] = rows;
         }
       }
       const rows = cache[ck];
@@ -1960,9 +1998,8 @@ async function gsLireJour(data: any, iso: string): Promise<any> {
   for (const b of gsBooks(data)) {
     const ws = gsBookWeeks(b);
     if (ws && !ws.has(w)) continue;
-    for (const name of ["SEMAINE " + w, " SEMAINE " + w]) {
-      const csv = await gsFetchSheet(b.id, name);
-      if (!csv) continue;
+    const csv = await gsFetchSemaine(b.id, w);
+    if (csv) {
       const rows = gsParseCsv(csv);
       const start = gsFindDay(rows, iso);
       if (start >= 0) return { rows, start };
