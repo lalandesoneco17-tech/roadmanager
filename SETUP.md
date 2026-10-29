@@ -64,3 +64,17 @@ ALTER TABLE time_entries_validated ADD COLUMN IF NOT EXISTS pauses JSONB;
 ALTER TABLE time_entries_validated ADD COLUMN IF NOT EXISTS positions JSONB;
 NOTIFY pgrst, 'reload schema';
 ```
+
+## 5. Journal des pointages et interdiction d'effacement (29/10/2026, a executer une fois)
+
+Fichier `outils/journal-pointages.sql` : a coller dans **SQL Editor** puis **Run** (ou `bash outils/sql.sh outils/journal-pointages.sql`).
+- Cree la table `time_entries_journal` : la base y recopie elle-meme chaque creation, modification et
+  suppression de pointage (declencheurs). L'application ne peut pas y toucher : l'historique complet est toujours la.
+- Interdit l'effacement physique d'un pointage (meme depuis l'editeur de table) : seul `deleted = true`
+  (la Corbeille de la page Heures) est possible.
+- Vue `time_entries_historique` : l'historique lisible, le plus recent en premier.
+
+## 6. Miroir des pointages dans Google Sheets (facultatif, 10 minutes)
+
+Voir `outils/MIROIR-GOOGLE-SHEETS.md` : un classeur Google qui recoit automatiquement, toutes les 5 minutes,
+une copie de tous les pointages (onglet Pointages) et de chaque changement (onglet Journal), en dehors de Supabase.

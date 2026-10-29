@@ -20,13 +20,13 @@ let _saveRetryTimer=null; // enregistrement reporte quand Supabase ne repond pas
 let _liveData=null; // dernier etat applicatif connu, toujours frais (anti stale-closure: les editeurs clonent depuis ici)
 // localStorage helpers
 const localLoad=()=>{try{for(const k of[SKEY,'roadmanager-v4','roadmanager-v3','roadmanager-v2','roadmanager-data']){const raw=localStorage.getItem(k);if(raw){const d=JSON.parse(raw);if(k!==SKEY)localStorage.setItem(SKEY,JSON.stringify(d));return{...defaultData(),...d};}}}catch(e){}return null};
-const localSave=(d)=>{try{localStorage.setItem(SKEY,JSON.stringify(d));localStorage.setItem(SKEY+'_ts',String(Date.now()))}catch(e){}};
+const localSave=(d)=>{try{const{_teBloc,...reste}=d||{};localStorage.setItem(SKEY,JSON.stringify(reste));localStorage.setItem(SKEY+'_ts',String(Date.now()))}catch(e){}};
 const localTs=()=>{try{return Number(localStorage.getItem(SKEY+'_ts'))||0}catch(e){return 0}};
 // Supabase load/save with localStorage fallback
 // Date de la derniere version du bloc vue par cet appareil : le rafraichissement periodique ne retelecharge le bloc (1 Mo)
 // que si elle a change (10/09/2026 : 5,6 Go de sortie par mois, quota Supabase depasse).
 let _lastSeenUpdatedAt=null;
-const loadData=async()=>{if(sb){try{const{data:row,error}=await sb.from('app_data').select('data,updated_at').eq('id','main').single();if(!error&&row&&row.data&&Object.keys(row.data).length>0){if(row.updated_at)_lastSeenUpdatedAt=row.updated_at;const merged={...defaultData(),...row.data};localSave(merged);console.log('Loaded from Supabase');return merged}}catch(e){console.warn('Supabase load failed, fallback localStorage',e)}}const local=localLoad();if(local){if(sb){try{await saveData(local);console.log('Migrated localStorage to Supabase')}catch(e){console.warn('Migration to Supabase failed',e)}}return local}return{...defaultData(),_indisponible:true}};
+const loadData=async()=>{if(sb){try{const{data:row,error}=await sb.from('app_data').select('data,updated_at').eq('id','main').single();if(!error&&row&&row.data&&Object.keys(row.data).length>0){if(row.updated_at)_lastSeenUpdatedAt=row.updated_at;const merged={...defaultData(),...row.data};teGarderCacheLocal(merged,row.data);localSave(merged);console.log('Loaded from Supabase');return merged}}catch(e){console.warn('Supabase load failed, fallback localStorage',e)}}const local=localLoad();if(local){if(sb){try{await saveData(local);console.log('Migrated localStorage to Supabase')}catch(e){console.warn('Migration to Supabase failed',e)}}return local}return{...defaultData(),_indisponible:true}};
 // Filtre les items dont l'id est dans tombstones (marqueurs de suppression)
 const filterTombstones=(arr,ts)=>{if(!ts)return arr;return(arr||[]).filter(it=>!it||!it.id||!ts[it.id])};
 const mergeArraysById=(local,remote,ts)=>{if(!remote||!remote.length)return filterTombstones(local,ts);if(!local||!local.length)return filterTombstones(remote,ts);const map=new Map();remote.forEach(item=>{if(item&&item.id)map.set(item.id,item)});local.forEach(item=>{if(item&&item.id)map.set(item.id,item)});return filterTombstones([...map.values()],ts)};
@@ -49,7 +49,8 @@ const mergeTgGroups=(local,remote)=>{const now=Date.now();const map=new Map();(r
 const mergeFullData=(local,remote)=>{if(!remote)return local;if(!local)return remote;
 const tombstones=mergeTombstones(local._tombstones,remote._tombstones);const ts=tombstones||{};
 const merged={...remote};merged._tombstones=tombstones;
-merged.timeEntries=mergeArraysById(local.timeEntries,remote.timeEntries,ts.timeEntries);
+// Pointages : jamais depuis le bloc (ils vivent dans leurs tables, voir teApply) ; on garde la version locale telle quelle
+TE_CLES.forEach(k=>{merged[k]=local[k]||[]});merged._teCorbeille=local._teCorbeille||{};delete merged._teBloc;
 merged.panneReports=mergeArraysById(local.panneReports,remote.panneReports,ts.panneReports);
 merged.interventions=mergeKeepLocal(local.interventions,remote.interventions);
 merged.parts=mergeKeepLocal(local.parts,remote.parts);
@@ -71,8 +72,6 @@ merged.stationMovements=mergeAppendById(local.stationMovements,remote.stationMov
 merged.tgGroups=mergeTgGroups(local.tgGroups,remote.tgGroups);
 return merged};
 const saveData=async(d)=>{localSave(d);if(sb){try{const{data:row}=await sb.from('app_data').select('data').eq('id','main').single();let merged;if(row&&row.data){merged=mergeFullData(d,row.data);
-// Mais on veut que LOCAL gagne sur remote pour timeEntries (le local vient de modifier) : timeEntries gere par teSyncChanges, donc on ecrase brutalement
-merged.timeEntries=d.timeEntries||[];
 // La sauvegarde locale fait foi pour TOUS les reglages/scalaires (token Telegram, tarifs, forfaits, equipements, etc.) :
 // mergeFullData prend ceux du remote (utile pour le merge live recu), mais ICI l'utilisateur vient justement de les modifier.
 // On ne preserve depuis le merge que les arrays fusionnes par id (sinon on ecraserait les ajouts d'un autre appareil).
@@ -96,7 +95,9 @@ if(!_saveRetryTimer){_saveRetryTimer=setTimeout(()=>{_saveRetryTimer=null;try{sa
 return}
 // Tague avec notre session ID -> permet a subscribeToChanges d'ignorer notre propre echo
 merged._lastSaver=_localSessionId;merged._lastSaveAt=Date.now();
-const _tsSave=new Date().toISOString();const{error}=await sb.from('app_data').upsert({id:'main',data:merged,updated_at:_tsSave});if(error)console.error('Supabase save error:',error);else{_lastSeenUpdatedAt=_tsSave;localSave(merged);console.log('Saved to Supabase (merged)')}}catch(e){console.warn('Supabase save failed',e)}}};
+// Les pointages ne sont JAMAIS ecrits dans le bloc : ils ont leurs tables (29/10/2026). Un appareil ne peut plus ecraser les heures d'un autre.
+const pourBase={...merged};TE_CLES.forEach(k=>{delete pourBase[k]});delete pourBase._teCorbeille;delete pourBase._teDeletes;delete pourBase._teBloc;
+const _tsSave=new Date().toISOString();const{error}=await sb.from('app_data').upsert({id:'main',data:pourBase,updated_at:_tsSave});if(error)console.error('Supabase save error:',error);else{_lastSeenUpdatedAt=_tsSave;localSave(merged);console.log('Saved to Supabase (merged)')}}catch(e){console.warn('Supabase save failed',e)}}};
 const subscribeToChanges=(callback,getCurrentData)=>{if(!sb)return()=>{};const channel=sb.channel('app_data_changes').on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_data',filter:'id=eq.main'},(payload)=>{if(!payload.new||!payload.new.data)return;if(payload.new.updated_at)_lastSeenUpdatedAt=payload.new.updated_at;
 // Ignore notre propre echo : c'est nous qui venons d'envoyer ce save, donc notre state local est deja a jour (et potentiellement plus frais si l'utilisateur a fait une modif entre temps)
 if(payload.new.data._lastSaver===_localSessionId)return;
@@ -104,15 +105,23 @@ const remote={...defaultData(),...payload.new.data};const current=getCurrentData
 // Merge intelligent : preserve les modifs locales en cours qui ne sont pas encore dans le remote
 const merged=mergeFullData(current,remote);localSave(merged);callback(merged)}).subscribe();return()=>{sb.removeChannel(channel)}};
 
-// ========== POINTAGE FIABLE (tables dediees time_entries / time_entries_validated) ==========
-// Chaque pointage = une ligne Supabase independante -> zero race condition entre salaries.
-// File d'attente localStorage + flush auto en cas de coupure reseau.
-// Soft-delete (champ deleted=true) : un pointage n'est jamais efface physiquement.
+// ========== POINTAGES : UNE LIGNE PAR POINTAGE, ECRITE DIRECTEMENT (29/10/2026) ==========
+// Source de verite UNIQUE : les tables Supabase time_entries / time_entries_validated.
+// - Un clic = UNE operation envoyee telle quelle a la table : 'insert' (jamais d'ecrasement d'une ligne existante),
+//   'patch' (seulement les champs modifies), 'delete' (soft-delete, restaurable depuis la Corbeille), 'restore'.
+// - Rien n'est deduit d'une comparaison entre deux copies de l'etat ; le bloc app_data ne contient plus les pointages :
+//   un telephone ne peut plus ecraser les heures d'un autre (incidents de juillet, septembre et octobre 2026).
+// - Lecture complete par pages de 1000 (limite PostgREST), puis mises a jour incrementales (realtime + relance 60 s).
+// - File d'attente localStorage (des operations, pas des copies), rejouee dans l'ordre ; visible chez le chauffeur.
 const TE_QUEUE_KEY='rm-te-queue';
+const TE_CLES=['timeEntries','timeEntriesValidated'];
+const teTableOf=key=>key==='timeEntriesValidated'?'time_entries_validated':'time_entries';
+const teKeyOf=table=>table==='time_entries_validated'?'timeEntriesValidated':'timeEntries';
+// Champ de l'app -> colonne de la table (tout nouveau champ = ALTER TABLE, voir SETUP.md)
+const TE_COLS={id:'id',empId:'emp_id',date:'date',type:'type',startTime:'start_time',endTime:'end_time',pauseStart:'pause_start',pauseEnd:'pause_end',pauseMin:'pause_min',breakStart:'break_start',breakEnd:'break_end',mealType:'meal_type',absenceType:'absence_type',nightHours:'night_hours',requestedEndTime:'requested_end_time',requestedEndMotif:'requested_end_motif',refHours:'ref_hours',pauses:'pauses',positions:'positions',createdAt:'created_at'};
 const teQueueGet=()=>{try{return JSON.parse(localStorage.getItem(TE_QUEUE_KEY)||'[]')}catch(e){return[]}};
 const teQueueSet=q=>{try{localStorage.setItem(TE_QUEUE_KEY,JSON.stringify(q))}catch(e){}};
-const teQueuePush=op=>{const q=teQueueGet();q.push({...op,_ts:Date.now()});teQueueSet(q)};
-const teTableOf=key=>key==='timeEntriesValidated'?'time_entries_validated':'time_entries';
+const teQueuePush=op=>{const q=teQueueGet();const n=q.reduce((m,o)=>Math.max(m,o._n||0),0)+1;q.push({...op,_ts:Date.now(),_n:n});teQueueSet(q)};
 // Position au moment d'un pointage. Ne bloque JAMAIS le pointage : on enregistre
 // d'abord, la position se rattache ensuite si elle arrive. Refus ou echec = rien.
 // Position : un point GPS est pris UNIQUEMENT a l'embauche, a la pause, a la reprise, a la debauche et a la fin
@@ -122,8 +131,11 @@ const _lirePos=(opts)=>new Promise(res=>{try{if(!navigator.geolocation)return re
 let _autorisationDemandee=false;
 const posSuivre=()=>{if(_autorisationDemandee)return;_autorisationDemandee=true;_lirePos({enableHighAccuracy:false,timeout:15000,maximumAge:600000}).catch(()=>{})};
 const posMaintenant=()=>_lirePos({enableHighAccuracy:true,timeout:12000,maximumAge:30000});
+const teIso=s=>{if(!s)return'';try{return new Date(s).toISOString()}catch(e){return String(s)}};
 const teToRow=e=>({id:e.id,emp_id:e.empId,date:e.date,type:e.type||null,start_time:e.startTime||null,end_time:e.endTime||null,pause_start:e.pauseStart||null,pause_end:e.pauseEnd||null,pause_min:e.pauseMin||0,break_start:e.breakStart||null,break_end:e.breakEnd||null,meal_type:e.mealType||null,absence_type:e.absenceType||null,night_hours:e.nightHours||0,requested_end_time:e.requestedEndTime||null,requested_end_motif:e.requestedEndMotif||null,ref_hours:e.refHours!=null?e.refHours:null,pauses:Array.isArray(e.pauses)?e.pauses:null,positions:(e.positions&&typeof e.positions==='object')?e.positions:null,created_at:e.createdAt||new Date().toISOString(),updated_at:new Date().toISOString(),deleted:false});
-const teFromRow=r=>({id:r.id,empId:r.emp_id,date:r.date,type:r.type||'',startTime:r.start_time||'',endTime:r.end_time||'',pauseStart:r.pause_start||null,pauseEnd:r.pause_end||null,pauseMin:r.pause_min||0,breakStart:r.break_start||'',breakEnd:r.break_end||'',mealType:r.meal_type||'',absenceType:r.absence_type||'',nightHours:Number(r.night_hours)||0,requestedEndTime:r.requested_end_time||'',requestedEndMotif:r.requested_end_motif||'',refHours:r.ref_hours!=null?Number(r.ref_hours):undefined,pauses:Array.isArray(r.pauses)?r.pauses:null,positions:(r.positions&&typeof r.positions==='object')?r.positions:null,createdAt:r.created_at});
+const teFromRow=r=>({id:r.id,empId:r.emp_id,date:r.date,type:r.type||'',startTime:r.start_time||'',endTime:r.end_time||'',pauseStart:r.pause_start||null,pauseEnd:r.pause_end||null,pauseMin:r.pause_min||0,breakStart:r.break_start||'',breakEnd:r.break_end||'',mealType:r.meal_type||'',absenceType:r.absence_type||'',nightHours:Number(r.night_hours)||0,requestedEndTime:r.requested_end_time||'',requestedEndMotif:r.requested_end_motif||'',refHours:r.ref_hours!=null?Number(r.ref_hours):undefined,pauses:Array.isArray(r.pauses)?r.pauses:null,positions:(r.positions&&typeof r.positions==='object')?r.positions:null,createdAt:r.created_at,updatedAt:teIso(r.updated_at),deleted:!!r.deleted});
+// Ligne partielle : seulement les colonnes des champs modifies (+ la date de modification)
+const tePatchRow=(entry,champs)=>{const full=teToRow(entry||{});const row={updated_at:full.updated_at};(champs||[]).forEach(c=>{const col=TE_COLS[c];if(col&&col!=='id'&&col!=='created_at')row[col]=full[col]});return row};
 let teTablesAvailable=null;
 // Un echec (reseau coupe, Supabase en panne au moment de l'ouverture) n'est JAMAIS memorise : sinon le telephone
 // restait bloque pour toute la session, chaque pointage partait dans la file et n'en sortait plus
@@ -132,33 +144,105 @@ const teTestTables=async()=>{if(!sb)return false;if(teTablesAvailable===true)ret
 // Une colonne connue de l'app mais absente de la table (ex : 'positions' ajoutee le 04/09/2026 sans le SQL) refusait TOUS les pointages
 // pendant 3 jours (erreur 42703). Desormais la colonne refusee est retiree et le pointage part quand meme ; le SQL est dans SETUP.md.
 const teColonneRefusee=err=>{const m=/column (?:\w+\.)?"?(\w+)"? does not exist/i.exec(err.message||'')||/'(\w+)' column/i.exec(err.message||'');return m?m[1]:null};
-const teUpsertRemote=async(entry,table)=>{if(!sb)return false;const row=teToRow(entry);for(let essai=0;essai<5;essai++){try{const{error}=await sb.from(table).upsert(row,{onConflict:'id'});if(!error)return true;const col=(error.code==='42703'||error.code==='PGRST204')?teColonneRefusee(error):null;if(col&&Object.prototype.hasOwnProperty.call(row,col)){console.warn('TE upsert : colonne '+col+' absente dans '+table+', ignoree (executer le SQL de SETUP.md)');delete row[col];continue}console.error('TE upsert err',table,error);return false}catch(e){console.warn('TE upsert exc',e);return false}}return false};
-const teDeleteRemote=async(id,table)=>{if(!sb)return false;try{const{error}=await sb.from(table).update({deleted:true,updated_at:new Date().toISOString()}).eq('id',id);if(error){console.error('TE del err',table,error);return false}return true}catch(e){console.warn('TE del exc',e);return false}};
-const teLoadAll=async(table)=>{if(!sb)return null;try{const{data,error}=await sb.from(table).select('*').eq('deleted',false);if(error){console.warn('TE load err',table,error);return null}return(data||[]).map(teFromRow)}catch(e){console.warn('TE load exc',e);return null}};
+const teErreurColonne=error=>(error&&(error.code==='42703'||error.code==='PGRST204'))?teColonneRefusee(error):null;
+// INSERT : cree la ligne si elle n'existe pas ; si elle existe deja (operation rejouee, echo), elle n'est PAS touchee.
+const teInsertRemote=async(entry,table)=>{if(!sb||!entry||!entry.id)return false;const row=teToRow(entry);for(let essai=0;essai<6;essai++){try{const{error}=await sb.from(table).upsert(row,{onConflict:'id',ignoreDuplicates:true});if(!error)return true;const col=teErreurColonne(error);if(col&&Object.prototype.hasOwnProperty.call(row,col)){console.warn('TE insert : colonne '+col+' absente dans '+table+', ignoree (executer le SQL de SETUP.md)');delete row[col];continue}console.error('TE insert err',table,error);return false}catch(e){console.warn('TE insert exc',e);return false}}return false};
+// PATCH : ne modifie que les champs cites. Si la ligne n'existe pas encore (insertion restee dans la file), on la cree entiere.
+const tePatchRemote=async(id,champs,table,entry)=>{if(!sb||!id)return false;const row=tePatchRow(entry||{id},champs||[]);for(let essai=0;essai<6;essai++){try{const{data,error}=await sb.from(table).update(row).eq('id',id).select('id');if(error){const col=teErreurColonne(error);if(col&&Object.prototype.hasOwnProperty.call(row,col)){console.warn('TE patch : colonne '+col+' absente dans '+table+', ignoree (executer le SQL de SETUP.md)');delete row[col];continue}console.error('TE patch err',table,error);return false}if(data&&data.length)return true;return(entry&&entry.id===id&&entry.empId&&entry.date)?teInsertRemote(entry,table):false}catch(e){console.warn('TE patch exc',e);return false}}return false};
+// Suppression = marquage (deleted=true), jamais d'effacement physique ; restauration = l'inverse.
+const teDeleteRemote=async(id,table)=>{if(!sb||!id)return false;try{const{error}=await sb.from(table).update({deleted:true,updated_at:new Date().toISOString()}).eq('id',id);if(error){console.error('TE del err',table,error);return false}return true}catch(e){console.warn('TE del exc',e);return false}};
+const teRestoreRemote=async(id,table)=>{if(!sb||!id)return false;try{const{error}=await sb.from(table).update({deleted:false,updated_at:new Date().toISOString()}).eq('id',id);if(error){console.error('TE restore err',table,error);return false}return true}catch(e){console.warn('TE restore exc',e);return false}};
+const teVide=v=>v===null||v===undefined||v===''||v===0||(Array.isArray(v)&&!v.length)||(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length);
+// Rattrapage des ANCIENNES files d'attente ('upsert' d'une copie entiere ; telephones muets depuis septembre 2026) :
+// la ligne est creee si elle manque ; si elle existe, on ne fait que REMPLIR ses champs vides (ex : la debauche qui manquait),
+// jamais changer une valeur deja presente (une correction faite au bureau entre temps reste la bonne).
+const teFusionRemote=async(entry,table)=>{if(!sb||!entry||!entry.id)return false;try{const{data,error}=await sb.from(table).select('*').eq('id',entry.id).maybeSingle();if(error)return false;if(!data)return teInsertRemote(entry,table);const srv=teFromRow(data);const champs=Object.keys(TE_COLS).filter(c=>!['id','createdAt','empId','date','type'].includes(c)&&!teVide(entry[c])&&teVide(srv[c]));if(!srv.endTime&&entry.endTime&&entry.type&&entry.type!==srv.type)champs.push('type');if(!champs.length)return true;return tePatchRemote(entry.id,champs,table,entry)}catch(e){console.warn('TE fusion exc',e);return false}};
+const _teOpId=op=>(op&&(op.id||(op.entry&&op.entry.id)))||null;
+const _teGenre=op=>op.op||(op.kind==='upsert'?'fusion':op.kind);
+const teExecuter=async op=>{switch(_teGenre(op)){case'insert':return teInsertRemote(op.entry,op.table);case'patch':return tePatchRemote(op.id,op.champs,op.table,op.entry);case'delete':return teDeleteRemote(op.id,op.table);case'restore':return teRestoreRemote(op.id,op.table);case'fusion':return teFusionRemote(op.entry,op.table);default:return true}};
+const teOpCle=op=>_teGenre(op)+':'+_teOpId(op)+':'+(op._ts||0)+':'+(op._n||0);
 // Pointage ouvert (embauche sans debauche) cree AVANT un autre pointage du meme salarie le meme jour = double clic pendant une panne
 // de synchro (l'embauche avait disparu de l'ecran, le chauffeur a re-embauche). On ne le renvoie pas, sinon il resterait ouvert a jamais.
 const teEstDoublonOuvert=(e,liste)=>{if(!e||!e.startTime||e.endTime||e.type==='absence'||e.type==='pending')return false;return liste.some(o=>o&&o.id!==e.id&&o.empId===e.empId&&o.date===e.date&&(o.createdAt||'')>(e.createdAt||''))};
-const teOpCle=op=>op.kind+':'+(op.entry?op.entry.id:op.id)+':'+(op._ts||0);
 let teFlushEnCours=false;
-const teQueueFlush=async()=>{if(!sb||teFlushEnCours)return;const avail=await teTestTables();if(!avail)return;const q=teQueueGet();if(!q.length)return;teFlushEnCours=true;try{
-// une meme entree n'est envoyee qu'une fois, dans son dernier etat
-const parId=new Map();const aEnvoyer=[];for(const op of q){if(op.kind==='upsert'&&op.entry&&op.entry.id){const k=op.table+':'+op.entry.id;if(parId.has(k))aEnvoyer[parId.get(k)]=null;parId.set(k,aEnvoyer.length)}aEnvoyer.push(op)}
-const ups=aEnvoyer.filter(op=>op&&op.kind==='upsert'&&op.table==='time_entries').map(op=>op.entry);
-const restantes=new Set();let envoyes=0;
-for(const op of aEnvoyer){if(!op)continue;if(op.kind==='upsert'&&op.table==='time_entries'&&teEstDoublonOuvert(op.entry,ups)){console.log('TE queue : embauche en double ignoree',op.entry.date,op.entry.startTime);continue}
-let ok=false;if(op.kind==='upsert')ok=await teUpsertRemote(op.entry,op.table);else if(op.kind==='delete')ok=await teDeleteRemote(op.id,op.table);if(ok)envoyes++;else restantes.add(teOpCle(op))}
-// on ne retire de la file que ce qu'on a traite : une operation ajoutee pendant l'envoi est conservee
-const lues=new Set(q.map(teOpCle));teQueueSet(teQueueGet().filter(op=>!lues.has(teOpCle(op))||restantes.has(teOpCle(op))));
-if(envoyes)console.log('TE queue flushed:',envoyes,'envoyes, restantes:',restantes.size)}finally{teFlushEnCours=false}};
-const teSyncChanges=async(oldData,newData)=>{if(!sb)return;let avail=false;try{avail=await teTestTables()}catch(e){console.warn('test tables pointages',e)}for(const key of['timeEntries','timeEntriesValidated']){const table=teTableOf(key);const oldMap=new Map(((oldData||{})[key]||[]).filter(t=>t&&t.id).map(t=>[t.id,t]));const nextMap=new Map(((newData||{})[key]||[]).filter(t=>t&&t.id).map(t=>[t.id,t]));for(const[id,entry]of nextMap){const prev=oldMap.get(id);if(!prev||JSON.stringify(prev)!==JSON.stringify(entry)){let ok=false;if(avail){try{ok=await teUpsertRemote(entry,table)}catch(e){console.warn('envoi pointage',e)}}if(!ok)teQueuePush({kind:'upsert',entry,table})}}}
-// SUPPRESSION EXPLICITE UNIQUEMENT : on ne deduit PLUS jamais une suppression de l'absence d'un id dans la liste locale.
-// (Bug historique : un appareil avec une copie partielle/perimee des pointages -> le save effacait les pointages des AUTRES salaries.)
-// Seuls les ids explicitement listes dans newData._teDeletes (poses par delTE / copyFromDeclared) sont supprimes.
-const dels=(newData&&newData._teDeletes)||[];for(const dd of dels){if(!dd||!dd.id)continue;const table=teTableOf(dd.key==='timeEntriesValidated'?'timeEntriesValidated':'timeEntries');if(avail){const ok=await teDeleteRemote(dd.id,table);if(!ok)teQueuePush({kind:'delete',id:dd.id,table})}else{teQueuePush({kind:'delete',id:dd.id,table})}}};
-const teMigrateFromBlob=async(data)=>{if(!sb||!data)return data;const avail=await teTestTables();if(!avail)return data;const merged={...data};for(const key of['timeEntries','timeEntriesValidated']){const table=teTableOf(key);const remote=await teLoadAll(table);if(remote===null){merged[key]=data[key]||[];continue}const remoteMap=new Map(remote.map(t=>[t.id,t]));let allIds=null;try{const{data:allRows}=await sb.from(table).select('id');if(allRows)allIds=new Set(allRows.map(r=>r.id))}catch(e){}const blobEntries=(data[key]||[]).filter(t=>t&&t.id);const toMigrate=blobEntries.filter(t=>!remoteMap.has(t.id)&&(!allIds||!allIds.has(t.id))&&!(key==='timeEntries'&&teEstDoublonOuvert(t,[...remote,...blobEntries])));if(toMigrate.length){console.log('Migration de',toMigrate.length,key,'vers',table);for(const e of toMigrate){const ok=await teUpsertRemote(e,table);if(ok)remoteMap.set(e.id,e);else teQueuePush({kind:'upsert',entry:e,table})}}merged[key]=[...remoteMap.values()]}return merged};
-const teSubscribe=onChange=>{if(!sb)return()=>{};const ch=sb.channel('te_changes').on('postgres_changes',{event:'*',schema:'public',table:'time_entries'},p=>onChange('time_entries',p)).on('postgres_changes',{event:'*',schema:'public',table:'time_entries_validated'},p=>onChange('time_entries_validated',p)).subscribe();return()=>{try{sb.removeChannel(ch)}catch(e){}}};
-if(typeof window!=='undefined'&&!window.__teOnlineBound){window.__teOnlineBound=true;window.addEventListener('online',()=>{teQueueFlush().catch(()=>{});if(sb){const local=localLoad();if(local){saveData(local).then(()=>console.log('Online: local data merged with Supabase')).catch(()=>{})}}})}
-// ========== FIN POINTAGE FIABLE ==========
+// Rejoue la file dans l'ordre. Une operation qui echoue bloque les suivantes du MEME pointage (ordre garanti), pas les autres.
+const teQueueFlush=async()=>{if(!sb||teFlushEnCours)return;const q=teQueueGet();if(!q.length)return;if(!(await teTestTables()))return;teFlushEnCours=true;try{
+// dernier etat connu de chaque pointage insere depuis la file (pour la detection d'embauche en double)
+const derniers=new Map();q.forEach(op=>{const g=_teGenre(op);const id=_teOpId(op);if(!id)return;if(g==='insert'||g==='fusion')derniers.set(id,op.entry);else if(g==='patch'&&op.entry&&derniers.has(id))derniers.set(id,op.entry)});
+const faites=new Set();const bloques=new Set();
+for(const op of q){const id=_teOpId(op);if(!id){faites.add(teOpCle(op));continue}if(bloques.has(id))continue;const g=_teGenre(op);
+if((g==='insert'||g==='fusion')&&op.table==='time_entries'&&teEstDoublonOuvert(derniers.get(id)||op.entry,[...derniers.values()])){console.log('TE file : embauche en double ignoree',op.entry&&op.entry.date,op.entry&&op.entry.startTime);faites.add(teOpCle(op));continue}
+let ok=false;try{ok=await teExecuter(op)}catch(e){ok=false}
+if(ok)faites.add(teOpCle(op));else bloques.add(id)}
+// on ne retire de la file que ce qui est parti : une operation ajoutee pendant l'envoi est conservee
+if(faites.size){teQueueSet(teQueueGet().filter(op=>!faites.has(teOpCle(op))));console.log('TE file :',faites.size,'operation(s) envoyee(s), restantes :',teQueueGet().length)}
+}finally{teFlushEnCours=false}};
+// ---- Etat local : branche par App (dataRef + setData), mis a jour de facon synchrone ----
+let _teEtat=null;
+const teBrancher=etat=>{_teEtat=etat};
+const teEtatCourant=()=>(_teEtat&&_teEtat.get())||_liveData||null;
+const teTrouver=(id,key)=>{const d=teEtatCourant();return d?(((d[key||'timeEntries'])||[]).find(t=>t&&t.id===id)||null):null};
+const teNorm=v=>(v===undefined||v===null||v==='')?null:v;
+// Champs (cles de l'app) qui different entre deux versions d'un pointage
+const teChamps=(avant,apres)=>Object.keys(TE_COLS).filter(c=>c!=='id'&&JSON.stringify(teNorm((avant||{})[c]))!==JSON.stringify(teNorm((apres||{})[c])));
+// Applique des operations a l'etat local (nouvel objet ; l'ancien n'est pas modifie)
+const teAppliquerOpsLocal=(d,ops)=>{if(!d)return d;const nd={...d};const corb={...(d._teCorbeille||{})};const now=new Date().toISOString();TE_CLES.forEach(k=>{nd[k]=(d[k]||[]).slice();corb[k]=(corb[k]||[]).slice()});
+(ops||[]).forEach(op=>{const key=teKeyOf(op.table);const liste=nd[key];const id=_teOpId(op);if(!id)return;const i=liste.findIndex(t=>t&&t.id===id);const g=_teGenre(op);
+if(g==='insert'||g==='fusion'){const e={...(i>=0?liste[i]:{}),...op.entry,updatedAt:now,deleted:false};if(i>=0)liste[i]=e;else liste.push(e)}
+else if(g==='patch'){const base=i>=0?liste[i]:(op.entry||null);if(!base)return;const e={...base};(op.champs||[]).forEach(c=>{if(op.entry)e[c]=op.entry[c]});e.updatedAt=now;if(i>=0)liste[i]=e;else liste.push(e)}
+else if(g==='delete'){if(i>=0){const e={...liste[i],deleted:true,updatedAt:now};liste.splice(i,1);corb[key]=[...corb[key].filter(t=>t&&t.id!==id),e]}}
+else if(g==='restore'){const j=corb[key].findIndex(t=>t&&t.id===id);const src=j>=0?corb[key][j]:op.entry;if(!src)return;const e={...src,deleted:false,updatedAt:now};if(j>=0)corb[key].splice(j,1);if(i>=0)liste[i]=e;else liste.push(e)}});
+nd._teCorbeille=corb;return nd};
+// LE point d'entree de toute ecriture de pointage : etat local tout de suite, puis envoi direct, sinon file d'attente.
+const teApply=async(ops)=>{ops=(ops||[]).filter(o=>o&&_teOpId(o)&&o.table);if(!ops.length)return;
+const d=teEtatCourant();if(d&&_teEtat)_teEtat.set(teAppliquerOpsLocal(d,ops));
+let avail=false;try{avail=await teTestTables()}catch(e){}
+for(const op of ops){const id=_teOpId(op);let ok=false;
+// une operation deja en attente sur le meme pointage doit partir avant celle-ci : on respecte l'ordre
+if(avail&&!teQueueGet().some(o=>_teOpId(o)===id)){try{ok=await teExecuter(op)}catch(e){ok=false}}
+if(!ok){teQueuePush(op);console.warn('Pointage mis en file d\'attente',_teGenre(op),id)}}};
+// ---- Lignes venues du serveur ----
+let _teDernierVu={time_entries:null,time_entries_validated:null};
+const teNoterVu=(table,rows)=>{(rows||[]).forEach(r=>{const u=teIso(r&&r.updated_at);if(u&&(!_teDernierVu[table]||u>_teDernierVu[table]))_teDernierVu[table]=u})};
+// Integre des lignes du serveur a l'etat local. remplacer=true : la liste recue est complete, on repart de zero.
+// Un pointage qui a une operation en attente dans la file garde sa version locale (elle partira bientot).
+const teIntegrerLignes=(d,table,rows,remplacer)=>{const key=teKeyOf(table);const nd={...d};const corb={...(d._teCorbeille||{})};const enAttente=new Set(teQueueGet().map(_teOpId));
+const actuelles=new Map(remplacer?[]:(d[key]||[]).filter(t=>t&&t.id).map(t=>[t.id,t]));const supprimees=new Map(remplacer?[]:(corb[key]||[]).filter(t=>t&&t.id).map(t=>[t.id,t]));
+(rows||[]).forEach(r=>{if(!r||!r.id||enAttente.has(r.id))return;const e=teFromRow(r);const loc=actuelles.get(r.id)||supprimees.get(r.id);if(loc&&loc.updatedAt&&e.updatedAt&&e.updatedAt<loc.updatedAt)return;if(e.deleted){actuelles.delete(r.id);supprimees.set(r.id,e)}else{supprimees.delete(r.id);actuelles.set(r.id,e)}});
+nd[key]=[...actuelles.values()];corb[key]=[...supprimees.values()];nd._teCorbeille=corb;teNoterVu(table,rows);return nd};
+// Lecture par pages de 1000 (PostgREST ne renvoie jamais plus de 1000 lignes d'un coup : au-dela, la fin de la table etait invisible).
+const teChargerTable=async(table,depuis)=>{if(!sb)return null;const out=[];const PAGE=1000;for(let de=0;de<200000;de+=PAGE){let q=sb.from(table).select('*').order('updated_at',{ascending:true,nullsFirst:true}).order('id',{ascending:true}).range(de,de+PAGE-1);if(depuis)q=q.gt('updated_at',depuis);const{data,error}=await q;if(error){console.warn('TE lecture',table,error.message||error);return null}out.push(...(data||[]));if(!data||data.length<PAGE)break}return out};
+// Chargement complet des deux tables (corbeille comprise), puis la file locale est rejouee par-dessus. null si la base ne repond pas.
+const teChargerTout=async(d)=>{if(!sb||!d)return null;let nd=d;for(const key of TE_CLES){const table=teTableOf(key);const rows=await teChargerTable(table,null);if(rows===null)return null;nd=teIntegrerLignes(nd,table,rows,true);if(!_teDernierVu[table])_teDernierVu[table]=new Date(Date.now()-60000).toISOString()}teTablesAvailable=true;return teAppliquerOpsLocal(nd,teQueueGet())};
+// Ce qui a change depuis la derniere lecture (si le temps reel a rate quelque chose) : quelques lignes, pas la table entiere.
+const teRafraichir=async()=>{if(!sb||!_teEtat)return;for(const key of TE_CLES){const table=teTableOf(key);if(!_teDernierVu[table])continue;const rows=await teChargerTable(table,_teDernierVu[table]);if(rows&&rows.length){const d=teEtatCourant();if(d)_teEtat.set(teIntegrerLignes(d,table,rows,false))}}};
+// Ligne recue en temps reel (y compris l'echo de nos propres envois)
+const teRecevoirLigne=(table,row)=>{if(!_teEtat||!row||!row.id)return;const d=teEtatCourant();if(d)_teEtat.set(teIntegrerLignes(d,table,[row],false))};
+// Anciennes versions de l'app (telephones pas encore recharges) : elles ecrivent encore les pointages dans le bloc app_data.
+// Ce qui s'y trouve sans etre dans la table y est copie (jamais ecrase : insert seulement).
+const teSauverOrphelins=async(bloc,charge)=>{if(!sb||!bloc||!charge)return;for(const key of TE_CLES){const table=teTableOf(key);const connus=new Set([...(charge[key]||[]),...(((charge._teCorbeille||{})[key])||[])].map(t=>t&&t.id));const orphelins=(bloc[key]||[]).filter(t=>t&&t.id&&t.empId&&t.date&&!connus.has(t.id));for(const e of orphelins){console.log('Pointage present dans le bloc mais pas dans la table : copie',key,e.date);const ok=await teInsertRemote(e,table);if(!ok)teQueuePush({op:'insert',table,entry:e})}}};
+// Les pointages ne viennent jamais du bloc : on garde ceux deja connus de cet appareil (cache local) en attendant la lecture
+// des tables, et ce que le bloc contient encore est mis de cote (_teBloc) pour teSauverOrphelins.
+const teGarderCacheLocal=(merged,bloc)=>{let cache=null;try{const raw=localStorage.getItem(SKEY);cache=raw?JSON.parse(raw):null}catch(e){}merged._teBloc={};TE_CLES.forEach(k=>{merged._teBloc[k]=(bloc&&bloc[k])||[];merged[k]=(cache&&cache[k])||[]});merged._teCorbeille=(cache&&cache._teCorbeille)||{}};
+// Comparaison champ par champ entre deux etats complets (pour les ecrans qui passent encore par save(nd) : chatbot, etc.).
+// Ne produit que des insertions (sans ecrasement) et des patchs de champs ; une suppression n'existe que si elle est explicite (_teDeletes).
+const teDifferences=(prev,nd)=>{const ops=[];if(!prev||!nd)return ops;TE_CLES.forEach(key=>{const table=teTableOf(key);const pm=new Map((prev[key]||[]).filter(t=>t&&t.id).map(t=>[t.id,t]));(nd[key]||[]).forEach(e=>{if(!e||!e.id)return;const p=pm.get(e.id);if(!p){if(e.empId&&e.date)ops.push({op:'insert',table,entry:e});return}const champs=teChamps(p,e);if(champs.length)ops.push({op:'patch',table,id:e.id,champs,entry:e})})});(nd._teDeletes||[]).forEach(dd=>{if(dd&&dd.id)ops.push({op:'delete',table:teTableOf(dd.key==='timeEntriesValidated'?'timeEntriesValidated':'timeEntries'),id:dd.id})});return ops};
+const teSubscribe=onRow=>{if(!sb)return()=>{};const ch=sb.channel('te_changes').on('postgres_changes',{event:'*',schema:'public',table:'time_entries'},p=>onRow('time_entries',p)).on('postgres_changes',{event:'*',schema:'public',table:'time_entries_validated'},p=>onRow('time_entries_validated',p)).subscribe();return()=>{try{sb.removeChannel(ch)}catch(e){}}};
+if(typeof window!=='undefined'&&!window.__teOnlineBound){window.__teOnlineBound=true;window.addEventListener('online',()=>{teQueueFlush().then(()=>teRafraichir()).catch(()=>{});if(sb){const local=localLoad();if(local){saveData(local).then(()=>console.log('Online: local data merged with Supabase')).catch(()=>{})}}})}
+// ========== FIN POINTAGES ==========
+
+// ========== VERSION : un appareil ne garde jamais une vieille version ==========
+// Six chauffeurs sont restes muets de septembre a octobre 2026 : leur telephone faisait tourner une version d'avant les
+// correctifs, jamais rechargee. Toutes les 10 min et a chaque retour au premier plan, on compare l'empreinte du fichier
+// de l'app sur le serveur ; si elle a change, on recharge (tout de suite si l'ecran est cache, sinon des qu'aucune saisie
+// n'est en cours). Au plus un rechargement toutes les 30 min, au cas ou le serveur renverrait des empreintes changeantes.
+let _rmEmpreinte=null,_rmRechargeVoulue=false;
+const rmEmpreinteServeur=async()=>{try{const r=await fetch('app.v6.jsx',{method:'HEAD',cache:'no-store'});if(!r.ok)return null;return r.headers.get('etag')||r.headers.get('last-modified')||null}catch(e){return null}};
+const rmSaisieEnCours=()=>{const a=document.activeElement;return!!(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))};
+const rmRechargerSiPossible=()=>{if(!_rmRechargeVoulue)return;let derniere=0;try{derniere=Number(localStorage.getItem('rm-derniere-recharge'))||0}catch(e){}if(Date.now()-derniere<30*60*1000)return;if(document.hidden||!rmSaisieEnCours()){try{localStorage.setItem('rm-derniere-recharge',String(Date.now()))}catch(e){}console.log('Nouvelle version de RoadManager : rechargement');window.location.reload()}};
+const rmVerifierVersion=async()=>{const e=await rmEmpreinteServeur();if(!e)return;if(_rmEmpreinte===null){_rmEmpreinte=e;return}if(e!==_rmEmpreinte){_rmRechargeVoulue=true;rmRechargerSiPossible()}};
+if(typeof window!=='undefined'&&!window.__rmVersionBound){window.__rmVersionBound=true;setTimeout(rmVerifierVersion,5000);setInterval(rmVerifierVersion,10*60*1000);setInterval(rmRechargerSiPossible,60*1000);document.addEventListener('visibilitychange',()=>{if(document.hidden)rmRechargerSiPossible();else rmVerifierVersion()})}
+// ========== FIN VERSION ==========
 
 const pad2=n=>String(n).padStart(2,'0');
 const fmtDate=d=>{const dt=new Date(d);const j=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];const m=['Jan','Fev','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'];return j[dt.getDay()]+' '+dt.getDate()+' '+m[dt.getMonth()]+' '+dt.getFullYear()};
@@ -2719,7 +2803,13 @@ const[rdvDateFin,setRdvDateFin]=useState('');
 const[rdvTime,setRdvTime]=useState('');
 const[rdvMotif,setRdvMotif]=useState('');
 const[rdvAbsType,setRdvAbsType]=useState('conge');
-const submitRdv=()=>{if(!rdvDate){alert('Date requise');return}if(rdvType==='rdv'&&!rdvTime){alert('Heure requise');return}const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntries)nd.timeEntries=[];if(rdvType==='rdv'){const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===rdvDate);if(existing>=0){nd.timeEntries[existing].requestedEndTime=rdvTime;nd.timeEntries[existing].requestedEndMotif=rdvMotif}else{nd.timeEntries.push({id:uid(),empId,date:rdvDate,type:'pending',startTime:'',endTime:'',pauseStart:null,pauseEnd:null,pauseMin:0,createdAt:new Date().toISOString(),breakStart:'12:00',breakEnd:'13:00',mealType:'',absenceType:'',nightHours:0,requestedEndTime:rdvTime,requestedEndMotif:rdvMotif})}}else{const dStart=new Date(rdvDate);const dEnd=new Date(rdvDateFin||rdvDate);if(dEnd<dStart){alert('Date fin doit etre apres date debut');return}const d=new Date(dStart);while(d<=dEnd){const ds=fmtDateISO(d);const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===ds);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:ds,type:'absence',startTime:'',endTime:'',pauseStart:null,pauseEnd:null,pauseMin:0,createdAt:new Date().toISOString(),breakStart:'',breakEnd:'',mealType:'',absenceType:rdvAbsType,nightHours:0,requestedEndTime:'',requestedEndMotif:rdvMotif||rdvAbsType};if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);d.setDate(d.getDate()+1)}}save(nd);setShowRdv(false);setRdvDate('');setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge');alert(rdvType==='rdv'?'Demande de debauche envoyee !':'Absence enregistree !')};
+const submitRdv=()=>{if(!rdvDate){alert('Date requise');return}if(rdvType==='rdv'&&!rdvTime){alert('Heure requise');return}const ops=[];const _mes=d0=>(((teEtatCourant()||data).timeEntries)||[]).filter(t=>t&&t.empId===empId&&t.date===d0);const _vider=()=>{setShowRdv(false);setRdvDate('');setRdvDateFin('');setRdvTime('');setRdvMotif('');setRdvAbsType('conge')};
+if(rdvType==='rdv'){const ex=_mes(rdvDate)[0];if(ex){const e={...ex,requestedEndTime:rdvTime,requestedEndMotif:rdvMotif};const ch=teChamps(ex,e);if(ch.length)ops.push({op:'patch',table:'time_entries',id:ex.id,champs:ch,entry:e})}else ops.push({op:'insert',table:'time_entries',entry:{id:uid(),empId,date:rdvDate,type:'pending',startTime:'',endTime:'',pauseStart:null,pauseEnd:null,pauseMin:0,createdAt:new Date().toISOString(),breakStart:'12:00',breakEnd:'13:00',mealType:'',absenceType:'',nightHours:0,requestedEndTime:rdvTime,requestedEndMotif:rdvMotif}});if(ops.length)teApply(ops);_vider();alert('Demande de debauche envoyee !');return}
+const dStart=new Date(rdvDate);const dEnd=new Date(rdvDateFin||rdvDate);if(dEnd<dStart){alert('Date fin doit etre apres date debut');return}const d=new Date(dStart);const ignores=[];let n=0;
+while(d<=dEnd){const ds=fmtDateISO(d);const existants=_mes(ds);
+// Une journee ou des heures sont deja pointees n'est JAMAIS remplacee par une absence (c'etait un moyen de perdre une semaine d'heures d'un coup).
+if(existants.some(t=>t.startTime)){ignores.push(ds)}else{const ex=existants[0];const base={empId,date:ds,type:'absence',startTime:'',endTime:'',pauseStart:null,pauseEnd:null,pauseMin:0,breakStart:'',breakEnd:'',mealType:'',absenceType:rdvAbsType,nightHours:0,requestedEndTime:'',requestedEndMotif:rdvMotif||rdvAbsType};if(ex){const e={...ex,...base,id:ex.id,createdAt:ex.createdAt};const ch=teChamps(ex,e);if(ch.length)ops.push({op:'patch',table:'time_entries',id:ex.id,champs:ch,entry:e})}else ops.push({op:'insert',table:'time_entries',entry:{id:uid(),createdAt:new Date().toISOString(),...base}});n++}d.setDate(d.getDate()+1)}
+if(ops.length)teApply(ops);_vider();alert('Absence enregistree ('+n+' jour'+(n>1?'s':'')+')'+(ignores.length?'\n\nJours laisses tels quels, des heures y sont deja pointees : '+ignores.map(frDay).join(', '):''))};
 const[showPanne,setShowPanne]=useState(false);
 const[panneEquip,setPanneEquip]=useState('');
 const[panneEquipType,setPanneEquipType]=useState('machine');
@@ -2745,22 +2835,22 @@ const lastEntry=openShift||dayEntries[dayEntries.length-1];
 // Chantiers de nuit (23/09/2026) : un pointage qui a une debauche est termine, meme corrige a la main (type reste 'start').
 const status=!lastEntry||lastEntry.type==='done'||lastEntry.endTime?'off':lastEntry.type==='pause_start'?'pause':'on';
 const isNightShift=lastEntry&&lastEntry.date!==today&&lastEntry.type!=='done'&&!lastEntry.endTime;
-const doTime=(type)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntries)nd.timeEntries=[];const now=new Date();const time=pad2(now.getHours())+':'+pad2(now.getMinutes());let _cibleId=null;
+const doTime=(type)=>{const _avant=lastEntry?JSON.parse(JSON.stringify(teTrouver(lastEntry.id)||lastEntry)):null;const nd={timeEntries:_avant?[JSON.parse(JSON.stringify(_avant))]:[]};const now=new Date();const time=pad2(now.getHours())+':'+pad2(now.getMinutes());let _cibleId=null;
 if(type==='start'){_cibleId=uid();nd.timeEntries.push({id:_cibleId,empId,date:today,type:'start',startTime:time,endTime:null,pauseStart:null,pauseEnd:null,pauseMin:0,pauses:[],createdAt:new Date().toISOString(),breakStart:'',breakEnd:'',mealType:'PANIER',absenceType:'',nightHours:0})}
 else if(type==='pause_start'&&lastEntry){_cibleId=lastEntry.id;const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='pause_start';e.pauseStart=time;e.breakStart=time;e.pauses=[...(Array.isArray(e.pauses)?e.pauses:[]),{d:time,f:null}]}}
 else if(type==='resume'&&lastEntry){_cibleId=lastEntry.id;const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='start';if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time)}e.pauseEnd=time;e.breakEnd=time;const _lp=Array.isArray(e.pauses)?e.pauses:[];const _o=_lp.map((x,i)=>x&&!x.f?i:-1).filter(i=>i>=0).pop();if(_o!=null&&_o>=0)_lp[_o]={..._lp[_o],f:time};else if(e.pauseStart)_lp.push({d:e.pauseStart,f:time});e.pauses=_lp;e.pauseStart=null}}
 else if(type==='done'&&lastEntry){_cibleId=lastEntry.id;const e=nd.timeEntries.find(t=>t.id===lastEntry.id);if(e){e.type='done';e.endTime=time;if(lastEntry.date!==today)e.endDate=today;if(e.pauseStart){e.pauseMin=(e.pauseMin||0)+calcDiffMin(e.pauseStart,time);const _lp=Array.isArray(e.pauses)?e.pauses:[];const _o=_lp.map((x,i)=>x&&!x.f?i:-1).filter(i=>i>=0).pop();if(_o!=null&&_o>=0)_lp[_o]={..._lp[_o],f:time};else _lp.push({d:e.pauseStart,f:time});e.pauses=_lp;e.pauseStart=null}}}
-save(nd);
+{const _e=nd.timeEntries.find(t=>t.id===_cibleId);if(_e){if(type==='start')teApply([{op:'insert',table:'time_entries',entry:_e}]);else{const _ch=teChamps(_avant,_e);if(_ch.length)teApply([{op:'patch',table:'time_entries',id:_e.id,champs:_ch,entry:_e}])}}}
 // la position se rattache apres coup : le pointage est deja enregistre
 if(_cibleId){const _cle=type==='start'?'emb':type==='done'?'deb':type;posMaintenant().then(pos=>{if(!pos)return;
-  const n2=JSON.parse(JSON.stringify(_liveData||data));const e2=(n2.timeEntries||[]).find(t=>t.id===_cibleId);if(!e2)return;
+  const _e0=teTrouver(_cibleId);if(!_e0)return;const e2=JSON.parse(JSON.stringify(_e0));
   if(_cle==='emb'||_cle==='deb'){e2.positions={...(e2.positions||{}),[_cle]:pos}}
   else{const lp=Array.isArray(e2.pauses)?e2.pauses.slice():[];if(lp.length){const d=lp.length-1;lp[d]={...lp[d],[_cle==='pause_start'?'gpsD':'gpsF']:pos};e2.pauses=lp}
        else{e2.positions={...(e2.positions||{}),[_cle]:pos}}}
-  save(n2)})}
+  const _chg=teChamps(_e0,e2);if(_chg.length)teApply([{op:'patch',table:'time_entries',id:_cibleId,champs:_chg,entry:e2}])})}
 // Notification Telegram a l'admin : envoyee par l'appareil du salarie (ouvert au moment du pointage)
 try{const cfg=_liveData||data;const tok=cfg.telegramBotToken,cid=cfg.telegramAdminChatId,who=(emp&&emp.name)||'Un salarie';const msgs={start:cfg.tgNotifyStart!==false?'🟢 '+who+' a embauché à '+time:null,pause_start:cfg.tgNotifyPause!==false?'⏸ '+who+' en pause à '+time:null,resume:cfg.tgNotifyResume!==false?'▶️ '+who+' a repris à '+time:null,done:cfg.tgNotifyDone!==false?'🔴 '+who+' a débauché à '+time:null};const m=msgs[type];if(m)tgSendAdmins(cfg,m)}catch(e){}};
-const saveManual=()=>{if(!manAbsence&&(!manStart||!manEnd))return;let calcPause=Number(manPause)||0;if(manBreakStart&&manBreakEnd){const bp=calcDiffMin(manBreakStart,manBreakEnd);if(bp>0)calcPause=bp}let crossesMidnight=false;if(manStart&&manEnd){const totalMin=calcDiffMin(manStart,manEnd);const[sh,sm]=manStart.split(':').map(Number);const[eh,em]=manEnd.split(':').map(Number);crossesMidnight=(eh*60+em)<(sh*60+sm);if(totalMin===0){alert('Embauche et debauche identiques');return}if(calcPause>=totalMin){alert('Pause trop longue');return}}const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntries)nd.timeEntries=[];const existing=nd.timeEntries.findIndex(t=>t.empId===empId&&t.date===manDate&&!t.endTime);const _anc=existing>=0?nd.timeEntries[existing]:null;const _dern=_anc&&Array.isArray(_anc.pauses)&&_anc.pauses.length?_anc.pauses[_anc.pauses.length-1]:null;const _memes=_dern&&_dern.d===manBreakStart&&_dern.f===manBreakEnd;const _pauses=(manBreakStart&&manBreakEnd)?(_memes?_anc.pauses:[{d:manBreakStart,f:manBreakEnd}]):(_anc&&Array.isArray(_anc.pauses)?_anc.pauses:null);const entry={id:existing>=0?nd.timeEntries[existing].id:uid(),empId,date:manDate,type:manAbsence?'absence':'done',startTime:manStart||'',endTime:manEnd||'',pauseStart:null,pauseEnd:null,pauseMin:calcPause,pauses:_pauses,createdAt:new Date().toISOString(),breakStart:manBreakStart,breakEnd:manBreakEnd,mealType:manMeal,absenceType:manAbsence,nightHours:Number(manNight)||0,requestedEndTime:manRequestEnd||''};if(crossesMidnight){const nextDay=new Date(manDate);nextDay.setDate(nextDay.getDate()+1);entry.endDate=fmtDateISO(nextDay)}if(existing>=0)nd.timeEntries[existing]=entry;else nd.timeEntries.push(entry);save(nd);setShowManual(false);setManStart('');setManEnd('');setManPause(0);setManBreakStart('12:00');setManBreakEnd('13:00');setManMeal('PANIER');setManAbsence('');setManNight(0);setManRequestEnd('')};
+const saveManual=()=>{if(!manAbsence&&(!manStart||!manEnd))return;let calcPause=Number(manPause)||0;if(manBreakStart&&manBreakEnd){const bp=calcDiffMin(manBreakStart,manBreakEnd);if(bp>0)calcPause=bp}let crossesMidnight=false;if(manStart&&manEnd){const totalMin=calcDiffMin(manStart,manEnd);const[sh,sm]=manStart.split(':').map(Number);const[eh,em]=manEnd.split(':').map(Number);crossesMidnight=(eh*60+em)<(sh*60+sm);if(totalMin===0){alert('Embauche et debauche identiques');return}if(calcPause>=totalMin){alert('Pause trop longue');return}}const _anc=(((teEtatCourant()||data).timeEntries)||[]).find(t=>t&&t.empId===empId&&t.date===manDate&&!t.endTime)||null;const _dern=_anc&&Array.isArray(_anc.pauses)&&_anc.pauses.length?_anc.pauses[_anc.pauses.length-1]:null;const _memes=_dern&&_dern.d===manBreakStart&&_dern.f===manBreakEnd;const _pauses=(manBreakStart&&manBreakEnd)?(_memes?_anc.pauses:[{d:manBreakStart,f:manBreakEnd}]):(_anc&&Array.isArray(_anc.pauses)?_anc.pauses:null);const entry={id:_anc?_anc.id:uid(),empId,date:manDate,type:manAbsence?'absence':'done',startTime:manStart||'',endTime:manEnd||'',pauseStart:null,pauseEnd:null,pauseMin:calcPause,pauses:_pauses,createdAt:new Date().toISOString(),breakStart:manBreakStart,breakEnd:manBreakEnd,mealType:manMeal,absenceType:manAbsence,nightHours:Number(manNight)||0,requestedEndTime:manRequestEnd||''};if(crossesMidnight){const nextDay=new Date(manDate);nextDay.setDate(nextDay.getDate()+1);entry.endDate=fmtDateISO(nextDay)}if(_anc){const _e={..._anc,...entry,createdAt:_anc.createdAt||entry.createdAt};const _ch=teChamps(_anc,_e);if(_ch.length)teApply([{op:'patch',table:'time_entries',id:_anc.id,champs:_ch,entry:_e}])}else teApply([{op:'insert',table:'time_entries',entry}]);setShowManual(false);setManStart('');setManEnd('');setManPause(0);setManBreakStart('12:00');setManBreakEnd('13:00');setManMeal('PANIER');setManAbsence('');setManNight(0);setManRequestEnd('')};
 const hist30=useMemo(()=>{const now=new Date();const d30=new Date(now);d30.setDate(d30.getDate()-30);const start30=fmtDateISO(d30);const end30=fmtDateISO(now);return(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=start30&&t.date<=end30).sort((a,b)=>b.date.localeCompare(a.date))},[data.timeEntries,empId]);
 const range=useMemo(()=>{const now=new Date();if(view==='Jour'){const d=new Date(now);d.setDate(d.getDate()+offset);return{start:fmtDateISO(d),end:fmtDateISO(d),label:fmtDate(d)}}const d=new Date(now);d.setDate(d.getDate()+offset*7);const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);const mon=new Date(d);mon.setDate(diff);const sun=new Date(mon);sun.setDate(mon.getDate()+6);return{start:fmtDateISO(mon),end:fmtDateISO(sun),label:fmtDate(mon)+' - '+fmtDate(sun)}},[view,offset]);
 const periodTE=(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=range.start&&t.date<=range.end);
@@ -2769,8 +2859,8 @@ let totalWork=0,totalPause=0;periodTE.forEach(t=>{if(t.startTime&&t.endTime){tot
 const weeklyTotal=useMemo(()=>{const now=new Date();const day=now.getDay();const diff=now.getDate()-day+(day===0?-6:1);const mon=new Date(now);mon.setDate(diff);const sun=new Date(mon);sun.setDate(mon.getDate()+6);const ws=fmtDateISO(mon);const we=fmtDateISO(sun);let wt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ws&&t.date<=we).forEach(t=>{wt+=calcWorkedMin(t)});return wt},[data.timeEntries,empId]);
 const monthlyTotal=useMemo(()=>{const now=new Date();const ms=now.getFullYear()+'-'+pad2(now.getMonth()+1)+'-01';const last=new Date(now.getFullYear(),now.getMonth()+1,0);const me=fmtDateISO(last);let mt=0;(data.timeEntries||[]).filter(t=>t.empId===empId&&t.date>=ms&&t.date<=me).forEach(t=>{mt+=calcWorkedMin(t)});return mt},[data.timeEntries,empId]);
 const dates=[...new Set([...periodTE.map(t=>t.date),...periodJobs.map(j=>j.date)])].sort().reverse();
-const saveEdit=()=>{if(!editTE)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const idx=nd.timeEntries.findIndex(t=>t.id===editTE.id);if(idx>=0){const e2={...editTE};if(e2.startTime&&e2.endTime&&e2.type!=='absence'&&e2.type!=='pending'){e2.type='done';e2.pauseStart=null}nd.timeEntries[idx]=e2}save(nd);setEditTE(null)};
-const delTE=(tid)=>{if(!confirm('Supprimer ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));nd.timeEntries=nd.timeEntries.filter(t=>t.id!==tid);nd._teDeletes=[{key:'timeEntries',id:tid}];save(nd)};
+const saveEdit=()=>{if(!editTE)return;const _anc=teTrouver(editTE.id);if(_anc){const e2={..._anc,...editTE};if(e2.startTime&&e2.endTime&&e2.type!=='absence'&&e2.type!=='pending'){e2.type='done';e2.pauseStart=null}const _ch=teChamps(_anc,e2);if(_ch.length)teApply([{op:'patch',table:'time_entries',id:e2.id,champs:_ch,entry:e2}])}setEditTE(null)};
+const delTE=(tid)=>{if(!confirm('Supprimer ?'))return;teApply([{op:'delete',table:'time_entries',id:tid}])};
 const[tab,setTab]=useState('heures');
 const[selectedMachineId,setSelectedMachineId]=useState((emp&&emp.machineId)||'');
 const[showEntFait,setShowEntFait]=useState(false);
@@ -2879,8 +2969,8 @@ useEffect(()=>{posSuivre()},[]); // une seule demande d'autorisation, a l'ouvert
 // Mes heures : toucher une heure (embauche, pause, reprise, debauche) modifie ou supprime CETTE heure seulement,
 // sans ouvrir la fiche complete (23/09/2026). Supprimer une embauche/debauche supprime le pointage entier.
 const[editChip,setEditChip]=useState(null);
-const _chipSave=()=>{if(!editChip)return;const nd=JSON.parse(JSON.stringify(_liveData||data));const e=(nd.timeEntries||[]).find(t=>t.id===editChip.teId);if(!e){setEditChip(null);return}const v=editChip.val||'';if(editChip.idx>=0){const lp=Array.isArray(e.pauses)?e.pauses:[];if(lp[editChip.idx]){lp[editChip.idx]={...lp[editChip.idx],[editChip.cle]:v||null}}e.pauses=lp;e.pauseMin=lp.reduce((acc,p)=>acc+((p&&p.d&&p.f)?calcDiffMin(p.d,p.f):0),0);const d0=lp[0]||{};e.breakStart=d0.d||'';e.breakEnd=d0.f||''}else{e[editChip.cle]=v;if(editChip.cle==='endTime'&&v&&e.type!=='absence'&&e.type!=='pending'){e.type='done';e.pauseStart=null}if(editChip.cle==='endTime'&&!v){e.type='start'}}save(nd);setEditChip(null)};
-const _chipDelete=()=>{if(!editChip)return;if(editChip.idx>=0){if(!confirm('Supprimer cette pause ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));const e=(nd.timeEntries||[]).find(t=>t.id===editChip.teId);if(e){const lp=(Array.isArray(e.pauses)?e.pauses:[]).filter((_,i)=>i!==editChip.idx);e.pauses=lp;e.pauseMin=lp.reduce((acc,p)=>acc+((p&&p.d&&p.f)?calcDiffMin(p.d,p.f):0),0);const d0=lp[0]||{};e.breakStart=d0.d||'';e.breakEnd=d0.f||'';if(e.type==='pause_start')e.type='start';e.pauseStart=null}save(nd);setEditChip(null)}else{if(!confirm('Supprimer ce pointage en entier (embauche, pauses et débauche) ?'))return;const nd=JSON.parse(JSON.stringify(_liveData||data));nd.timeEntries=(nd.timeEntries||[]).filter(t=>t.id!==editChip.teId);nd._teDeletes=[{key:'timeEntries',id:editChip.teId}];save(nd);setEditChip(null)}};
+const _chipSave=()=>{if(!editChip)return;const _anc=teTrouver(editChip.teId);if(!_anc){setEditChip(null);return}const e=JSON.parse(JSON.stringify(_anc));const v=editChip.val||'';if(editChip.idx>=0){const lp=Array.isArray(e.pauses)?e.pauses:[];if(lp[editChip.idx]){lp[editChip.idx]={...lp[editChip.idx],[editChip.cle]:v||null}}e.pauses=lp;e.pauseMin=lp.reduce((acc,p)=>acc+((p&&p.d&&p.f)?calcDiffMin(p.d,p.f):0),0);const d0=lp[0]||{};e.breakStart=d0.d||'';e.breakEnd=d0.f||''}else{e[editChip.cle]=v;if(editChip.cle==='endTime'&&v&&e.type!=='absence'&&e.type!=='pending'){e.type='done';e.pauseStart=null}if(editChip.cle==='endTime'&&!v){e.type='start'}}{const _ch=teChamps(_anc,e);if(_ch.length)teApply([{op:'patch',table:'time_entries',id:e.id,champs:_ch,entry:e}])}setEditChip(null)};
+const _chipDelete=()=>{if(!editChip)return;if(editChip.idx>=0){if(!confirm('Supprimer cette pause ?'))return;const _anc=teTrouver(editChip.teId);const e=_anc?JSON.parse(JSON.stringify(_anc)):null;if(e){const lp=(Array.isArray(e.pauses)?e.pauses:[]).filter((_,i)=>i!==editChip.idx);e.pauses=lp;e.pauseMin=lp.reduce((acc,p)=>acc+((p&&p.d&&p.f)?calcDiffMin(p.d,p.f):0),0);const d0=lp[0]||{};e.breakStart=d0.d||'';e.breakEnd=d0.f||'';if(e.type==='pause_start')e.type='start';e.pauseStart=null}if(e){const _ch=teChamps(_anc,e);if(_ch.length)teApply([{op:'patch',table:'time_entries',id:e.id,champs:_ch,entry:e}])}setEditChip(null)}else{if(!confirm('Supprimer ce pointage en entier (embauche, pauses et débauche) ?'))return;teApply([{op:'delete',table:'time_entries',id:editChip.teId}]);setEditChip(null)}};
 // pointages restes dans la file du telephone (pas encore dans la base) : le chauffeur doit le voir
 const[_enAttente,_setEnAttente]=useState(teQueueGet().length);
 useEffect(()=>{const id=setInterval(()=>_setEnAttente(teQueueGet().length),5000);return()=>clearInterval(id)},[]);
@@ -2967,8 +3057,8 @@ const _joursHeures=(()=>{
 
 const _repasFait=!!(lastEntry&&Array.isArray(lastEntry.pauses)&&lastEntry.pauses.some(p=>p&&p.repas));
 const _attenteRepas=(status==='pause')&&!_repasFait;
-const _choisirRepas=m=>{const nd=JSON.parse(JSON.stringify(_liveData||data));const e=(nd.timeEntries||[]).find(t=>t.id===lastEntry.id);
- if(e){e.mealType=m;const lp=Array.isArray(e.pauses)?e.pauses.slice():[];if(lp.length)lp[lp.length-1]={...lp[lp.length-1],repas:m};e.pauses=lp;save(nd)}};
+const _choisirRepas=m=>{const _anc=lastEntry?teTrouver(lastEntry.id):null;const e=_anc?JSON.parse(JSON.stringify(_anc)):null;
+ if(e){e.mealType=m;const lp=Array.isArray(e.pauses)?e.pauses.slice():[];if(lp.length)lp[lp.length-1]={...lp[lp.length-1],repas:m};e.pauses=lp;const _ch=teChamps(_anc,e);if(_ch.length)teApply([{op:'patch',table:'time_entries',id:e.id,champs:_ch,entry:e}])}};
 const _blocActions=(job,dernier)=>(
  _attenteRepas
  ?<div style={{marginTop:11,display:'flex',flexDirection:'column',gap:9}}>
@@ -3280,7 +3370,7 @@ return(
 <div className="fil">
 
 {isNightShift&&<div className="noeud"><div className="alerte" onClick={()=>setVue('heures')} style={{cursor:'pointer'}}><b>⚠</b><span>Journée du {fmtDate(new Date(lastEntry.date))} encore ouverte — vérifie tes heures.</span></div></div>}
-{_enAttente>0&&<div className="noeud"><div className="alerte" onClick={()=>{teQueueFlush().catch(()=>{})}} style={{cursor:'pointer',background:'#fef3c7',borderColor:'#d97706'}}><b>⏳</b><span>{_enAttente} pointage{_enAttente>1?'s':''} pas encore envoyé{_enAttente>1?'s':''} au bureau. Ils partiront tout seuls dès que le réseau répond. Touche ici pour réessayer.</span></div></div>}
+{_enAttente>0&&(()=>{const _f=teQueueGet();const _vieux=_f.length?Math.min(..._f.map(o=>o._ts||Date.now())):Date.now();const _min=Math.max(0,Math.round((Date.now()-_vieux)/60000));const _grave=_min>=30;return(<div className="noeud"><div className="alerte" onClick={()=>{teQueueFlush().catch(()=>{})}} style={{cursor:'pointer',background:_grave?'#fee2e2':'#fef3c7',borderColor:_grave?'#dc2626':'#d97706'}}><b>{_grave?'⛔':'⏳'}</b><span>{_grave?<><b>Tes pointages ne partent pas depuis {_min>=120?Math.round(_min/60)+' h':_min+' min'}</b> ({_enAttente} en attente). Vérifie le réseau et touche ici. Si ça ne part toujours pas, préviens le bureau : tes heures sont gardées dans ce téléphone, ne le réinitialise pas. <button onClick={e=>{e.stopPropagation();window.location.reload()}} style={{marginLeft:6,padding:'4px 10px',borderRadius:6,border:'1px solid #dc2626',background:'#fff',color:'#dc2626',fontWeight:700,cursor:'pointer'}}>Recharger l'app</button></>:<>{_enAttente} pointage{_enAttente>1?'s':''} pas encore envoyé{_enAttente>1?'s':''} au bureau. Ils partiront tout seuls dès que le réseau répond. Touche ici pour réessayer.</>}</span></div></div>)})()}
 
 {_posDebut===0&&_carteDebut}
 
@@ -3545,6 +3635,12 @@ const[dateStart,setDateStart]=useState(mStart);
 const[dateEnd,setDateEnd]=useState(mEnd);
 const seuil25=data.overtime25Threshold||35;const seuil50=data.overtime50Threshold||43;const refH=data.refHoursPerDay||1;
 const empName=(emps.find(e=>e.id===selEmp)||{}).name||'';
+// Corbeille : pointages supprimes (jamais effaces) du salarie sur la periode ; un clic les restaure
+const[showCorbeille,setShowCorbeille]=useState(false);
+const corbeille=useMemo(()=>{const c=data._teCorbeille||{};const f=(l,key)=>(l||[]).filter(t=>t&&t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd).map(t=>({...t,_key:key}));return[...f(c.timeEntries,'timeEntries'),...f(c.timeEntriesValidated,'timeEntriesValidated')].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''))},[data._teCorbeille,selEmp,dateStart,dateEnd]);
+const restaurer=t=>{teApply([{op:'restore',table:teTableOf(t._key),id:t.id,entry:t}])};
+// Chauffeurs planifies sans aucun pointage sur les 10 derniers jours : un telephone muet se voit ici, pas a la fin du mois
+const sansPointage=useMemo(()=>{const out=[];const today=fmtDateISO(new Date());for(let i=1;i<=10;i++){const ds=addDaysISO(today,-i);const planifies=[...new Set((data.jobs||[]).filter(j=>j&&j.date===ds&&j.employeeId&&j.type!=='repos').map(j=>j.employeeId))];const pointes=new Set((data.timeEntries||[]).filter(t=>t&&t.date===ds&&(t.startTime||t.absenceType)).map(t=>t.empId));const noms=planifies.filter(id=>!pointes.has(id)).map(id=>(emps.find(e=>e.id===id)||{}).name).filter(Boolean);if(noms.length)out.push({date:ds,noms})}return out},[data.jobs,data.timeEntries,emps]);
 // Get all dates in range
 const allDates=useMemo(()=>{const dates=[];const d=new Date(dateStart);const end=new Date(dateEnd);while(d<=end){dates.push(fmtDateISO(d));d.setDate(d.getDate()+1)}return dates},[dateStart,dateEnd]);
 // TimeEntries for this employee in range
@@ -3566,9 +3662,9 @@ const valWeeks=useMemo(()=>weekTotals(validatedRows),[validatedRows,seuil25,seui
 const periodTotals=(wks)=>{let t=0,h25=0,h50=0,night=0;Object.values(wks).forEach(w=>{t+=w.total;h25+=w.h25;h50+=w.h50;night+=w.night});return{t,h25,h50,night}};
 const declTot=periodTotals(declWeeks);const valTot=periodTotals(valWeeks);
 // Update validated entry
-const updateVal=(date,field,value)=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntriesValidated)nd.timeEntriesValidated=[];let idx=nd.timeEntriesValidated.findIndex(t=>t.empId===selEmp&&t.date===date);if(idx<0){const orig=declaredRows.find(r0=>r0.date===date&&!r0.empty);const base=orig?{startTime:orig.start||'',breakStart:orig.breakStart||'',mealType:orig.meal||'PANIER',breakEnd:orig.breakEnd||'',endTime:orig.end||'',absenceType:orig.absence||'',nightHours:orig.night||0,refHours:refH,pauseMin:Math.max(0,((calcDiffMin(orig.start,orig.end)===0&&orig.worked>0)?1440:calcDiffMin(orig.start,orig.end))-Math.round(orig.worked*60)-((orig.breakStart&&orig.breakEnd)?calcDiffMin(orig.breakStart,orig.breakEnd):0))}:{startTime:'',breakStart:'12:00',mealType:'PANIER',breakEnd:'13:00',endTime:'',absenceType:'',nightHours:0,refHours:refH};nd.timeEntriesValidated.push({id:uid(),empId:selEmp,date,...base});idx=nd.timeEntriesValidated.length-1}nd.timeEntriesValidated[idx][field]=value;save(nd)};
+const updateVal=(date,field,value)=>{const _ex=(((teEtatCourant()||data).timeEntriesValidated)||[]).find(t=>t&&t.empId===selEmp&&t.date===date);if(!_ex){const orig=declaredRows.find(r0=>r0.date===date&&!r0.empty);const base=orig?{startTime:orig.start||'',breakStart:orig.breakStart||'',mealType:orig.meal||'PANIER',breakEnd:orig.breakEnd||'',endTime:orig.end||'',absenceType:orig.absence||'',nightHours:orig.night||0,refHours:refH,pauseMin:Math.max(0,((calcDiffMin(orig.start,orig.end)===0&&orig.worked>0)?1440:calcDiffMin(orig.start,orig.end))-Math.round(orig.worked*60)-((orig.breakStart&&orig.breakEnd)?calcDiffMin(orig.breakStart,orig.breakEnd):0))}:{startTime:'',breakStart:'12:00',mealType:'PANIER',breakEnd:'13:00',endTime:'',absenceType:'',nightHours:0,refHours:refH};teApply([{op:'insert',table:'time_entries_validated',entry:{id:uid(),empId:selEmp,date,createdAt:new Date().toISOString(),...base,[field]:value}}])}else{const _e={..._ex,[field]:value};const _ch=teChamps(_ex,_e);if(_ch.length)teApply([{op:'patch',table:'time_entries_validated',id:_ex.id,champs:_ch,entry:_e}])}};
 // Copy from declared
-const copyFromDeclared=()=>{const nd=JSON.parse(JSON.stringify(_liveData||data));if(!nd.timeEntriesValidated)nd.timeEntriesValidated=[];const _rem=nd.timeEntriesValidated.filter(t=>(t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd)).map(t=>t.id);nd.timeEntriesValidated=nd.timeEntriesValidated.filter(t=>!(t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd));nd._teDeletes=_rem.map(id=>({key:'timeEntriesValidated',id}));declaredRows.filter(r0=>!r0.empty).forEach(r0=>{const coupure=(r0.breakStart&&r0.breakEnd)?calcDiffMin(r0.breakStart,r0.breakEnd):0;const span0=calcDiffMin(r0.start,r0.end);const extra=Math.max(0,((span0===0&&r0.worked>0)?1440:span0)-Math.round(r0.worked*60)-coupure);nd.timeEntriesValidated.push({id:uid(),empId:selEmp,date:r0.date,startTime:r0.start||'',breakStart:r0.breakStart||'',mealType:r0.meal||'PANIER',breakEnd:r0.breakEnd||'',endTime:r0.end||'',absenceType:r0.absence||'',nightHours:r0.night||0,refHours:refH,pauseMin:extra})});save(nd);alert('Heures copiees depuis declare !')};
+const copyFromDeclared=()=>{if(!confirm('Remplacer les heures validees de '+empName+' du '+dateStart+' au '+dateEnd+' par ses heures declarees ? (les anciennes vont dans la Corbeille)'))return;const _ops=(((teEtatCourant()||data).timeEntriesValidated)||[]).filter(t=>t&&t.empId===selEmp&&t.date>=dateStart&&t.date<=dateEnd).map(t=>({op:'delete',table:'time_entries_validated',id:t.id}));declaredRows.filter(r0=>!r0.empty).forEach(r0=>{const coupure=(r0.breakStart&&r0.breakEnd)?calcDiffMin(r0.breakStart,r0.breakEnd):0;const span0=calcDiffMin(r0.start,r0.end);const extra=Math.max(0,((span0===0&&r0.worked>0)?1440:span0)-Math.round(r0.worked*60)-coupure);_ops.push({op:'insert',table:'time_entries_validated',entry:{id:uid(),empId:selEmp,date:r0.date,createdAt:new Date().toISOString(),startTime:r0.start||'',breakStart:r0.breakStart||'',mealType:r0.meal||'PANIER',breakEnd:r0.breakEnd||'',endTime:r0.end||'',absenceType:r0.absence||'',nightHours:r0.night||0,refHours:refH,pauseMin:extra}})});teApply(_ops);alert('Heures copiees depuis declare !')};
 // CSV export per table
 const doExportCSV=(type)=>{const rows2=(type==='declared'?declaredRows:validatedRows).filter(r=>!r.empty);const label=type==='declared'?'declarees':'validees';let csv='Semaine;Date;Absence;Debut;Coupure;Repas;Reprise;Debauche;Travail;Ref;Nuit\n';rows2.forEach(r=>{csv+=r.week+';'+frDay(r.date)+';'+(r.absence||'')+';'+r.start+';'+r.breakStart+';'+r.meal+';'+r.breakEnd+';'+r.end+';'+fmtDec(r.worked)+';'+fmtDec(r.ref||0)+';'+fmtDec(r.night||0)+'\n'});const wks=type==='declared'?declWeeks:valWeeks;Object.keys(wks).forEach(w=>{const wk=wks[w];csv+='\nSemaine '+w+';'+fmtDec(wk.total)+';25%: '+fmtDec(wk.h25)+';50%: '+fmtDec(wk.h50)+';Nuit: '+fmtDec(wk.night)+'\n'});const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='soneco_heures_'+label+'_'+empName.replace(/\s/g,'_')+'_'+dateStart+'.csv';a.click();URL.revokeObjectURL(url)};
 // Mail per table
@@ -3618,6 +3714,8 @@ return(
 <Fl label="Debut"><input type="date" style={{...inputStyle,width:150}} value={dateStart} onChange={e=>setDateStart(e.target.value)}/></Fl>
 <Fl label="Fin"><input type="date" style={{...inputStyle,width:150}} value={dateEnd} onChange={e=>setDateEnd(e.target.value)}/></Fl>
 </div>
+{sansPointage.length>0&&<div style={{background:'#fef2f2',border:'2px solid #dc2626',borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:13}}><b style={{color:'#b91c1c'}}>&#9888; Chauffeurs planifiés sans aucun pointage</b> sur les 10 derniers jours. Leur téléphone n'envoie peut-être plus rien : leur demander d'ouvrir RoadManager et de regarder s'il y a un bandeau rouge.<div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:'4px 16px'}}>{sansPointage.map(s=><span key={s.date}><b>{frDay(s.date)}</b> : {s.noms.join(', ')}</span>)}</div></div>}
+{showCorbeille&&<div style={{background:'#fff7ed',border:'1px solid #fdba74',borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:12}}><b>&#128465; Corbeille — pointages supprimés de {empName} sur la période.</b> Rien n'est jamais effacé : « Restaurer » les remet en place.{corbeille.length===0?<div style={{color:C.dim,marginTop:4}}>Aucun pointage supprimé sur cette période.</div>:<table style={{marginTop:6,borderCollapse:'collapse'}}><tbody>{corbeille.map(t=><tr key={t._key+t.id}><td style={{padding:'3px 10px 3px 0'}}>{frDay(t.date)}</td><td style={{padding:'3px 10px'}}>{t._key==='timeEntriesValidated'?'validé':'déclaré'}</td><td style={{padding:'3px 10px'}}>{t.absenceType||((t.startTime||'?')+' → '+(t.endTime||'?'))}</td><td style={{padding:'3px 10px',color:C.dim}}>supprimé le {t.updatedAt?new Date(t.updatedAt).toLocaleString('fr-FR'):'?'}</td><td><button onClick={()=>restaurer(t)} style={{...smallBtnS,color:C.green,borderColor:C.green}}>Restaurer</button></td></tr>)}</tbody></table>}</div>}
 <div style={{background:C.card,borderRadius:12,padding:16,border:'1px solid '+C.border,marginBottom:20,overflow:'auto'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,flexWrap:'wrap',gap:6}}>
 <h3 style={{margin:0,fontSize:15}}>&#128274; Heures declarees par {empName}</h3>
@@ -3628,6 +3726,7 @@ return(
 <span>50% <b style={{color:C.red}}>{fmtDec(declTot.h50)}</b></span>
 <span>Nuit <b style={{color:C.purple}}>{fmtDec(declTot.night)}</b></span>
 </div>
+<button onClick={()=>setShowCorbeille(v=>!v)} title="Pointages supprimes sur la periode, restaurables" style={{...smallBtnS,color:corbeille.length?C.red:C.dim,borderColor:corbeille.length?C.red:C.border}}>&#128465; Corbeille ({corbeille.length})</button>
 <button onClick={()=>doMail('declared')} style={smallBtnS}>&#128231; Mail</button>
 <button onClick={()=>doPrint('declared')} style={smallBtnS}>&#128424; Imprimer</button>
 <button onClick={()=>doExportCSV('declared')} style={smallBtnS}>&#128229; CSV</button>
@@ -3857,7 +3956,7 @@ return trs})}
 
 return(
 <div>
-<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.09.29-1</span></h2>
+<h2 style={{marginBottom:4}}>📋 Recap heures — tous les chauffeurs <span style={{fontSize:10,color:C.dim,fontWeight:400,marginLeft:8}}>v2026.10.29-1</span></h2>
 <div style={{fontSize:12,color:C.dim,marginBottom:14}}>Embauche · coupure · reprise · debauche de chaque chauffeur, un tableau par semaine.</div>
 
 <div style={{background:C.card,borderRadius:12,padding:12,border:'1px solid '+C.border,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
@@ -5371,19 +5470,26 @@ const[panne,setPanne]=useState(false); // base injoignable et aucune copie local
 useEffect(()=>{dataRef.current=data;_liveData=data},[data]);
 useEffect(()=>{try{localStorage.setItem('rm-session',JSON.stringify({screen,empId}))}catch(e){}},[screen,empId]);
 useEffect(()=>{
-// Charge le blob app_data, puis fusionne/migre les pointages depuis time_entries / time_entries_validated
+// Les pointages (tables dediees) mettent a jour l'etat de facon synchrone, sans passer par le bloc
+teBrancher({get:()=>dataRef.current,set:nd=>{dataRef.current=nd;_liveData=nd;setData(nd)}});
+// Charge le blob app_data, puis lit les pointages dans time_entries / time_entries_validated (source de verite unique)
 // Panne Supabase du 17/09/2026 : le logo tournait sans fin. Si la base ne repond pas en 4 s, on ouvre tout de suite
 // la copie locale (lecture + saisie, renvoyee au retour de la base), puis on fusionne quand Supabase repond enfin.
 let _affLocal=false;const _tLocal=setTimeout(()=>{const local=localLoad();if(local&&!dataRef.current){_affLocal=true;setData(local);console.warn('Supabase ne repond pas : ouverture sur la copie locale')}else if(!dataRef.current)setPanne(true)},4000);
-loadData().then(async d=>{clearTimeout(_tLocal);if(d&&d._indisponible){setPanne(true);setTimeout(()=>{if(!dataRef.current)window.location.reload()},20000);return}let migrated=d;try{migrated=await teMigrateFromBlob(d)}catch(e){}setPanne(false);setData(prev=>(prev&&_affLocal)?mergeFullData(prev,migrated):migrated)}).catch(e=>{clearTimeout(_tLocal);console.warn('chargement',e);const local=localLoad();if(local&&!dataRef.current)setData(local);else{setPanne(true);setTimeout(()=>{if(!dataRef.current)window.location.reload()},20000)}});
+loadData().then(async d=>{clearTimeout(_tLocal);if(d&&d._indisponible){setPanne(true);setTimeout(()=>{if(!dataRef.current)window.location.reload()},20000);return}
+const bloc=d._teBloc||null;delete d._teBloc;let charge=null;try{charge=await teChargerTout(d)}catch(e){console.warn('lecture pointages',e)}
+if(!charge)console.warn('Pointages : tables injoignables, affichage du cache local de cet appareil');
+const final=charge||d;setPanne(false);
+setData(prev=>{const m=(prev&&_affLocal)?mergeFullData(prev,final):final;if(charge){TE_CLES.forEach(k=>{m[k]=charge[k]});m._teCorbeille=charge._teCorbeille||{}}return m});
+if(charge&&bloc)teSauverOrphelins(bloc,charge).catch(()=>{})}).catch(e=>{clearTimeout(_tLocal);console.warn('chargement',e);const local=localLoad();if(local&&!dataRef.current)setData(local);else{setPanne(true);setTimeout(()=>{if(!dataRef.current)window.location.reload()},20000)}});
 // Subscribe blob changes (machines, employes, missions, etc.) — comportement existant
 const unsub=subscribeToChanges((nd)=>{if(!savingRef.current)setData(nd)},()=>dataRef.current);
 // Subscribe aux tables dediees pointage : toute modif d'un autre client met a jour la vue
-const unsubTE=teSubscribe(async(table)=>{if(savingRef.current)return;const key=table==='time_entries_validated'?'timeEntriesValidated':'timeEntries';const list=await teLoadAll(table);if(list===null)return;setData(prev=>prev?{...prev,[key]:list}:prev)});
+const unsubTE=teSubscribe((table,p)=>{if(p&&p.new&&p.new.id)teRecevoirLigne(table,p.new);else teRafraichir().catch(()=>{})});
 // Flush les pointages en attente (si reseau coupe au precedent usage, ils partent maintenant)
 teQueueFlush().catch(()=>{});
 // Polling fallback toutes les 30s : si le realtime Supabase n'est pas actif, on rattrape ici
-const pollId=setInterval(async()=>{teQueueFlush().catch(()=>{});if(savingRef.current)return;
+let _tick=0;const pollId=setInterval(async()=>{teQueueFlush().catch(()=>{});if((++_tick)%2===0)teRafraichir().catch(()=>{});if(savingRef.current)return;
 // D'abord la date seule (quelques octets) ; le bloc entier n'est relu que s'il a change depuis notre derniere version.
 if(sb){try{const{data:row,error}=await sb.from('app_data').select('updated_at').eq('id','main').single();if(error)return;if(row&&row.updated_at&&_lastSeenUpdatedAt&&row.updated_at===_lastSeenUpdatedAt)return}catch(e){return}}
 loadData().then(d=>{if(!d)return;setData(prev=>{if(!prev)return d;return mergeFullData(prev,d)})}).catch(()=>{})},30000);
@@ -5392,12 +5498,14 @@ return()=>{unsub();unsubTE();clearInterval(pollId)};
 // doSave : pas de deps [data] -> evite le stale closure (clicks rapides du user pouvaient capturer un data perime).
 // dataRef.current est toujours a jour (sync dans useEffect ligne 4610). On sync aussi dataRef.current=nd dans le save pour que le prochain doSave ait l'etat post-save sans attendre le re-render.
 // savingRef reste true 5s apres la fin du save -> evite que le polling/subscribe applique un payload Supabase potentiellement pas encore propage.
-const doSave=useCallback(async nd=>{const prev=dataRef.current;stampUpdatedAt(prev&&prev.jobs,nd&&nd.jobs);_checkStockZero(prev,nd);savesInProgress.current++;savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(prev)];setData(nd);dataRef.current=nd;_liveData=nd;// la synchro des pointages ne doit JAMAIS empecher l'enregistrement des donnees :
-// un seul try/catch commun faisait perdre en silence la modification en cours.
-try{await teSyncChanges(prev,nd)}catch(e){console.warn('synchro pointages',e)}
-if(nd&&nd._teDeletes)delete nd._teDeletes;
+const doSave=useCallback(async nd=>{const prev=dataRef.current;stampUpdatedAt(prev&&prev.jobs,nd&&nd.jobs);_checkStockZero(prev,nd);
+// Pointages : jamais via le bloc. Ce que les ecrans passant encore par save(nd) ont change (chatbot...) devient des operations
+// precises (insertion sans ecrasement, patch de champs, suppression explicite) ; les listes de l'etat restent la version la plus fraiche.
+const opsTE=teDifferences(prev,nd);if(prev&&nd){TE_CLES.forEach(k=>{nd[k]=prev[k]||[]});nd._teCorbeille=prev._teCorbeille||{}}if(nd&&nd._teDeletes)delete nd._teDeletes;
+savesInProgress.current++;savingRef.current=true;undoStack.current=[...(undoStack.current||[]).slice(-19),JSON.stringify(prev)];setData(nd);dataRef.current=nd;_liveData=nd;
+if(opsTE.length){try{await teApply(opsTE)}catch(e){console.warn('pointages',e)}}
 try{await saveData(nd)}catch(e){console.warn('save error',e);try{localSave(nd)}catch(_){}}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},5000)}},[]);
-const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);stampUpdatedAt(dataRef.current&&dataRef.current.jobs,prevData&&prevData.jobs);savesInProgress.current++;savingRef.current=true;setData(prevData);dataRef.current=prevData;_liveData=prevData;try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},5000)}},[]);
+const doUndo=useCallback(async()=>{if(!undoStack.current||undoStack.current.length===0){alert('Rien a annuler');return}const prev=undoStack.current.pop();const prevData=JSON.parse(prev);if(dataRef.current){TE_CLES.forEach(k=>{prevData[k]=dataRef.current[k]||[]});prevData._teCorbeille=dataRef.current._teCorbeille||{}}stampUpdatedAt(dataRef.current&&dataRef.current.jobs,prevData&&prevData.jobs);savesInProgress.current++;savingRef.current=true;setData(prevData);dataRef.current=prevData;_liveData=prevData;try{await saveData(prevData)}catch(e){console.warn('undo save error',e)}finally{setTimeout(()=>{savesInProgress.current=Math.max(0,savesInProgress.current-1);if(savesInProgress.current===0)savingRef.current=false},5000)}},[]);
 const onLogin=(type,eid)=>{if(type==='admin'){setScreen('admin')}else if(type==='station'){setScreen('station')}else{const emp=(data.employees||[]).find(e=>e.id===eid);setScreen(emp&&emp.role==='mechanic'?'mechanic':'employee')}if(eid)setEmpId(eid)};
 const onLogout=()=>{setScreen('login');setEmpId(null);try{localStorage.removeItem('rm-session')}catch(e){}};
 if(!data)return(<div style={{position:'fixed',inset:0,background:'#000',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:9998,gap:18}}><img src="icone.png" alt="" style={{width:240,height:240,maxWidth:'62vw',maxHeight:'62vw',objectFit:'contain',animation:'rm-tourne 4s linear infinite'}}/>{panne&&<div style={{color:'#fff',textAlign:'center',padding:'0 24px',maxWidth:420,fontSize:16,lineHeight:1.5}}><b>La base de données ne répond pas.</b><br/>RoadManager réessaie tout seul toutes les 20 secondes. Les pointages faits pendant la panne sont gardés sur le téléphone et repartiront après.<br/><button onClick={()=>window.location.reload()} style={{marginTop:14,padding:'10px 18px',borderRadius:8,border:'none',background:'#008965',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer'}}>Réessayer maintenant</button></div>}</div>);

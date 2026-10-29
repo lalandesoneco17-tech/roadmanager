@@ -137,6 +137,23 @@ ce fichier ET le code en même temps.
 
 ## Les pointages
 
+- **Un clic = une ligne ecrite directement dans la base** (29/10/2026). L'embauche cree une ligne qui n'ecrase jamais
+  une ligne existante ; la pause, la reprise, la debauche, le repas, une correction ne modifient **que les champs touches** ;
+  rien n'est jamais deduit d'une comparaison entre deux copies de l'etat. Les pointages ne sont **plus dans le bloc
+  app_data** : un telephone ne peut plus ecraser les heures d'un autre.
+- **Rien ne s'efface** : une suppression est un marquage. La page Heures a une **Corbeille** (par salarie et periode) avec
+  un bouton Restaurer. Avec le SQL `outils/journal-pointages.sql`, la base garde en plus **toutes les versions** de chaque
+  pointage et refuse tout effacement physique.
+- Une **absence posee sur une periode ne remplace jamais une journee ou des heures sont pointees** : ces jours sont laisses
+  tels quels et listes dans le message. (29/10/2026)
+- La lecture des pointages se fait **par pages de 1000** : au-dela de 1000 lignes, Supabase ne renvoyait que les 1000
+  premieres et la fin de la table devenait invisible. (29/10/2026)
+- **Telephone muet** : si des pointages attendent depuis plus de 30 minutes, le bandeau du chauffeur devient **rouge**
+  (« tes pointages ne partent pas ») avec un bouton Recharger ; la page Heures de l'admin affiche en rouge les
+  **chauffeurs planifies sans aucun pointage** sur les 10 derniers jours. (29/10/2026)
+- **Un appareil ne garde jamais une vieille version** : toutes les 10 minutes et a chaque retour au premier plan, l'app
+  compare sa version avec le serveur et se recharge toute seule si elle a change (hors saisie en cours). (29/10/2026)
+
 - **Plusieurs pointages dans la journée** (matin puis ré-embauche le soir) : la journée est la somme de tous
   ses pointages, dans « Mes heures » comme dans la page Heures. Début = première embauche, débauche = dernière,
   coupure = pause du premier pointage ou le trou entre les deux. (23/09/2026)
